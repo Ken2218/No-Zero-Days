@@ -19,7 +19,7 @@ export default function Login({ onLoginSuccess }) {
     setError('');
 
     try {
-      const response = await fetch('http://localhost:8080/api/students/register', {
+      const response = await fetch(`${process.env.REACT_APP_API_URL}/api/students/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

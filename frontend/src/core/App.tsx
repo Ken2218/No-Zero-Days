@@ -344,7 +344,7 @@ function App() {
         bodyPayload.submittedValueB = extractedB ? parseFloat(extractedB) : 0.0;
       }
 
-      const response = await fetch('http://localhost:8080/api/validation/submit', {
+      const response = await fetch(`${process.env.REACT_APP_API_URL}/api/validation/submit`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(bodyPayload)
@@ -419,7 +419,7 @@ function App() {
     setFeedback('Filtering unpaid lunch hours...');
     try {
       const { module: mod, phase: ph } = getModuleAndPhase();
-      const response = await fetch('http://localhost:8080/api/validation/submit', {
+      const response = await fetch(`${process.env.REACT_APP_API_URL}/api/validation/submit`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -477,7 +477,7 @@ function App() {
     setFeedback('Validating DOLE overtime premium multiplier...');
     try {
       const { module: mod, phase: ph } = getModuleAndPhase();
-      const response = await fetch('http://localhost:8080/api/validation/submit', {
+      const response = await fetch(`${process.env.REACT_APP_API_URL}/api/validation/submit`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -529,7 +529,7 @@ function App() {
     setFeedback('Validating Overtime formula...');
     try {
       const { module: mod, phase: ph } = getModuleAndPhase();
-      const response = await fetch('http://localhost:8080/api/validation/submit', {
+      const response = await fetch(`${process.env.REACT_APP_API_URL}/api/validation/submit`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -581,7 +581,7 @@ function App() {
     setFeedback('Validating DOLE holiday premium multiplier...');
     try {
       const { module: mod, phase: ph } = getModuleAndPhase();
-      const response = await fetch('http://localhost:8080/api/validation/submit', {
+      const response = await fetch(`${process.env.REACT_APP_API_URL}/api/validation/submit`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -633,7 +633,7 @@ function App() {
     setFeedback('Validating Holiday formula logic...');
     try {
       const { module: mod, phase: ph } = getModuleAndPhase();
-      const response = await fetch('http://localhost:8080/api/validation/submit', {
+      const response = await fetch(`${process.env.REACT_APP_API_URL}/api/validation/submit`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -685,7 +685,7 @@ function App() {
     setFeedback('Verifying Pag-IBIG contribution cap...');
     try {
       const { module: mod, phase: ph } = getModuleAndPhase();
-      const response = await fetch('http://localhost:8080/api/validation/submit', {
+      const response = await fetch(`${process.env.REACT_APP_API_URL}/api/validation/submit`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -743,7 +743,7 @@ function App() {
     setFeedback('Verifying Basic Salary...');
     try {
       const { module: mod, phase: ph } = getModuleAndPhase();
-      const response = await fetch('http://localhost:8080/api/validation/submit', {
+      const response = await fetch(`${process.env.REACT_APP_API_URL}/api/validation/submit`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -795,7 +795,7 @@ function App() {
     setFeedback('Verifying statutory Employee (EE) share deductions...');
     try {
       const { module: mod, phase: ph } = getModuleAndPhase();
-      const response = await fetch('http://localhost:8080/api/validation/submit', {
+      const response = await fetch(`${process.env.REACT_APP_API_URL}/api/validation/submit`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -857,7 +857,7 @@ function App() {
 
     try {
       const { module: mod, phase: ph } = getModuleAndPhase();
-      const response = await fetch('http://localhost:8080/api/validation/submit', {
+      const response = await fetch(`${process.env.REACT_APP_API_URL}/api/validation/submit`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -943,7 +943,7 @@ function App() {
 
       console.log("[DEBUG EXECUTE PAYLOAD SENT]:", requestPayload);
 
-      const response = await fetch('http://localhost:8080/api/validation/submit', {
+      const response = await fetch(`${process.env.REACT_APP_API_URL}/api/validation/submit`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(requestPayload)
@@ -987,7 +987,7 @@ function App() {
     setFeedback('Verifying Gross Basic Pay computation...');
     try {
       const { module: mod, phase: ph } = getModuleAndPhase();
-      const response = await fetch('http://localhost:8080/api/validation/submit', {
+      const response = await fetch(`${process.env.REACT_APP_API_URL}/api/validation/submit`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1036,7 +1036,7 @@ function App() {
     setFeedback('Validating Net Pay formula logic...');
     try {
       const { module: mod, phase: ph } = getModuleAndPhase();
-      const response = await fetch('http://localhost:8080/api/validation/submit', {
+      const response = await fetch(`${process.env.REACT_APP_API_URL}/api/validation/submit`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1114,7 +1114,7 @@ function App() {
 
       console.log('[DEBUG SYNTHESIS PAYLOAD SENT]:', requestPayload);
 
-      const response = await fetch('http://localhost:8080/api/validation/submit', {
+      const response = await fetch(`${process.env.REACT_APP_API_URL}/api/validation/submit`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(requestPayload)
@@ -1154,7 +1154,7 @@ function App() {
     setFeedback('Submitting final Net Payroll audit to Board of Trustees...');
 
     try {
-      const response = await fetch('http://localhost:8080/api/validation/submit', {
+      const response = await fetch(`${process.env.REACT_APP_API_URL}/api/validation/submit`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

@@ -19,7 +19,7 @@ export default function Dashboard({ onSelectPhase }) {
 
   const fetchProgress = async (studentNum) => {
     try {
-      const res = await fetch(`http://localhost:8080/api/progress/status?studentNumber=${studentNum}`);
+      const res = await fetch(`${process.env.REACT_APP_API_URL}/api/progress/status?studentNumber=${studentNum}`);
       if (res.ok) {
         const data = await res.json();
         if (data && data.length > 0) {
