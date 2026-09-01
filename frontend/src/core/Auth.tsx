@@ -30,14 +30,19 @@ export default function Login({ onLoginSuccess }) {
       });
 
       if (!response.ok) {
-        throw new Error('Registration failed. Please check the backend connection.');
+        let errorDetail = `HTTP ${response.status}`;
+        try {
+          const errBody = await response.text();
+          errorDetail += `: ${errBody.substring(0, 200)}`;
+        } catch (_) {}
+        throw new Error(`Backend error — ${errorDetail}`);
       }
 
       const student = await response.json();
       localStorage.setItem('student', JSON.stringify(student));
       onLoginSuccess(student);
     } catch (err) {
-      console.error(err);
+      console.error('[Auth] Login error:', err);
       setError(err.message || 'Server connection error.');
     } finally {
       setLoading(false);
