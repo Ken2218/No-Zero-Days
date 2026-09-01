@@ -28,7 +28,6 @@ import java.util.Collections;
 
 @RestController
 @RequestMapping("/api")
-@CrossOrigin(originPatterns = {"http://localhost:3000", "https://*.railway.app"})
 public class ValidationController {
 
     @Autowired
