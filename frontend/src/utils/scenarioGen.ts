@@ -304,7 +304,6 @@ export function generatePhase4Scenario(): ScenarioData {
  * Generates a randomized scenario payload specifically suited for Module 3, Phase 5 (SSS Deductions).
  */
 export function generatePhase5Scenario(): ScenarioData {
-  const employees = ['Juan Dela Cruz', 'Maria Santos', 'Pedro Penduko', 'Anna Mangahas', 'Jose Rizal'];
   const companies = ['Apex Industrial Works', 'TechGear Solutions Inc.', 'Starlight Garments Corp.', 'Cebu Logistics Ltd.'];
   const rates = [500, 600, 750, 800, 900, 1000];
   const shifts = [7, 8, 9, 10, 11, 12, 13, 14, 15];
