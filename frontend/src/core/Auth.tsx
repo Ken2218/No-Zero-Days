@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import API_BASE_URL from '../config';
 import './Auth.css';
 
 export default function Login({ onLoginSuccess }) {
@@ -19,7 +20,7 @@ export default function Login({ onLoginSuccess }) {
     setError('');
 
     try {
-      const response = await fetch(`${process.env.REACT_APP_API_URL}/api/students/register`, {
+      const response = await fetch(`${API_BASE_URL}/api/students/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
