@@ -1,18 +1,22 @@
 import React, { useState, useEffect } from 'react';
 import API_BASE_URL from '../config';
+import { PHASE_GUIDES } from '../utils/phaseGuides';
 import './Auth.css';
 
 interface DashboardProps {
   onSelectPhase: (phaseId: number) => void;
   onStudentJoinRoom: (code: string, student: any) => void;
   roomCode: string;
+  theme?: 'dark' | 'light';
+  toggleTheme?: () => void;
 }
 
-export default function Dashboard({ onSelectPhase, onStudentJoinRoom, roomCode }: DashboardProps) {
+export default function Dashboard({ onSelectPhase, onStudentJoinRoom, roomCode, theme, toggleTheme }: DashboardProps) {
   const [student, setStudent] = useState({ fullName: 'Temporary Student', studentNumber: 'STU-UNKNOWN', section: 'ABM-A' });
   const [progressList, setProgressList] = useState([]);
   const [selectedPhaseSummary, setSelectedPhaseSummary] = useState(null);
   const [loadingProgress, setLoadingProgress] = useState(true);
+  const [phaseGuideTarget, setPhaseGuideTarget] = useState<number | null>(null);
 
   const [showJoinModal, setShowJoinModal] = useState(false);
   const [joinRoomCode, setJoinRoomCode] = useState('');
@@ -121,7 +125,7 @@ export default function Dashboard({ onSelectPhase, onStudentJoinRoom, roomCode }
     if (originalProgress && originalProgress.status === 'COMPLETED') {
       setSelectedPhaseSummary(originalProgress);
     } else {
-      onSelectPhase(phase.phaseId);
+      setPhaseGuideTarget(phase.phaseId);
     }
   };
 
@@ -136,6 +140,35 @@ export default function Dashboard({ onSelectPhase, onStudentJoinRoom, roomCode }
           <span className="dot yellow"></span>
           <span className="dot green"></span>
           <span className="terminal-title">NO_ZERO_DAYS_ROADMAP.EXE</span>
+
+          {toggleTheme && (
+            <div 
+              id="dashboard-theme-toggle"
+              className="theme-mode-toggle"
+              onClick={toggleTheme}
+              title={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') toggleTheme(); }}
+              style={{ marginLeft: 'auto', padding: '4px 12px', fontSize: '0.8rem' }}
+            >
+              <span className="theme-toggle-label">
+                {theme === 'dark' ? '☀️ Light Mode' : '🌙 Dark Mode'}
+              </span>
+              <div className={`theme-toggle-switch ${theme === 'light' ? 'toggle-active' : ''}`} style={{ width: '36px', height: '18px' }}>
+                <div 
+                  className="theme-toggle-slider" 
+                  style={{ 
+                    width: '12px', 
+                    height: '12px', 
+                    top: '2px', 
+                    left: '2px',
+                    transform: theme === 'light' ? 'translateX(18px)' : 'none'
+                  }} 
+                />
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="dashboard-body">
@@ -226,7 +259,8 @@ export default function Dashboard({ onSelectPhase, onStudentJoinRoom, roomCode }
                           style={{ width: '100%', backgroundColor: '#10b981', color: '#000' }}
                           onClick={(e) => {
                             e.stopPropagation();
-                            onSelectPhase(p.phaseId);
+                            const originalProgress = rawRoadmap.find(r => r.phaseId === p.phaseId) || p;
+                            setSelectedPhaseSummary(originalProgress);
                           }}
                         >
                           RE-AUDIT [✓]
@@ -237,7 +271,7 @@ export default function Dashboard({ onSelectPhase, onStudentJoinRoom, roomCode }
                           style={{ width: '100%', backgroundColor: '#fbbf24', color: '#000' }}
                           onClick={(e) => {
                             e.stopPropagation();
-                            onSelectPhase(p.phaseId);
+                            setPhaseGuideTarget(p.phaseId);
                           }}
                         >
                           START AUDIT &gt;
@@ -258,11 +292,17 @@ export default function Dashboard({ onSelectPhase, onStudentJoinRoom, roomCode }
 
       {/* Audit Report Card Modal */}
       {selectedPhaseSummary && (
-        <div className="popup-overlay" style={{ zIndex: 9999 }}>
-          <div className="popup-card" style={{ borderTop: '4px solid #10b981', padding: '20px', maxWidth: '450px', width: '90%' }}>
+        <div className="popup-overlay" style={{ zIndex: 9999 }} onClick={() => setSelectedPhaseSummary(null)}>
+          <div 
+            className="popup-card report-card-modal" 
+            onClick={(e) => e.stopPropagation()}
+            style={{ borderTop: '4px solid #10b981', padding: '24px', maxWidth: '460px', width: '92%' }}
+          >
             <button className="close-btn" onClick={() => setSelectedPhaseSummary(null)}>X</button>
             <div className="popup-header" style={{ marginBottom: '15px', borderBottom: '1px dashed #334155', paddingBottom: '10px' }}>
-              <h4 style={{ color: '#10b981', margin: 0, fontSize: '1.2rem' }}>🏆 PHASE AUDIT REPORT CARD</h4>
+              <h4 style={{ color: '#10b981', margin: 0, fontSize: '1.2rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span>🏆</span> PHASE AUDIT REPORT CARD
+              </h4>
               <p style={{ margin: '5px 0 0 0', color: '#94a3b8', fontSize: '0.85rem' }}>{selectedPhaseSummary.title}</p>
             </div>
             
@@ -273,11 +313,22 @@ export default function Dashboard({ onSelectPhase, onStudentJoinRoom, roomCode }
               <div className="data-row" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
                 <span style={{ color: '#60a5fa' }}>Status:</span> <strong style={{ color: '#10b981' }}>COMPLETED ✓</strong>
               </div>
+              <div className="data-row" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+                <span style={{ color: '#60a5fa' }}>Tries Committed:</span>
+                <strong style={{ color: '#f1f5f9' }}>
+                  {selectedPhaseSummary.attemptsCount !== undefined && selectedPhaseSummary.attemptsCount > 0
+                    ? `${selectedPhaseSummary.attemptsCount} ${selectedPhaseSummary.attemptsCount === 1 ? 'try' : 'tries'}`
+                    : (selectedPhaseSummary.failedAttempts !== undefined ? `${(selectedPhaseSummary.failedAttempts || 0) + 1} tries` : '1 try')}
+                </strong>
+              </div>
               <div className="data-row" style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ color: '#60a5fa' }}>Best Audit Score:</span> <strong className="highlight-green" style={{ fontSize: '1.3rem', color: '#10b981' }}>{selectedPhaseSummary.bestScore}%</strong>
+                <span style={{ color: '#60a5fa' }}>Best Audit Score:</span>
+                <strong className="highlight-green" style={{ fontSize: '1.3rem', color: '#10b981' }}>
+                  {selectedPhaseSummary.bestScore || 100}%
+                </strong>
               </div>
               <p style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '15px', fontStyle: 'italic', borderTop: '1px dashed #1e293b', paddingTop: '10px', margin: '15px 0 0 0' }}>
-                * Audit score is calculated dynamically based on calculation attempt efficiency. Practice leads to zero errors!
+                * Audit score starts at 100% with a 10% deduction per incorrect calculation attempt (minimum 50%). Practice leads to zero errors!
               </p>
             </div>
 
@@ -292,17 +343,189 @@ export default function Dashboard({ onSelectPhase, onStudentJoinRoom, roomCode }
               <button 
                 className="run-btn" 
                 onClick={() => {
-                  onSelectPhase(selectedPhaseSummary.phaseId);
+                  const targetPhase = selectedPhaseSummary.phaseId;
                   setSelectedPhaseSummary(null);
+                  setPhaseGuideTarget(targetPhase);
                 }} 
                 style={{ flex: 1, margin: 0, padding: '12px', backgroundColor: '#10b981', border: 'none', color: '#000', cursor: 'pointer', borderRadius: '4px', fontWeight: 'bold', fontFamily: 'monospace' }}
               >
-                RE-ENTER AUDIT &gt;
+                RE-AUDIT &gt;
               </button>
             </div>
           </div>
         </div>
       )}
+
+      {/* PRE-AUDIT PHASE GUIDE MODAL */}
+      {phaseGuideTarget && PHASE_GUIDES[phaseGuideTarget] && (() => {
+        const guide = PHASE_GUIDES[phaseGuideTarget];
+        return (
+          <div className="popup-overlay" style={{ zIndex: 9999 }} onClick={() => setPhaseGuideTarget(null)}>
+            <div 
+              className="popup-card phase-guide-card" 
+              onClick={(e) => e.stopPropagation()}
+              style={{ 
+                maxWidth: '680px', 
+                width: '94%', 
+                maxHeight: '90vh', 
+                overflowY: 'auto',
+                padding: '24px',
+                borderTop: '4px solid #f59e0b',
+                boxShadow: '0 20px 50px rgba(0,0,0,0.6)'
+              }}
+            >
+              <button className="close-btn" onClick={() => setPhaseGuideTarget(null)}>X</button>
+              
+              <div className="popup-header" style={{ marginBottom: '16px', borderBottom: '1px dashed #334155', paddingBottom: '12px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
+                  <h4 style={{ color: '#f59e0b', margin: 0, fontSize: '1.25rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span>📖</span> AUDITOR'S FIELD GUIDE
+                  </h4>
+                </div>
+                <p style={{ margin: '6px 0 0 0', color: '#94a3b8', fontSize: '0.9rem' }}>
+                  {`${guide.title} — Target: ${guide.roomName}`}
+                </p>
+              </div>
+
+              {/* Section 1: Variables to find */}
+              <div className="data-box authentic-data" style={{ padding: '14px', marginBottom: '14px', background: '#0b1120', border: '1px solid #1e293b', borderRadius: '6px' }}>
+                <div style={{ fontWeight: 'bold', color: '#60a5fa', marginBottom: '10px', fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <span>🔍</span> WHAT VARIABLES TO LOCATE IN ROOM:
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  {guide.variablesToFind.map((v, i) => (
+                    <div key={i} style={{ borderLeft: '3px solid #3b82f6', paddingLeft: '10px' }}>
+                      <div style={{ color: '#f1f5f9', fontWeight: 'bold', fontSize: '0.85rem' }}>
+                        {i + 1}. {v.name}
+                      </div>
+                      <div style={{ color: '#94a3b8', fontSize: '0.8rem', marginTop: '2px' }}>
+                        📍 <em>Location:</em> {v.location}
+                      </div>
+                      <div style={{ color: '#cbd5e1', fontSize: '0.78rem', marginTop: '2px' }}>
+                        ℹ️ {v.description}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Section 2: Core Equation */}
+              <div className="data-box authentic-data" style={{ padding: '14px', marginBottom: '14px', background: '#0b1120', border: '1px solid #1e293b', borderRadius: '6px' }}>
+                <div style={{ fontWeight: 'bold', color: '#facc15', marginBottom: '8px', fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <span>📐</span> CORE CALCULATION FORMULA:
+                </div>
+                <div style={{ 
+                  background: 'rgba(250, 204, 21, 0.08)', 
+                  border: '1px solid rgba(250, 204, 21, 0.3)', 
+                  padding: '10px 14px', 
+                  borderRadius: '4px',
+                  fontFamily: 'monospace',
+                  color: '#fef08a',
+                  fontSize: '0.88rem',
+                  fontWeight: 'bold',
+                  wordBreak: 'break-word'
+                }}>
+                  {guide.formula}
+                </div>
+              </div>
+
+              {/* Section 3: Walkthrough Example */}
+              <div className="data-box authentic-data" style={{ padding: '14px', marginBottom: '14px', background: '#0b1120', border: '1px solid #1e293b', borderRadius: '6px' }}>
+                <div style={{ fontWeight: 'bold', color: '#34d399', marginBottom: '8px', fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <span>💡</span> {guide.walkthrough.title.toUpperCase()}:
+                </div>
+                
+                <div style={{ fontSize: '0.82rem', color: '#94a3b8', marginBottom: '8px', background: 'rgba(255,255,255,0.03)', padding: '6px 10px', borderRadius: '4px' }}>
+                  <strong>Example Scenario:</strong> {guide.walkthrough.given}
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '0.82rem', color: '#e2e8f0', margin: '8px 0' }}>
+                  {guide.walkthrough.steps.map((step, idx) => (
+                    <div key={idx} style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+                      <span style={{ color: '#34d399', fontWeight: 'bold' }}>•</span>
+                      <span>{step}</span>
+                    </div>
+                  ))}
+                </div>
+
+                <div style={{ 
+                  marginTop: '10px',
+                  padding: '8px 12px', 
+                  background: 'rgba(16, 185, 129, 0.12)', 
+                  border: '1px solid #10b981', 
+                  borderRadius: '4px',
+                  color: '#34d399',
+                  fontWeight: 'bold',
+                  fontSize: '0.88rem'
+                }}>
+                  ➔ {guide.walkthrough.result}
+                </div>
+              </div>
+
+              {/* Section 4: Pro-Tip */}
+              <div style={{ 
+                padding: '10px 14px', 
+                background: 'rgba(245, 158, 11, 0.08)', 
+                border: '1px solid rgba(245, 158, 11, 0.3)', 
+                borderRadius: '6px',
+                color: '#fbbf24',
+                fontSize: '0.8rem',
+                marginBottom: '18px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px'
+              }}>
+                <span>⚠️</span>
+                <span><strong>Pro-Tip:</strong> {guide.walkthrough.tip}</span>
+              </div>
+
+              {/* Modal Buttons */}
+              <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+                <button 
+                  className="run-btn"
+                  onClick={() => {
+                    const targetId = guide.phaseId;
+                    setPhaseGuideTarget(null);
+                    onSelectPhase(targetId);
+                  }}
+                  style={{ 
+                    flex: 2, 
+                    margin: 0, 
+                    padding: '14px', 
+                    backgroundColor: '#10b981', 
+                    border: 'none', 
+                    color: '#000', 
+                    cursor: 'pointer', 
+                    borderRadius: '4px', 
+                    fontWeight: 'bold', 
+                    fontFamily: 'monospace',
+                    fontSize: '0.95rem'
+                  }}
+                >
+                  START AUDIT &gt;
+                </button>
+                <button 
+                  className="escalate-btn" 
+                  onClick={() => setPhaseGuideTarget(null)} 
+                  style={{ 
+                    flex: 1, 
+                    margin: 0, 
+                    padding: '14px', 
+                    background: '#1e293b', 
+                    border: '1px solid #334155', 
+                    color: '#94a3b8', 
+                    cursor: 'pointer', 
+                    borderRadius: '4px', 
+                    fontFamily: 'monospace' 
+                  }}
+                >
+                  [ CANCEL ]
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* JOIN ROOM MODAL */}
       {showJoinModal && (

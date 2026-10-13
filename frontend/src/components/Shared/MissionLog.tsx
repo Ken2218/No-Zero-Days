@@ -202,43 +202,43 @@ export default function MissionLog({
             </div>
 
             <div className="inputs-container" style={{ marginTop: '15px' }}>
-              <label style={{ color: '#e2e8f0', fontSize: '0.85rem' }}>
-                1. TOTAL GROSS EARNINGS (₱)
+              <label style={{ fontSize: '0.85rem' }}>
+                1. TOTAL GROSS EARNINGS / GROSS PAY (₱)
               </label>
               <input 
                 type="number" 
-                placeholder="Basic Gross + OT Pay + Holiday Pay" 
+                placeholder="Basic Pay + Overtime Pay + Holiday Pay" 
                 className="tech-input"
                 value={tribunalGross}
                 onChange={(e) => setTribunalGross(e.target.value)}
                 disabled={tribunalStatus === 'SUCCESS' || loading}
-                style={{ border: '1px solid #ef4444', color: '#fff', marginBottom: '12px' }}
+                style={{ border: '1px solid #ef4444', marginBottom: '12px' }}
               />
 
-              <label style={{ color: '#e2e8f0', fontSize: '0.85rem' }}>
-                2. TOTAL DEDUCTIONS (₱)
+              <label style={{ fontSize: '0.85rem' }}>
+                2. TOTAL STATUTORY & AUDIT DEDUCTIONS (₱)
               </label>
               <input 
                 type="number" 
-                placeholder="Tardiness + SSS + PhilHealth" 
+                placeholder="Tardiness + SSS + PhilHealth + HDMF + Loan + Tax" 
                 className="tech-input"
                 value={tribunalDeductions}
                 onChange={(e) => setTribunalDeductions(e.target.value)}
                 disabled={tribunalStatus === 'SUCCESS' || loading}
-                style={{ border: '1px solid #ef4444', color: '#fff', marginBottom: '12px' }}
+                style={{ border: '1px solid #ef4444', marginBottom: '12px' }}
               />
 
-              <label style={{ color: '#e2e8f0', fontSize: '0.85rem' }}>
-                3. FINAL NET PAY (₱)
+              <label style={{ fontSize: '0.85rem' }}>
+                3. FINAL ACTUAL NET TAKE-HOME PAY (₱)
               </label>
               <input 
                 type="number" 
-                placeholder="Gross Earnings - Total Deductions" 
+                placeholder="Gross Earnings − Total Deductions = Net Pay" 
                 className="tech-input"
                 value={tribunalNet}
                 onChange={(e) => setTribunalNet(e.target.value)}
                 disabled={tribunalStatus === 'SUCCESS' || loading}
-                style={{ border: '1px solid #ef4444', color: '#fff', marginBottom: '12px' }}
+                style={{ border: '1px solid #ef4444', marginBottom: '12px' }}
               />
 
               {tribunalStatus === 'ERROR' && (
@@ -428,43 +428,43 @@ export default function MissionLog({
           
           {activePhaseIndex === 4 ? (
             <div className="inputs-container">
-              <label style={{ color: '#e2e8f0', fontSize: '0.85rem' }}>SELECT HOLIDAY CLASSIFICATION</label>
+              <label style={{ fontSize: '0.85rem' }}>Holiday Classification (RA 9849)</label>
               <div className="input-hint-wrapper">
                 <select
                   value={holidayTypeValue}
                   onChange={(e) => setHolidayTypeValue && setHolidayTypeValue(e.target.value)}
                   disabled={step1Status === 'SUCCESS' || loading}
                   className="tech-input"
-                  style={{ backgroundColor: '#0b1120', color: '#fff', border: '1px solid #60a5fa' }}
+                  style={{ border: '1px solid #60a5fa' }}
                 >
                   <option value="">-- SELECT HOLIDAY TYPE --</option>
-                  <option value="REGULAR_HOLIDAY">Regular Holiday (2.00x)</option>
-                  <option value="SPECIAL_NON_WORKING">Special Non-Working Holiday (1.30x)</option>
-                  <option value="ORDINARY_WORKING">Ordinary Working Day (1.00x)</option>
+                  <option value="REGULAR_HOLIDAY">Regular Holiday — 200% Rate (2.00x)</option>
+                  <option value="SPECIAL_NON_WORKING">Special Non-Working Holiday — 130% Rate (1.30x)</option>
+                  <option value="ORDINARY_WORKING">Ordinary Working Day — 100% Rate (1.00x)</option>
                 </select>
                 <span className="input-info-icon">ⓘ
                   <div className="input-tooltip">
-                    Check both the Employee Contract in the filing cabinet and the terminal logs.
+                    The Labor Code recognizes 12 Regular Holidays (200% double pay) and 3 Special Non-Working Holidays (130% pay). Check terminal and contract records.
                   </div>
                 </span>
               </div>
               
               {step1Status !== 'SUCCESS' && (
                 <button className="run-btn" onClick={handleValidateExtraction} disabled={loading}>
-                  {loading ? 'COMPLYING...' : 'VERIFY HOLIDAY TYPE >'}
+                  {loading ? 'COMPLYING...' : 'VERIFY HOLIDAY CLASSIFICATION >'}
                 </button>
               )}
             </div>
           ) : (
             <div className="inputs-container">
-              <label style={{ color: '#e2e8f0', fontSize: '0.85rem' }}>
+              <label style={{ fontSize: '0.85rem' }}>
                 {activePhaseIndex === 1
-                  ? 'VARIABLE COMPONENT A (Daily Rate)' 
+                  ? 'Daily Basic Rate (Daily Wage)' 
                   : activePhaseIndex === 2 || activePhaseIndex === 3
-                    ? 'VARIABLE COMPONENT A (Hourly Rate)'
+                    ? 'Hourly Pay Rate (Regular Wage)'
                     : activePhaseIndex === 5
-                      ? 'VARIABLE COMPONENT A (SSS EE Share)'
-                      : 'VARIABLE COMPONENT A (Basic Salary)'
+                      ? 'SSS Statutory Contribution (EE Share)'
+                      : 'Monthly Basic Salary (Basic Pay)'
                 }
               </label>
               <div className="input-hint-wrapper">
@@ -472,12 +472,12 @@ export default function MissionLog({
                   type="number" 
                   placeholder={
                     activePhaseIndex === 1 
-                      ? "₱ Enter base Daily Rate" 
+                      ? "₱ Enter base Daily Rate (Wage)" 
                       : activePhaseIndex === 2 || activePhaseIndex === 3
-                        ? "₱ Enter base Hourly Rate"
+                        ? "₱ Enter base Hourly Pay Rate"
                         : activePhaseIndex === 5
                           ? "₱ Enter SSS EE share"
-                          : "₱ Enter Basic Salary"
+                          : "₱ Enter Monthly Basic Salary"
                   } 
                   className="tech-input"
                   value={extractedA}
@@ -487,27 +487,27 @@ export default function MissionLog({
                 <span className="input-info-icon">ⓘ
                   <div className="input-tooltip">
                     {activePhaseIndex === 1
-                      ? 'Open the HR desk contract folder. The base Daily Rate is listed in the compensation section of the employment contract.'
+                      ? 'Open the HR desk contract folder. The base Daily Rate (Wage) is listed in the compensation section of the employment contract.'
                       : (activePhaseIndex === 2 || activePhaseIndex === 3)
-                        ? 'Check both the Employee Contract in the filing cabinet and the terminal logs.'
+                        ? 'Check Employee Contract in the filing cabinet. Hourly Pay Rate is Daily Rate ÷ 8 hours.'
                       : activePhaseIndex === 5
-                        ? "Click the SSS contribution table on the corkboard. The SSS Employee Share (EE) monthly rate is 5% of the basic salary. Hint: Locate the Employee's Contract in the room to find their basic monthly salary."
-                        : 'Hint: Locate the Employee\'s Contract in the room to find their base compensation before checking the statutory tables.'
+                        ? "Click the SSS contribution table on the corkboard. The SSS Employee Share (EE) monthly rate is computed from the basic monthly salary."
+                        : 'Locate the Employee Contract to find their Monthly Basic Salary before checking statutory tables.'
                     }
                   </div>
                 </span>
               </div>
               
-              <label style={{ color: '#e2e8f0', fontSize: '0.85rem' }}>
+              <label style={{ fontSize: '0.85rem' }}>
                 {activePhaseIndex === 1 
-                  ? 'VARIABLE COMPONENT B (Days Present)' 
+                  ? 'Days Worked (Days Present)' 
                   : activePhaseIndex === 2 
-                    ? 'VARIABLE COMPONENT B (Late Minutes)' 
+                    ? 'Tardiness (Late Minutes)' 
                     : activePhaseIndex === 3
-                      ? 'VARIABLE COMPONENT B (Total Recorded OT Hours)'
+                      ? 'Recorded Overtime Hours (Raw OT)'
                       : (activePhaseIndex === 5 || activePhaseIndex === 6)
-                        ? 'VARIABLE COMPONENT B (Personal Salary Loan)'
-                        : 'VARIABLE COMPONENT B (PhilHealth Rate)'
+                        ? 'Personal Salary Loan (Monthly Amortization)'
+                        : 'PhilHealth Contribution Rate'
                 }
               </label>
               <div className="input-hint-wrapper">
@@ -515,14 +515,14 @@ export default function MissionLog({
                   type="number" 
                   placeholder={
                     activePhaseIndex === 1 
-                      ? "Enter shifts worked" 
+                      ? "Enter Days Worked (Shifts Present)" 
                       : activePhaseIndex === 2 
-                        ? "Enter late minutes" 
+                        ? "Enter Tardiness in minutes" 
                         : activePhaseIndex === 3
-                          ? "Enter total recorded OT hours"
+                          ? "Enter recorded Overtime hours"
                           : (activePhaseIndex === 5 || activePhaseIndex === 6)
-                            ? "₱ Enter Personal Salary Loan"
-                            : "Enter standard rate (e.g. 0.025)"
+                            ? "₱ Enter Monthly Loan Amortization"
+                            : "Enter standard rate (e.g. 0.025 / 2.5%)"
                   } 
                   className="tech-input"
                   value={extractedB}
@@ -532,12 +532,14 @@ export default function MissionLog({
                 <span className="input-info-icon">ⓘ
                   <div className="input-tooltip">
                     {activePhaseIndex === 1
-                      ? 'Count the days marked P (Present) on the wall calendar. Each marked day is one shift worked.'
-                      : (activePhaseIndex === 2 || activePhaseIndex === 3)
-                        ? 'Check both the Employee Contract in the filing cabinet and the terminal logs.'
-                        : (activePhaseIndex === 5 || activePhaseIndex === 6)
-                          ? 'Inspect the Employee Loan Statement on the PC monitor hotspot. Find the monthly deduction for the Personal Salary Loan.'
-                          : 'Refer to the PhilHealth premium table on the corkboard. Find the applicable employee share rate.'
+                      ? 'Count the days marked P (Present) on the wall calendar. Under Philippine payroll rules, Basic Pay is computed per actual day worked.'
+                      : activePhaseIndex === 2
+                        ? 'Check biometrics terminal logs for total late minutes. Tardiness is deducted from wages under DOLE standards.'
+                        : activePhaseIndex === 3
+                          ? 'Review the Production Time Card for recorded overtime shift hours.'
+                          : (activePhaseIndex === 5 || activePhaseIndex === 6)
+                            ? 'Inspect the Employee Loan Statement on the PC monitor for the monthly loan amortization deduction.'
+                            : 'Refer to the PhilHealth premium table on the corkboard for the employee share rate.'
                     }
                   </div>
                 </span>
@@ -545,7 +547,7 @@ export default function MissionLog({
 
               {/* 3-Strike Warning Banner */}
               {step1Status === 'ERROR' && extractionAttempts > 0 && extractionAttempts < 3 && (
-                <div style={{
+                <div className="strike-warning-banner" style={{
                   marginTop: '8px',
                   padding: '8px 12px',
                   borderRadius: '4px',
@@ -571,7 +573,7 @@ export default function MissionLog({
             
             {step1Status !== 'SUCCESS' && (
               <button className="run-btn" onClick={handleValidateExtraction} disabled={loading}>
-                {loading ? 'AUDITING...' : 'RUN EXTRACTION UNIT >'}
+                {loading ? 'SUBMITTING...' : 'SUBMIT >'}
               </button>
             )}
           </div>
@@ -834,10 +836,12 @@ export default function MissionLog({
             <div className="step-title">
               <h4>
                 {activePhaseIndex === 5 
-                  ? '④ STEP 4: IDENTIFY CORE EQUATION' 
+                  ? '④ STEP 4: IDENTIFY DEDUCTIONS EQUATION' 
                   : activePhaseIndex === 6 
                     ? '③ STEP 3: IDENTIFY CORE EQUATION' 
-                    : '② STEP 2: IDENTIFY CORE EQUATION'}
+                    : activePhaseIndex === 1
+                      ? '② STEP 2: IDENTIFY CORE EQUATION'
+                      : '② STEP 2: IDENTIFY TARDINESS DEDUCTION FORMULA'}
               </h4>
               <span className="badge" style={{ backgroundColor: step2Status === 'SUCCESS' ? '#10b981' : '#475569', color: '#fff' }}>
                 {step2Status}
@@ -846,14 +850,14 @@ export default function MissionLog({
             
             {step2Status !== 'LOCKED' && (
               <div className="inputs-container">
-                <label style={{ color: '#e2e8f0', fontSize: '0.85rem' }}>
+                <label style={{ fontSize: '0.85rem' }}>
                   {activePhaseIndex === 1 
-                    ? 'Gross Basic Pay Equation Formula:' 
+                    ? 'Basic Pay Equation Formula:' 
                     : activePhaseIndex === 2 
                       ? 'Tardiness Deduction Equation Formula:' 
                       : activePhaseIndex === 5
                         ? 'Net Pay Equation Formula:'
-                        : 'PhilHealth Premium Equation Formula:'
+                        : 'PhilHealth Statutory Equation Formula:'
                   }
                 </label>
                 <select 
@@ -861,21 +865,20 @@ export default function MissionLog({
                   onChange={(e) => setSelectedRule(e.target.value)}
                   disabled={step2Status === 'SUCCESS' || loading}
                   className="tech-input"
-                  style={{ backgroundColor: '#0b1120', color: '#fff' }}
                 >
                   <option value="">-- SELECT FORMULA --</option>
                   {activePhaseIndex === 1 && (
                     <>
-                      <option value="ADDITION">Daily Rate + Days Present</option>
-                      <option value="MULTIPLICATION">Daily Rate × Days Present (Multiplication)</option>
-                      <option value="DIVISION">Daily Rate ÷ Days Present</option>
+                      <option value="ADDITION">Daily Basic Rate + Days Worked</option>
+                      <option value="MULTIPLICATION">Daily Basic Rate × Days Worked = Basic Pay (Multiplication)</option>
+                      <option value="DIVISION">Daily Basic Rate ÷ Days Worked</option>
                     </>
                   )}
                   {activePhaseIndex === 2 && (
                     <>
-                      <option value="TARDINESS_FORMULA">(Hourly Rate / 60) × Late Minutes</option>
-                      <option value="OFFSET_FORMULA">(Hourly Rate / 60) × (Late Minutes - Early Clock-in)</option>
-                      <option value="DAILY_RATE_DIV_60">(Daily Rate / 60) × Late Minutes</option>
+                      <option value="TARDINESS_FORMULA">(Hourly Pay Rate / 60) × Tardiness Minutes</option>
+                      <option value="OFFSET_FORMULA">(Hourly Pay Rate / 60) × (Tardiness Minutes − Early Clock-in)</option>
+                      <option value="DAILY_RATE_DIV_60">(Daily Basic Rate / 60) × Tardiness Minutes</option>
                     </>
                   )}
                   {activePhaseIndex === 5 && (
@@ -887,7 +890,7 @@ export default function MissionLog({
                   )}
                   {activePhaseIndex === 6 && (
                     <>
-                      <option value="PHILHEALTH_FORMULA">Basic Salary × 0.025</option>
+                      <option value="PHILHEALTH_FORMULA">Basic Salary × 0.025 (2.5% Statutory EE Share)</option>
                       <option value="PHILHEALTH_TOTAL_FORMULA">Basic Salary × 0.075</option>
                       <option value="PHILHEALTH_DAILY_FORMULA">Daily Rate × 0.025</option>
                     </>
@@ -1121,14 +1124,14 @@ export default function MissionLog({
           <div className={`step-card ${step3Status === 'ACTIVE' ? 'active-step' : ''} ${step3Status === 'SUCCESS' ? 'success-step' : ''} ${step3Status === 'ERROR' ? 'error-step' : ''} ${step3Status === 'LOCKED' ? 'locked-step' : ''}`}>
             <div className="step-title">
               <h4>
-                {activePhaseIndex === 3 
-                  ? '⑤ STEP 5: COMPUTE OVERTIME PAY'
-                  : activePhaseIndex === 4
-                    ? '④ STEP 4: COMPUTE HOLIDAY PAY'
-                    : activePhaseIndex === 5
-                      ? '③ STEP 3: FIND BASIC SALARY PAY'
-                      : activePhaseIndex === 6
-                        ? '④ STEP 4: COMPUTE PHILHEALTH DEDUCTION'
+                {activePhaseIndex === 1
+                  ? '③ STEP 3: EXECUTE BASIC PAY ARITHMETIC'
+                  : activePhaseIndex === 2
+                    ? '③ STEP 3: COMPUTE TARDINESS DEDUCTION'
+                    : activePhaseIndex === 3 
+                      ? '⑤ STEP 5: COMPUTE OVERTIME PAY'
+                      : activePhaseIndex === 4
+                        ? '④ STEP 4: COMPUTE HOLIDAY PAY / PREMIUM PAY'
                         : '③ STEP 3: EXECUTE ARITHMETIC'
                 }
               </h4>
@@ -1139,9 +1142,9 @@ export default function MissionLog({
             
             {step3Status !== 'LOCKED' && (
               <div className="inputs-container">
-                <label style={{ color: '#e2e8f0', fontSize: '0.85rem' }}>
+                <label style={{ fontSize: '0.85rem' }}>
                   {activePhaseIndex === 1 
-                    ? 'FINAL GROSS BASIC EARNINGS (₱)' 
+                    ? 'COMPUTED BASIC PAY (₱)' 
                     : activePhaseIndex === 2 
                       ? 'TOTAL TARDINESS DEDUCTIONS (₱)' 
                       : activePhaseIndex === 3
@@ -1149,17 +1152,21 @@ export default function MissionLog({
                         : activePhaseIndex === 4
                           ? 'FINAL REGULAR HOLIDAY PAY (₱)'
                           : activePhaseIndex === 5
-                            ? 'BASIC SALARY PAY (₱)'
-                            : 'FINAL PHILHEALTH PREMIUM DEDUCTION (₱)'
+                            ? 'MONTHLY BASIC SALARY / BASIC PAY (₱)'
+                            : 'FINAL PHILHEALTH STATUTORY DEDUCTION (₱)'
                   }
                 </label>
                 <div className="input-hint-wrapper">
                   <input 
                     type="number" 
                     placeholder={
-                      activePhaseIndex === 5 
-                        ? "₱ Enter Basic Salary" 
-                        : "₱ Enter calculated amount"
+                      activePhaseIndex === 1
+                        ? "₱ Enter computed Basic Pay"
+                        : activePhaseIndex === 2
+                          ? "₱ Enter computed Tardiness Deduction"
+                          : activePhaseIndex === 5 
+                            ? "₱ Enter Monthly Basic Salary" 
+                            : "₱ Enter calculated amount"
                     } 
                     className="tech-input"
                     value={calculatedValue}
@@ -1169,16 +1176,16 @@ export default function MissionLog({
                   <span className="input-info-icon">ⓘ
                     <div className="input-tooltip">
                       {activePhaseIndex === 1
-                        ? 'Multiply Daily Rate × Days Present. Confirm your arithmetic before entering.'
+                        ? 'Multiply Daily Basic Rate × Days Worked. Confirm your arithmetic before submitting.'
                         : activePhaseIndex === 2
-                          ? 'Apply: (Hourly Rate ÷ 60) × Late Minutes. Use a calculator for precision.'
+                          ? 'Apply (Hourly Pay Rate ÷ 60) × Tardiness Minutes.'
                           : activePhaseIndex === 3
-                            ? 'Review the DOLE Overtime poster on the wall and verify your true OT hours.'
+                            ? 'Multiply Hourly Pay Rate × Actual OT Hours × 1.25.'
                             : activePhaseIndex === 4
-                              ? 'Review the DOLE holiday poster on the breakroom corkboard and verify your daily rate.'
+                              ? 'Multiply Daily Basic Rate × Holiday Rate Multiplier.'
                               : activePhaseIndex === 5
-                                ? 'Open the Employee Contract folder. The basic salary is listed in the compensation section.'
-                                : 'Multiply Basic Salary × PhilHealth rate from Step 1.'
+                                ? 'Open Employee Contract folder to verify Monthly Basic Salary.'
+                                : 'Multiply Basic Salary × PhilHealth employee rate.'
                       }
                     </div>
                   </span>
@@ -1186,7 +1193,7 @@ export default function MissionLog({
                 
                 {step3Status !== 'SUCCESS' && (
                   <button className="run-btn" onClick={handleValidateExecution} disabled={loading}>
-                    {loading ? 'VERIFYING...' : activePhaseIndex === 5 ? 'VERIFY BASIC SALARY >' : 'RUN FINAL LEDGER AUDIT >'}
+                    {loading ? 'VERIFYING...' : activePhaseIndex === 1 ? 'SUBMIT BASIC PAY AUDIT >' : activePhaseIndex === 5 ? 'VERIFY BASIC SALARY >' : 'RUN FINAL LEDGER AUDIT >'}
                   </button>
                 )}
               </div>

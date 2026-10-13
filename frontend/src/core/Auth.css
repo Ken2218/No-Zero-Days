@@ -515,3 +515,222 @@
   opacity: 0.5;
   cursor: not-allowed;
 }
+
+/* ========================================================== */
+/* LIGHT MODE: DASHBOARD ROADMAP STYLING                      */
+/* ========================================================== */
+
+body.light-mode .auth-card,
+body.light-mode .dashboard-card {
+  background-color: #ffffff !important;
+  border: 2px solid #cbd5e1 !important;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08) !important;
+}
+
+body.light-mode .terminal-header {
+  background-color: #f8fafc !important;
+  border-bottom: 2px solid #e2e8f0 !important;
+}
+
+body.light-mode .terminal-title {
+  color: #475569 !important;
+}
+
+body.light-mode .title-glow {
+  color: #c2410c !important; /* Rich Dark Orange */
+  text-shadow: none !important;
+}
+
+body.light-mode .subtitle {
+  color: #475569 !important;
+}
+
+body.light-mode .student-info-bar {
+  background-color: #f8fafc !important;
+  border: 1.5px solid #cbd5e1 !important;
+  color: #0f172a !important;
+}
+
+body.light-mode .info-item span {
+  color: #1d4ed8 !important; /* Dark Blue */
+}
+
+body.light-mode .info-item strong {
+  color: #0f172a !important;
+}
+
+body.light-mode .logout-btn {
+  background-color: #ffffff !important;
+  border: 1.5px solid #b91c1c !important;
+  color: #b91c1c !important;
+  font-weight: 700 !important;
+}
+
+body.light-mode .logout-btn:hover {
+  background-color: #b91c1c !important;
+  color: #ffffff !important;
+}
+
+body.light-mode .join-room-btn {
+  background-color: #047857 !important;
+  color: #ffffff !important;
+}
+
+body.light-mode .progress-bar-container {
+  background: #f8fafc !important;
+  border: 1.5px solid #cbd5e1 !important;
+}
+
+body.light-mode .module-card {
+  background-color: #ffffff !important;
+  border: 1.5px solid #cbd5e1 !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04) !important;
+}
+
+body.light-mode .module-card:hover {
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.1) !important;
+}
+
+body.light-mode .module-card.completed {
+  border: 1.5px solid #059669 !important;
+  background-color: #f0fdf4 !important;
+}
+
+body.light-mode .module-card.active {
+  border: 1.5px solid #ea580c !important;
+  background-color: #fffaf5 !important;
+}
+
+body.light-mode .card-title {
+  color: #0f172a !important;
+}
+
+body.light-mode .module-desc {
+  color: #334155 !important;
+}
+
+body.light-mode .start-audit-btn {
+  background-color: #c2410c !important;
+  border-color: #c2410c !important;
+  color: #ffffff !important;
+  font-weight: 700 !important;
+}
+
+body.light-mode .start-audit-btn:hover {
+  background-color: #9a3412 !important;
+}
+
+body.light-mode .re-audit-btn {
+  background-color: #059669 !important;
+  border-color: #059669 !important;
+  color: #ffffff !important;
+}
+
+body.light-mode .re-audit-btn:hover {
+  background-color: #047857 !important;
+}
+
+/* Phase Guide Modal in Light Mode */
+body.light-mode .phase-guide-card {
+  background-color: #ffffff !important;
+  border: 2px solid #cbd5e1 !important;
+  border-top: 4px solid #c2410c !important;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.15) !important;
+}
+
+body.light-mode .phase-guide-card h4 {
+  color: #c2410c !important;
+}
+
+body.light-mode .phase-guide-card p {
+  color: #475569 !important;
+}
+
+body.light-mode .phase-guide-card .data-box {
+  background: #f8fafc !important;
+  border: 1px solid #cbd5e1 !important;
+}
+
+body.light-mode .phase-guide-card .data-box div[style*="#f1f5f9"] {
+  color: #0f172a !important;
+}
+
+body.light-mode .phase-guide-card .data-box div[style*="#cbd5e1"] {
+  color: #334155 !important;
+}
+
+body.light-mode .phase-guide-card .data-box div[style*="#e2e8f0"] {
+  color: #1e293b !important;
+}
+
+body.light-mode .phase-guide-card div[style*="#fef08a"] {
+  color: #9a3412 !important;
+  background-color: #fffaf5 !important;
+  border-color: #fdba74 !important;
+}
+
+body.light-mode .phase-guide-card div[style*="#34d399"] {
+  color: #047857 !important;
+  background-color: #f0fdf4 !important;
+  border-color: #059669 !important;
+}
+
+body.light-mode .phase-guide-card div[style*="#fbbf24"] {
+  color: #9a3412 !important;
+  background-color: #fffaf5 !important;
+  border-color: #fdba74 !important;
+}
+
+/* Phase Audit Report Card in Light Mode */
+body.light-mode .report-card-modal {
+  background-color: #ffffff !important;
+  border: 2px solid #cbd5e1 !important;
+  border-top: 4px solid #047857 !important;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.15) !important;
+}
+
+body.light-mode .report-card-modal h4 {
+  color: #047857 !important;
+}
+
+body.light-mode .report-card-modal p {
+  color: #475569 !important;
+}
+
+body.light-mode .report-card-modal .data-box {
+  background: #f8fafc !important;
+  border: 1px solid #cbd5e1 !important;
+}
+
+body.light-mode .report-card-modal .data-row span {
+  color: #1d4ed8 !important;
+}
+
+body.light-mode .report-card-modal .data-row strong {
+  color: #0f172a !important;
+}
+
+body.light-mode .report-card-modal .highlight-green {
+  color: #047857 !important;
+}
+
+body.light-mode .report-card-modal .escalate-btn {
+  background-color: #f1f5f9 !important;
+  border: 1px solid #cbd5e1 !important;
+  color: #475569 !important;
+}
+
+body.light-mode .report-card-modal .escalate-btn:hover {
+  background-color: #e2e8f0 !important;
+}
+
+body.light-mode .report-card-modal .run-btn {
+  background-color: #047857 !important;
+  color: #ffffff !important;
+}
+
+body.light-mode .report-card-modal .run-btn:hover {
+  background-color: #065f46 !important;
+}
+
+
