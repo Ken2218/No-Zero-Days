@@ -140,6 +140,8 @@ body {
   border: 2px solid #1e293b;
   border-radius: 8px;
   padding: 20px;
+  overflow-y: auto;
+  min-width: 0; /* Prevent flex children from overflowing */
 }
 
 .mission-header {
@@ -799,4 +801,97 @@ body.light-mode table tbody tr td {
   color: #0f172a !important;
 }
 
+/* ========================================================== */
+/* RESPONSIVE LAYOUT — MOBILE BREAKPOINT (≤768px)             */
+/* ========================================================== */
+@media (max-width: 768px) {
+  .app-background {
+    padding: 10px;
+  }
+
+  /* Stack left and right panels vertically on mobile */
+  .app-container {
+    flex-direction: column;
+    height: auto;          /* Remove fixed 90vh — let content breathe */
+    min-height: 100vh;
+    gap: 12px;
+  }
+
+  /* Left panel: show scenario room at natural aspect ratio */
+  .left-panel {
+    flex: none;            /* Stop flex-shrink fighting */
+    width: 100%;
+    min-height: 280px;     /* Enough to show the room image */
+  }
+
+  /* Right panel: full width, no height limit, natural scroll */
+  .right-panel {
+    flex: none;
+    width: 100%;
+    max-height: none;      /* Let content grow freely */
+    overflow-y: visible;   /* Parent scrolls normally */
+    box-sizing: border-box;
+  }
+
+  /* Allow tracker-steps to grow freely instead of scrolling internally */
+  .tracker-steps {
+    overflow-y: visible;
+  }
+
+  /* Shrink room title font so it fits single line on narrow screens */
+  .room-title {
+    font-size: 0.95rem;
+    line-height: 1.3;
+  }
+
+  .room-subtitle {
+    font-size: 0.75rem;
+  }
+
+  /* Panel header: allow title and toggle to wrap if needed */
+  .panel-header-top {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  /* Theme toggle: shrink slightly */
+  .theme-mode-toggle {
+    font-size: 0.75rem;
+    padding: 5px 10px;
+  }
+
+  /* Ensure calculator slide panel doesn't cover content awkwardly */
+  .calc-panel {
+    max-height: 90vh;
+    width: 88vw;
+    left: -90vw;
+  }
+
+  .calc-panel-visible {
+    left: 0;
+  }
+
+  .calc-panel-visible + .calc-toggle-btn {
+    left: 88vw;
+  }
+}
+
+/* Extra small screens (≤480px): tighter padding */
+@media (max-width: 480px) {
+  .app-background {
+    padding: 6px;
+  }
+
+  .right-panel {
+    padding: 12px;
+  }
+
+  .step-card {
+    padding: 10px;
+  }
+
+  .mission-header h3 {
+    font-size: 0.85rem;
+  }
+}
 

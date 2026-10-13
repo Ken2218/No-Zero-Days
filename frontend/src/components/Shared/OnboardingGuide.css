@@ -1,0 +1,519 @@
+/* ============================================================
+   ONBOARDING GUIDE MODAL — No Zero Days! Theme
+   Font: Share Tech Mono / monospace
+   ============================================================ */
+
+/* ── Overlay ── */
+.og-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.82);
+  backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 99999;
+  animation: og-fade-in 0.25s ease;
+  padding: 16px;
+  box-sizing: border-box;
+}
+
+@keyframes og-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+/* ── Modal card ── */
+.og-modal {
+  width: 100%;
+  max-width: 640px;
+  max-height: 92vh;
+  display: flex;
+  flex-direction: column;
+  background: linear-gradient(160deg, #0b1120 0%, #0f172a 100%);
+  border: 2px solid #1e293b;
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow:
+    0 0 0 1px rgba(255,255,255,0.04),
+    0 24px 64px rgba(0, 0, 0, 0.75),
+    inset 0 0 80px rgba(250, 204, 21, 0.02);
+  animation: og-slide-up 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+  font-family: 'Share Tech Mono', monospace;
+}
+
+@keyframes og-slide-up {
+  from { opacity: 0; transform: translateY(24px) scale(0.97); }
+  to   { opacity: 1; transform: translateY(0)   scale(1);    }
+}
+
+/* ── Terminal bar ── */
+.og-terminal-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 16px;
+  background-color: #1e293b;
+  border-bottom: 1px solid #334155;
+  flex-shrink: 0;
+}
+
+.og-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.og-dot--red    { background: #ef4444; }
+.og-dot--yellow { background: #f59e0b; }
+.og-dot--green  { background: #10b981; }
+
+.og-terminal-title {
+  font-size: 0.78rem;
+  color: #64748b;
+  letter-spacing: 1px;
+  margin-left: 8px;
+  flex: 1;
+}
+
+.og-close-btn {
+  background: none;
+  border: 1px solid #334155;
+  color: #64748b;
+  width: 26px;
+  height: 26px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.8rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+  flex-shrink: 0;
+}
+
+.og-close-btn:hover {
+  background: #ef4444;
+  border-color: #ef4444;
+  color: #fff;
+}
+
+/* ── Progress bar ── */
+.og-progress-track {
+  height: 3px;
+  background: #1e293b;
+  flex-shrink: 0;
+}
+
+.og-progress-fill {
+  height: 100%;
+  border-radius: 0 2px 2px 0;
+  transition: width 0.35s cubic-bezier(0.4, 0, 0.2, 1), background-color 0.35s;
+  box-shadow: 0 0 6px currentColor;
+}
+
+/* ── Slide header ── */
+.og-slide-header {
+  padding: 18px 24px 0;
+  flex-shrink: 0;
+  text-align: center;
+}
+
+.og-step-counter {
+  display: inline-block;
+  font-size: 0.7rem;
+  letter-spacing: 2px;
+  color: #475569;
+  margin-bottom: 6px;
+}
+
+.og-slide-icon {
+  display: block;
+  font-size: 2.2rem;
+  margin-bottom: 8px;
+  line-height: 1;
+}
+
+.og-slide-title {
+  font-size: 1.05rem;
+  letter-spacing: 1.5px;
+  margin: 0 0 4px 0;
+  line-height: 1.3;
+}
+
+/* ── Slide body ── */
+.og-slide-body {
+  padding: 16px 24px;
+  overflow-y: auto;
+  flex: 1;
+  transition: opacity 0.18s ease;
+}
+
+.og-slide-body--fade {
+  opacity: 0;
+}
+
+.og-slide-body::-webkit-scrollbar { width: 4px; }
+.og-slide-body::-webkit-scrollbar-track { background: transparent; }
+.og-slide-body::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 2px; }
+
+/* ── Shared text ── */
+.og-intro-text {
+  color: #94a3b8;
+  font-size: 0.88rem;
+  line-height: 1.65;
+  margin: 0 0 14px 0;
+}
+
+.og-intro-text strong {
+  color: #e2e8f0;
+}
+
+/* ── Highlight boxes ── */
+.og-highlight-box {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: 6px;
+  font-size: 0.83rem;
+  line-height: 1.55;
+  margin-bottom: 12px;
+}
+
+.og-highlight-box strong { color: inherit; }
+
+.og-highlight--amber {
+  background: rgba(250, 204, 21, 0.07);
+  border: 1px solid rgba(250, 204, 21, 0.3);
+  color: #fde68a;
+}
+
+.og-highlight--blue {
+  background: rgba(96, 165, 250, 0.07);
+  border: 1px solid rgba(96, 165, 250, 0.3);
+  color: #93c5fd;
+}
+
+.og-highlight--green {
+  background: rgba(16, 185, 129, 0.07);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  color: #6ee7b7;
+}
+
+.og-highlight--purple {
+  background: rgba(167, 139, 250, 0.07);
+  border: 1px solid rgba(167, 139, 250, 0.3);
+  color: #c4b5fd;
+}
+
+.og-highlight--red {
+  background: rgba(239, 68, 68, 0.07);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  color: #fca5a5;
+}
+
+.og-highlight-icon {
+  font-size: 1.2rem;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+/* ── Stat row (slide 1) ── */
+.og-stat-row {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  margin-top: 14px;
+}
+
+.og-stat {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: rgba(30, 41, 59, 0.5);
+  border: 1px solid #334155;
+  border-radius: 6px;
+  padding: 12px 8px;
+  gap: 4px;
+}
+
+.og-stat-num {
+  font-size: 1.5rem;
+  font-weight: bold;
+  color: #facc15;
+  text-shadow: 0 0 10px rgba(250, 204, 21, 0.4);
+}
+
+.og-stat-label {
+  font-size: 0.7rem;
+  color: #64748b;
+  letter-spacing: 1px;
+  text-align: center;
+}
+
+/* ── Numbered step list (slides 2 & 3) ── */
+.og-step-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.og-step-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 0.84rem;
+  color: #cbd5e1;
+  line-height: 1.5;
+}
+
+.og-step-item strong {
+  color: #e2e8f0;
+}
+
+.og-step-badge {
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: bold;
+  font-size: 0.8rem;
+  margin-top: 1px;
+}
+
+/* ── Status badge row (slide 3) ── */
+.og-badge-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.og-status-badge {
+  padding: 3px 10px;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  letter-spacing: 1px;
+  font-weight: bold;
+}
+
+/* ── Door list (slide 4) ── */
+.og-door-list {
+  margin: 8px 0 0 0;
+  padding-left: 18px;
+  font-size: 0.83rem;
+  color: inherit;
+  line-height: 1.8;
+}
+
+/* ── Strike system (slide 5) ── */
+.og-strike-demo {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.og-strike-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.82rem;
+}
+
+.og-strike {
+  flex-shrink: 0;
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-weight: bold;
+  letter-spacing: 0.5px;
+  min-width: 110px;
+  text-align: center;
+}
+
+.og-strike--warn {
+  background: rgba(245, 158, 11, 0.15);
+  border: 1px solid #f59e0b;
+  color: #fbbf24;
+}
+
+.og-strike--danger {
+  background: rgba(239, 68, 68, 0.15);
+  border: 1px solid #ef4444;
+  color: #f87171;
+}
+
+.og-strike--critical {
+  background: rgba(127, 29, 29, 0.4);
+  border: 1px solid #dc2626;
+  color: #fca5a5;
+}
+
+.og-strike-msg {
+  color: #94a3b8;
+  font-size: 0.8rem;
+}
+
+/* ── Tip grid (slide 6) ── */
+.og-tip-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+}
+
+.og-tip-card {
+  background: rgba(30, 41, 59, 0.5);
+  border: 1px solid #1e293b;
+  border-radius: 6px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.8rem;
+  color: #94a3b8;
+  transition: border-color 0.2s;
+}
+
+.og-tip-card:hover {
+  border-color: #334155;
+}
+
+.og-tip-icon {
+  font-size: 1.2rem;
+  margin-bottom: 2px;
+}
+
+.og-tip-card strong {
+  color: #e2e8f0;
+  font-size: 0.82rem;
+}
+
+.og-tip-card p {
+  margin: 0;
+  line-height: 1.5;
+}
+
+/* ── Dot navigation ── */
+.og-dots {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 0 0;
+  flex-shrink: 0;
+}
+
+.og-dot-btn {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #334155;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  transition: all 0.25s ease;
+}
+
+.og-dot-btn--active {
+  width: 22px;
+  border-radius: 4px;
+  box-shadow: 0 0 6px currentColor;
+}
+
+/* ── Footer ── */
+.og-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 14px 24px 18px;
+  border-top: 1px dashed #1e293b;
+  flex-shrink: 0;
+}
+
+.og-skip-link {
+  font-size: 0.7rem;
+  color: #475569;
+  cursor: pointer;
+  letter-spacing: 1px;
+  transition: color 0.2s;
+}
+
+.og-skip-link:hover {
+  color: #94a3b8;
+}
+
+.og-nav-btn {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 0.82rem;
+  font-weight: bold;
+  letter-spacing: 1px;
+  padding: 9px 18px;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border: none;
+}
+
+.og-nav-btn--secondary {
+  background: transparent;
+  border: 1px solid #334155;
+  color: #64748b;
+}
+
+.og-nav-btn--secondary:hover:not(:disabled) {
+  border-color: #475569;
+  color: #94a3b8;
+}
+
+.og-nav-btn--secondary:disabled {
+  opacity: 0.25;
+  cursor: not-allowed;
+}
+
+.og-nav-btn--primary {
+  box-shadow: 0 0 12px rgba(0, 0, 0, 0.3);
+}
+
+.og-nav-btn--primary:hover {
+  filter: brightness(1.1);
+  box-shadow: 0 0 18px rgba(0, 0, 0, 0.4);
+  transform: translateY(-1px);
+}
+
+/* ── Mobile ── */
+@media (max-width: 540px) {
+  .og-slide-header {
+    padding: 14px 16px 0;
+  }
+
+  .og-slide-body {
+    padding: 12px 16px;
+  }
+
+  .og-footer {
+    padding: 12px 16px 14px;
+  }
+
+  .og-tip-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .og-stat-row {
+    gap: 8px;
+  }
+
+  .og-slide-title {
+    font-size: 0.92rem;
+  }
+
+  .og-nav-btn {
+    padding: 8px 12px;
+    font-size: 0.75rem;
+  }
+}

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import API_BASE_URL from '../config';
 import { PHASE_GUIDES } from '../utils/phaseGuides';
+import OnboardingGuide from '../components/Shared/OnboardingGuide';
 import './Auth.css';
 
 interface DashboardProps {
@@ -22,6 +23,18 @@ export default function Dashboard({ onSelectPhase, onStudentJoinRoom, roomCode, 
   const [joinRoomCode, setJoinRoomCode] = useState('');
   const [joinLoading, setJoinLoading] = useState(false);
   const [joinError, setJoinError] = useState('');
+
+  // ── Onboarding guide: auto-open on first login ──
+  const [isGuideOpen, setIsGuideOpen] = useState(false);
+
+  useEffect(() => {
+    const hasSeenTutorial = localStorage.getItem('hasSeenTutorial');
+    if (!hasSeenTutorial) {
+      // Small delay so the dashboard renders before the modal appears
+      const timer = setTimeout(() => setIsGuideOpen(true), 600);
+      return () => clearTimeout(timer);
+    }
+  }, []);
 
   const defaultRoadmap = [
     { phaseId: 1, title: "Phase 1: Basic Gross Pay", description: "Audit morning Lobby Daily Rate and Shifts worked.", status: "ACTIVE", bestScore: 0, module: "M1_MATH", phaseIndex: 1 },
@@ -188,7 +201,7 @@ export default function Dashboard({ onSelectPhase, onStudentJoinRoom, roomCode, 
               <span>ID:</span> <strong>{student.studentNumber}</strong>
             </div>
             
-            <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <div className="dashboard-action-btns" style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '10px' }}>
               {roomCode ? (
                 <div style={{ padding: '5px 15px', backgroundColor: '#1e293b', border: '1px solid #334155', color: '#facc15', fontWeight: 'bold', fontSize: '0.85rem' }}>
                   ROOM: {roomCode}
@@ -196,13 +209,26 @@ export default function Dashboard({ onSelectPhase, onStudentJoinRoom, roomCode, 
               ) : (
                 <button className="join-room-btn" onClick={() => setShowJoinModal(true)} style={{ fontSize: '0.8rem', padding: '5px 15px', backgroundColor: '#10b981', color: '#000', fontWeight: 'bold', border: 'none', cursor: 'pointer' }}>[ JOIN ROOM ]</button>
               )}
+              <button
+                className="logout-btn"
+                onClick={() => setIsGuideOpen(true)}
+                style={{
+                  fontSize: '0.8rem',
+                  padding: '5px 15px',
+                  borderColor: '#60a5fa',
+                  color: '#60a5fa'
+                }}
+                title="View the How-to-Play guide"
+              >
+                [ ? GUIDE ]
+              </button>
               <button className="logout-btn" onClick={handleLogout} style={{ fontSize: '0.8rem', padding: '5px 15px' }}>[ LOGOUT ]</button>
             </div>
           </div>
 
           {/* Progress Bar */}
           <div className="progress-bar-container" style={{ marginBottom: '25px', background: 'rgba(30, 41, 59, 0.4)', padding: '15px 20px', borderRadius: '8px', border: '1px solid #334155' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', fontSize: '0.85rem', letterSpacing: '1px' }}>
+            <div className="dashboard-progress-stats" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', fontSize: '0.85rem', letterSpacing: '1px' }}>
               <span style={{ color: '#60a5fa' }}>OVERALL AUDITING ROADMAP COMPLETION:</span>
               <strong style={{ color: '#10b981' }}>{completionPercent}% COMPLETE ({completedCount} / 7 PHASES)</strong>
             </div>
@@ -585,6 +611,15 @@ export default function Dashboard({ onSelectPhase, onStudentJoinRoom, roomCode, 
           </div>
         </div>
       )}
+
+      {/* ONBOARDING GUIDE MODAL */}
+      <OnboardingGuide
+        isOpen={isGuideOpen}
+        onClose={() => {
+          localStorage.setItem('hasSeenTutorial', 'true');
+          setIsGuideOpen(false);
+        }}
+      />
     </div>
   );
 }
