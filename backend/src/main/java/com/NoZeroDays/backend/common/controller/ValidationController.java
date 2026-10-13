@@ -184,8 +184,10 @@ public class ValidationController {
             
             int completionPercentage = completed ? 100 : calculateCompletionPercentage(student, module, phaseIndex, sessionStartTime);
 
-            // Calculate best attempt score
+            // Calculate best attempt score and attempts
             int bestScore = 0;
+            int attemptsCount = 0;
+            int failedAttempts = 0;
             if (completed) {
                 List<AttemptLog> attempts = (sessionStartTime != null)
                     ? attemptLogRepository.findAttemptsSince(student, module, phaseIndex, sessionStartTime)
@@ -196,10 +198,12 @@ public class ValidationController {
                         failures++;
                     }
                 }
+                attemptsCount = Math.max(attempts.size(), 1);
+                failedAttempts = failures;
                 bestScore = Math.max(100 - (failures * 10), 50);
             }
 
-            list.add(new PhaseProgress(phaseId, titles[i], descriptions[i], status, bestScore, completionPercentage, module, phaseIndex));
+            list.add(new PhaseProgress(phaseId, titles[i], descriptions[i], status, bestScore, completionPercentage, module, phaseIndex, attemptsCount, failedAttempts));
             previousCompleted = completed;
         }
 
@@ -267,8 +271,14 @@ public class ValidationController {
         private int completionPercentage;
         private String module;
         private int phaseIndex;
+        private int attemptsCount;
+        private int failedAttempts;
 
         public PhaseProgress(int phaseId, String title, String description, String status, int bestScore, int completionPercentage, String module, int phaseIndex) {
+            this(phaseId, title, description, status, bestScore, completionPercentage, module, phaseIndex, 0, 0);
+        }
+
+        public PhaseProgress(int phaseId, String title, String description, String status, int bestScore, int completionPercentage, String module, int phaseIndex, int attemptsCount, int failedAttempts) {
             this.phaseId = phaseId;
             this.title = title;
             this.description = description;
@@ -277,6 +287,8 @@ public class ValidationController {
             this.completionPercentage = completionPercentage;
             this.module = module;
             this.phaseIndex = phaseIndex;
+            this.attemptsCount = attemptsCount;
+            this.failedAttempts = failedAttempts;
         }
 
         public int getPhaseId() { return phaseId; }
@@ -287,5 +299,7 @@ public class ValidationController {
         public int getCompletionPercentage() { return completionPercentage; }
         public String getModule() { return module; }
         public int getPhaseIndex() { return phaseIndex; }
+        public int getAttemptsCount() { return attemptsCount; }
+        public int getFailedAttempts() { return failedAttempts; }
     }
 }
