@@ -124,7 +124,28 @@ function App() {
   const [rerollToast, setRerollToast] = useState(null); // null | 'MAX_STRIKES' | 'RED_HERRING'
 
   const [loading, setLoading] = useState(false);
-  const [feedback, setFeedback] = useState('Scenario loaded. Extract the basic variables to begin.');
+  const [feedback, setFeedback] = useState('Scenario loaded. Extract the variables to begin.');
+
+  // Theme state: dark (default) | light
+  const [theme, setTheme] = useState<'dark' | 'light'>(() => {
+    const saved = localStorage.getItem('no_zero_days_theme');
+    return saved === 'light' ? 'light' : 'dark';
+  });
+
+  useEffect(() => {
+    localStorage.setItem('no_zero_days_theme', theme);
+    if (theme === 'light') {
+      document.body.classList.add('light-mode');
+      document.documentElement.classList.add('light-mode');
+    } else {
+      document.body.classList.remove('light-mode');
+      document.documentElement.classList.remove('light-mode');
+    }
+  }, [theme]);
+
+  const toggleTheme = () => {
+    setTheme(prev => (prev === 'dark' ? 'light' : 'dark'));
+  };
 
   // Load profile if present in localStorage
   useEffect(() => {
@@ -1317,6 +1338,8 @@ function App() {
   if (currentView === 'DASHBOARD') {
     return <Dashboard 
       roomCode={roomCode}
+      theme={theme}
+      toggleTheme={toggleTheme}
       onSelectPhase={(phase) => {
         setActivePhaseIndex(phase);
         handleRerollScenario(true, phase);
@@ -1359,44 +1382,66 @@ function App() {
   }
 
   return (
-    <div className="app-background">
+    <div className={`app-background ${theme === 'light' ? 'light-mode' : ''}`}>
       <div className="app-container">
         
         {/* LEFT PANEL: The Room Grid */}
         <div className="left-panel">
           <div className="panel-header">
-            <h2 className="room-title">
-              {activePhaseIndex === 1 
-                ? 'ROOM 1: THE CORE LOBBY [PHASE 1]' 
-                : activePhaseIndex === 2 
-                  ? 'ROOM 2: SECURITY & BIOMETRICS [PHASE 2]' 
-                  : activePhaseIndex === 3
-                    ? 'ROOM 3: THE FACTORY FLOOR [PHASE 3]'
-                    : activePhaseIndex === 4
-                      ? 'ROOM 4: THE FACTORY BREAKROOM [PHASE 4]'
-                      : activePhaseIndex === 5
-                        ? 'ROOM 5: THE PC LAB / BUREAUCRACY [PHASE 5]'
-                        : activePhaseIndex === 6
-                          ? 'ROOM 6: THE PC LAB / BUREAUCRACY [PHASE 6]'
-                          : 'ROOM 7: THE EXECUTIVE BOARDROOM [PHASE 7]'
-              }
-            </h2>
-            <p className="room-subtitle">
-              {activePhaseIndex === 1 
-                ? `${scenario.employeeName} Payroll - Gross Basic Pay Calculations` 
-                : activePhaseIndex === 2 
-                  ? `${scenario.employeeName} Payroll - Tardiness & Log Audit` 
-                  : activePhaseIndex === 3
-                    ? `${scenario.employeeName} Payroll - Overtime Premiums Audit`
-                    : activePhaseIndex === 4
-                      ? `${scenario.employeeName} Payroll - Regular Holiday Pay Audit`
-                      : activePhaseIndex === 5
-                        ? `${scenario.employeeName} Payroll - SSS Deductions Audit`
-                        : activePhaseIndex === 6
-                          ? `${scenario.employeeName} Payroll - PhilHealth Premiums Audit`
-                          : `${scenario.employeeName} Payroll - Final Net Payroll Audit`
-              }
-            </p>
+            <div className="panel-header-top">
+              <div>
+                <h2 className="room-title">
+                  {activePhaseIndex === 1 
+                    ? 'ROOM 1: THE CORE LOBBY [PHASE 1]' 
+                    : activePhaseIndex === 2 
+                      ? 'ROOM 2: SECURITY & BIOMETRICS [PHASE 2]' 
+                      : activePhaseIndex === 3
+                        ? 'ROOM 3: THE FACTORY FLOOR [PHASE 3]'
+                        : activePhaseIndex === 4
+                          ? 'ROOM 4: THE FACTORY BREAKROOM [PHASE 4]'
+                          : activePhaseIndex === 5
+                            ? 'ROOM 5: THE PC LAB / BUREAUCRACY [PHASE 5]'
+                            : activePhaseIndex === 6
+                              ? 'ROOM 6: THE PC LAB / BUREAUCRACY [PHASE 6]'
+                              : 'ROOM 7: THE EXECUTIVE BOARDROOM [PHASE 7]'
+                  }
+                </h2>
+                <p className="room-subtitle">
+                  {activePhaseIndex === 1 
+                    ? `${scenario.employeeName} Payroll - Gross Basic Pay Calculations` 
+                    : activePhaseIndex === 2 
+                      ? `${scenario.employeeName} Payroll - Tardiness & Log Audit` 
+                      : activePhaseIndex === 3
+                        ? `${scenario.employeeName} Payroll - Overtime Premiums Audit`
+                        : activePhaseIndex === 4
+                          ? `${scenario.employeeName} Payroll - Regular Holiday Pay Audit`
+                          : activePhaseIndex === 5
+                            ? `${scenario.employeeName} Payroll - SSS Deductions Audit`
+                            : activePhaseIndex === 6
+                              ? `${scenario.employeeName} Payroll - PhilHealth Premiums Audit`
+                              : `${scenario.employeeName} Payroll - Final Net Payroll Audit`
+                  }
+                </p>
+              </div>
+
+              {/* Theme Toggle Button: shows 'Light Mode' with toggle when dark; 'Dark Mode' with toggle when light */}
+              <div 
+                id="theme-mode-toggle"
+                className="theme-mode-toggle"
+                onClick={toggleTheme}
+                title={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') toggleTheme(); }}
+              >
+                <span className="theme-toggle-label">
+                  {theme === 'dark' ? '☀️ Light Mode' : '🌙 Dark Mode'}
+                </span>
+                <div className={`theme-toggle-switch ${theme === 'light' ? 'toggle-active' : ''}`}>
+                  <div className="theme-toggle-slider" />
+                </div>
+              </div>
+            </div>
           </div>
           
           <div className="room-content">

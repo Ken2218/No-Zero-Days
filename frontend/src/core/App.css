@@ -1,17 +1,77 @@
-/* GLOBAL THEME */
+/* GLOBAL THEME & VARIABLES */
 @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap');
+
+:root {
+  --bg-body: #0b1120;
+  --bg-app: #0b1120;
+  --bg-panel: #0f172a;
+  --bg-panel-header: #1e293b;
+  --border-panel: #1e293b;
+  --border-divider: #334155;
+  --text-main: #e2e8f0;
+  --text-muted: #94a3b8;
+  --text-dim: #64748b;
+  --color-title: #facc15;
+  --color-accent: #60a5fa;
+  --color-success: #10b981;
+  --color-amber: #f59e0b;
+  --color-danger: #ef4444;
+  --card-bg: #0f172a;
+  --card-border: #334155;
+  --card-active-bg: rgba(250, 204, 21, 0.05);
+  --card-active-border: #facc15;
+  --card-locked-bg: #1e293b;
+  --input-bg: #0b1120;
+  --input-border: #334155;
+  --input-text: #ffffff;
+  --btn-run-bg: #334155;
+  --btn-run-hover: #475569;
+  --terminal-bg: #070a13;
+}
+
+body.light-mode,
+.app-background.light-mode {
+  --bg-body: #f1f5f9;
+  --bg-app: #f1f5f9;
+  --bg-panel: #ffffff;
+  --bg-panel-header: #f8fafc;
+  --border-panel: #cbd5e1;
+  --border-divider: #e2e8f0;
+  --text-main: #0f172a;
+  --text-muted: #475569;
+  --text-dim: #64748b;
+  --color-title: #b45309;
+  --color-accent: #2563eb;
+  --color-success: #059669;
+  --color-amber: #d97706;
+  --color-danger: #dc2626;
+  --card-bg: #f8fafc;
+  --card-border: #cbd5e1;
+  --card-active-bg: rgba(245, 158, 11, 0.08);
+  --card-active-border: #d97706;
+  --card-locked-bg: #f1f5f9;
+  --input-bg: #ffffff;
+  --input-border: #cbd5e1;
+  --input-text: #0f172a;
+  --btn-run-bg: #2563eb;
+  --btn-run-hover: #1d4ed8;
+  --terminal-bg: #f8fafc;
+}
 
 body {
   margin: 0;
-  background-color: #0b1120; /* Dark Navy Background */
-  color: #94a3b8;
+  background-color: var(--bg-body); /* Adaptive Background */
+  color: var(--text-muted);
   font-family: 'Share Tech Mono', monospace; /* Tech Font */
+  transition: background-color 0.25s ease, color 0.25s ease;
 }
 
 .app-background {
   min-height: 100vh;
   padding: 20px;
   box-sizing: border-box;
+  background-color: var(--bg-app);
+  transition: background-color 0.25s ease;
 }
 
 /* 70/30 SPLIT LAYOUT */
@@ -241,5 +301,502 @@ body {
   justify-content: center;
 }
 
-/* .input-tooltip styles are defined exclusively in Popups.css — do NOT duplicate here */
+/* ========================================================== */
+/* PANEL HEADER TOP ROW & THEME TOGGLE SWITCH                */
+/* ========================================================== */
+.panel-header-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 15px;
+}
+
+.theme-mode-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 14px;
+  border-radius: 20px;
+  cursor: pointer;
+  user-select: none;
+  transition: all 0.25s ease;
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 0.85rem;
+  letter-spacing: 0.5px;
+  background-color: rgba(30, 41, 59, 0.85);
+  border: 1px solid #334155;
+  color: #f1f5f9;
+  flex-shrink: 0;
+}
+
+.theme-mode-toggle:hover {
+  border-color: #60a5fa;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+}
+
+.theme-toggle-label {
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.theme-toggle-switch {
+  width: 42px;
+  height: 22px;
+  background-color: #0b1120;
+  border: 1px solid #475569;
+  border-radius: 12px;
+  position: relative;
+  transition: background-color 0.25s ease, border-color 0.25s ease;
+  flex-shrink: 0;
+}
+
+.theme-toggle-switch.toggle-active {
+  background-color: #f59e0b;
+  border-color: #d97706;
+}
+
+.theme-toggle-slider {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background-color: #e2e8f0;
+  position: absolute;
+  top: 2px;
+  left: 3px;
+  transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1), background-color 0.25s ease;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+.theme-toggle-switch.toggle-active .theme-toggle-slider {
+  transform: translateX(19px);
+  background-color: #ffffff;
+}
+
+/* ========================================================== */
+/* LIGHT MODE THEME OVERRIDES                                 */
+/* ========================================================== */
+/* ========================================================== */
+/* LIGHT MODE: ENFORCE DARK, HIGH-CONTRAST TEXT EVERYWHERE    */
+/* ========================================================== */
+body.light-mode,
+.app-background.light-mode {
+  --bg-body: #f1f5f9;
+  --bg-app: #f1f5f9;
+  --bg-panel: #ffffff;
+  --bg-panel-header: #f8fafc;
+  --border-panel: #cbd5e1;
+  --border-divider: #e2e8f0;
+  --text-main: #0f172a;
+  --text-muted: #1e293b;
+  --text-dim: #334155;
+  --color-title: #0f172a;
+  --color-accent: #0f172a;
+  --color-success: #065f46;
+  --color-amber: #92400e;
+  --color-danger: #991b1b;
+  --card-bg: #ffffff;
+  --card-border: #94a3b8;
+  --card-active-bg: #f8fafc;
+  --card-active-border: #0f172a;
+  --card-locked-bg: #f1f5f9;
+  --input-bg: #ffffff;
+  --input-border: #64748b;
+  --input-text: #0f172a;
+  --btn-run-bg: #0f172a;
+  --btn-run-hover: #1e293b;
+  --terminal-bg: #f8fafc;
+}
+
+/* Left panel and right panel */
+body.light-mode .left-panel,
+.app-background.light-mode .left-panel {
+  background-color: #ffffff;
+  border: 2px solid #cbd5e1;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.06);
+}
+
+body.light-mode .panel-header,
+.app-background.light-mode .panel-header {
+  background-color: #f8fafc;
+  border-bottom: 2px solid #e2e8f0;
+}
+
+/* Force rich dark colored text in Light Mode */
+body.light-mode .room-title,
+.app-background.light-mode .room-title {
+  color: #c2410c !important; /* Rich Dark Orange */
+  font-weight: 700 !important;
+}
+
+body.light-mode .mission-header h3,
+.app-background.light-mode .mission-header h3 {
+  color: #1d4ed8 !important; /* Rich Dark Royal Blue */
+  font-weight: 700 !important;
+}
+
+body.light-mode .step-title h4,
+.app-background.light-mode .step-title h4 {
+  color: #c2410c !important; /* Rich Dark Orange */
+  font-weight: 700 !important;
+}
+
+body.light-mode .room-subtitle,
+.app-background.light-mode .room-subtitle {
+  color: #334155 !important;
+  font-weight: 600 !important;
+}
+
+body.light-mode .panel-footer,
+.app-background.light-mode .panel-footer {
+  background-color: #f8fafc !important;
+  border-top: 2px solid #cbd5e1 !important;
+  color: #0f172a !important;
+  font-weight: 600 !important;
+}
+
+body.light-mode .panel-footer .intel-icon,
+.app-background.light-mode .panel-footer .intel-icon {
+  color: #0f172a !important;
+}
+
+body.light-mode .right-panel,
+.app-background.light-mode .right-panel {
+  background-color: #ffffff !important;
+  border: 2px solid #cbd5e1 !important;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.06) !important;
+}
+
+body.light-mode .mission-header,
+.app-background.light-mode .mission-header {
+  border-bottom: 2px solid #e2e8f0 !important;
+}
+
+body.light-mode .timer,
+.app-background.light-mode .timer {
+  color: #c2410c !important; /* Dark Orange */
+  font-weight: 700 !important;
+}
+
+body.light-mode .mission-header .timer[style*="#10b981"],
+body.light-mode .mission-header .timer[style*="rgb(16, 185, 129)"] {
+  color: #047857 !important; /* Dark Green */
+}
+
+/* Step cards: crisp dark borders and clear contrast */
+body.light-mode .step-card,
+.app-background.light-mode .step-card {
+  background-color: #ffffff !important;
+  border: 1.5px solid #cbd5e1 !important;
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.03) !important;
+}
+
+body.light-mode .active-step,
+.app-background.light-mode .active-step {
+  border: 2px solid #ea580c !important; /* Dark Orange Border */
+  background-color: #fffaf5 !important;
+  box-shadow: 0 4px 16px rgba(234, 88, 12, 0.12) !important;
+}
+
+body.light-mode .locked-step,
+.app-background.light-mode .locked-step {
+  background-color: #f8fafc !important;
+  border: 1px dashed #cbd5e1 !important;
+  opacity: 0.8 !important;
+}
+
+body.light-mode .locked-step .step-title h4,
+.app-background.light-mode .locked-step .step-title h4 {
+  color: #9a3412 !important; /* Muted Dark Orange */
+  opacity: 0.8 !important;
+}
+
+/* Badges: Dark Orange for active, Slate for locked, Dark Green for success */
+body.light-mode .badge,
+.app-background.light-mode .badge,
+body.light-mode .active-step .badge,
+.app-background.light-mode .active-step .badge {
+  background-color: #c2410c !important; /* Dark Orange Badge */
+  color: #ffffff !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.5px;
+}
+
+body.light-mode .locked-step .badge,
+.app-background.light-mode .locked-step .badge {
+  background-color: #64748b !important;
+  color: #ffffff !important;
+}
+
+body.light-mode .success-step,
+.app-background.light-mode .success-step {
+  border: 2px solid #059669 !important;
+  background-color: #f0fdf4 !important;
+}
+
+body.light-mode .success-step .step-title h4,
+.app-background.light-mode .success-step .step-title h4 {
+  color: #047857 !important; /* Dark Green */
+}
+
+body.light-mode .success-step .badge,
+.app-background.light-mode .success-step .badge {
+  background-color: #047857 !important;
+  color: #ffffff !important;
+}
+
+/* Other Phase Specific Dark Colors (Purple, Blue, Gold, Red) */
+body.light-mode .step-title h4[style*="#c084fc"],
+body.light-mode .step-title h4[style*="rgb(192, 132, 252)"],
+body.light-mode .step-title h4[style*="#a78bfa"],
+body.light-mode .step-title h4[style*="rgb(167, 139, 250)"] {
+  color: #7e22ce !important; /* Dark Purple */
+}
+
+body.light-mode .step-title h4[style*="#60a5fa"],
+body.light-mode .step-title h4[style*="rgb(96, 165, 250)"] {
+  color: #1d4ed8 !important; /* Dark Blue */
+}
+
+body.light-mode .step-title h4[style*="#facc15"],
+body.light-mode .step-title h4[style*="rgb(250, 204, 21)"],
+body.light-mode .step-title h4[style*="#fbbf24"],
+body.light-mode .step-title h4[style*="rgb(251, 191, 36)"] {
+  color: #b45309 !important; /* Dark Gold / Amber */
+}
+
+body.light-mode .step-title h4[style*="#f87171"],
+body.light-mode .step-title h4[style*="rgb(248, 113, 113)"],
+body.light-mode .step-title h4[style*="#ef4444"],
+body.light-mode .step-title h4[style*="rgb(239, 68, 68)"] {
+  color: #b91c1c !important; /* Dark Red */
+}
+
+body.light-mode .mission-header h3[style*="#ef4444"],
+body.light-mode .mission-header h3[style*="rgb(239, 68, 68)"] {
+  color: #b91c1c !important; /* Dark Red Tribunal Header */
+}
+
+/* All inputs and selects: dark text and sharp dark borders */
+body.light-mode .tech-input,
+.app-background.light-mode .tech-input,
+body.light-mode select.tech-input,
+.app-background.light-mode select.tech-input {
+  background-color: #ffffff !important;
+  border: 1.5px solid #64748b !important;
+  color: #0f172a !important;
+  font-weight: 600 !important;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.04) !important;
+}
+
+body.light-mode .tech-input::placeholder,
+.app-background.light-mode .tech-input::placeholder {
+  color: #64748b !important;
+  opacity: 1 !important;
+}
+
+body.light-mode .tech-input:focus,
+.app-background.light-mode .tech-input:focus,
+body.light-mode select.tech-input:focus,
+.app-background.light-mode select.tech-input:focus {
+  border-color: #0f172a !important;
+  outline: none !important;
+}
+
+/* All labels and text in inputs container */
+body.light-mode .inputs-container label,
+.app-background.light-mode .inputs-container label,
+body.light-mode label,
+.app-background.light-mode label {
+  color: #0f172a !important;
+  font-weight: 700 !important;
+}
+
+body.light-mode .inputs-container p,
+.app-background.light-mode .inputs-container p {
+  color: #334155 !important;
+  font-weight: 500 !important;
+}
+
+/* Primary buttons: solid deep navy with white text */
+body.light-mode .run-btn,
+.app-background.light-mode .run-btn {
+  background-color: #0f172a !important;
+  border: 1px solid #0f172a !important;
+  color: #ffffff !important;
+  font-weight: 700 !important;
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.15);
+}
+
+body.light-mode .run-btn:hover,
+.app-background.light-mode .run-btn:hover {
+  background-color: #1e293b !important;
+  border-color: #1e293b !important;
+}
+
+/* Action buttons at bottom: Dark Blue and Dark Red for contrast and color identity */
+body.light-mode .right-panel > div button.run-btn,
+.app-background.light-mode .right-panel > div button.run-btn {
+  background-color: #ffffff !important;
+  border: 1.5px solid #1d4ed8 !important;
+  color: #1d4ed8 !important; /* Dark Blue */
+  font-weight: 700 !important;
+}
+
+body.light-mode .right-panel > div button.run-btn:hover,
+.app-background.light-mode .right-panel > div button.run-btn:hover {
+  background-color: #1d4ed8 !important;
+  color: #ffffff !important;
+}
+
+body.light-mode .escalate-btn,
+.app-background.light-mode .escalate-btn {
+  background-color: #ffffff !important;
+  border: 1.5px solid #b91c1c !important;
+  color: #b91c1c !important; /* Dark Red */
+  font-weight: 700 !important;
+}
+
+body.light-mode .escalate-btn:hover,
+.app-background.light-mode .escalate-btn:hover {
+  background-color: #b91c1c !important;
+  color: #ffffff !important;
+}
+
+/* Strike warning banner */
+body.light-mode .strike-warning-banner,
+.app-background.light-mode .strike-warning-banner {
+  background-color: #fef2f2 !important;
+  border: 1.5px solid #991b1b !important;
+  color: #7f1d1d !important;
+  font-weight: 700 !important;
+}
+
+/* Tooltip */
+body.light-mode .input-tooltip {
+  background-color: #0f172a !important;
+  border: 1px solid #334155 !important;
+  color: #f8fafc !important;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3) !important;
+}
+
+body.light-mode .input-tooltip::after {
+  border-top-color: #0f172a !important;
+}
+
+/* Info Icon: Dark Cyan/Blue */
+body.light-mode .input-info-icon,
+.app-background.light-mode .input-info-icon {
+  color: #0284c7 !important;
+  font-weight: bold !important;
+}
+
+/* Link */
+body.light-mode .tech-link,
+.app-background.light-mode .tech-link {
+  color: #1e3a8a !important;
+  font-weight: 700 !important;
+}
+
+/* Feedback Terminal */
+body.light-mode .feedback-terminal,
+.app-background.light-mode .feedback-terminal {
+  background: #f8fafc !important;
+  border: 1.5px solid #94a3b8 !important;
+  color: #0f172a !important;
+  font-weight: 600 !important;
+}
+
+body.light-mode .feedback-terminal span,
+.app-background.light-mode .feedback-terminal span {
+  color: #047857 !important;
+  font-weight: 700 !important;
+}
+
+/* Theme Toggle Button */
+body.light-mode .theme-mode-toggle,
+.app-background.light-mode .theme-mode-toggle {
+  background-color: #ffffff !important;
+  border: 1.5px solid #64748b !important;
+  color: #0f172a !important;
+  font-weight: 700 !important;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
+}
+
+body.light-mode .theme-mode-toggle:hover,
+.app-background.light-mode .theme-mode-toggle:hover {
+  border-color: #0f172a !important;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.15);
+}
+
+body.light-mode .theme-toggle-switch,
+.app-background.light-mode .theme-toggle-switch {
+  background-color: #0f172a !important;
+  border-color: #0f172a !important;
+}
+
+/* Light mode popups */
+body.light-mode .popup-card {
+  background-color: #ffffff !important;
+  border: 2px solid #0f172a !important;
+  border-top: 4px solid #0f172a !important;
+  color: #0f172a !important;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25) !important;
+}
+
+body.light-mode .popup-header {
+  border-bottom: 2px solid #e2e8f0 !important;
+}
+
+body.light-mode .popup-header h4 {
+  color: #0f172a !important;
+  font-weight: 700 !important;
+}
+
+body.light-mode .popup-header p {
+  color: #334155 !important;
+  font-weight: 600 !important;
+}
+
+body.light-mode .data-box {
+  background: #f8fafc !important;
+  border: 1.5px solid #cbd5e1 !important;
+  color: #0f172a !important;
+}
+
+body.light-mode .authentic-data {
+  background: #f1f5f9 !important;
+  border-color: #94a3b8 !important;
+}
+
+body.light-mode .data-row span {
+  color: #334155 !important;
+  font-weight: 600 !important;
+}
+
+body.light-mode .data-row strong {
+  color: #0f172a !important;
+  font-weight: 700 !important;
+}
+
+body.light-mode .calendar-ui-box {
+  background: #f8fafc !important;
+  color: #0f172a !important;
+}
+
+body.light-mode .calendar-ui-box p {
+  color: #334155 !important;
+}
+
+body.light-mode table thead tr th {
+  color: #0f172a !important;
+  font-weight: 700 !important;
+}
+
+body.light-mode table tbody tr td {
+  color: #0f172a !important;
+}
+
 
