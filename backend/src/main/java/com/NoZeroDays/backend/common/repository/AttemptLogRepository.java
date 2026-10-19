@@ -47,5 +47,9 @@ public interface AttemptLogRepository extends JpaRepository<AttemptLog, Long> {
         @Param("student") StudentProfile student,
         @Param("startTime") java.time.LocalDateTime startTime
     );
+
+    List<AttemptLog> findByStudentProfileOrderByAttemptTimeAsc(StudentProfile studentProfile);
+
+    void deleteByStudentProfile(StudentProfile studentProfile);
 }
 

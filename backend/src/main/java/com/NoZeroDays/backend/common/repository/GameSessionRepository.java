@@ -10,4 +10,6 @@ import java.util.Optional;
 @Repository
 public interface GameSessionRepository extends JpaRepository<GameSession, Long> {
     List<GameSession> findByStudentProfileAndStatus(StudentProfile studentProfile, String status);
+    List<GameSession> findByStudentProfile(StudentProfile studentProfile);
+    void deleteByStudentProfile(StudentProfile studentProfile);
 }

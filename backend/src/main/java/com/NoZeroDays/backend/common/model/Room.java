@@ -2,20 +2,16 @@ package com.NoZeroDays.backend.common.model;
 
 import jakarta.persistence.*;
 import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.List;
 
 @Entity
-@Table(name = "rooms", indexes = {
-    @Index(name = "idx_room_code", columnList = "roomCode", unique = true)
-})
+@Table(name = "rooms")
 public class Room {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(nullable = false, unique = true, length = 10)
+    @Column(nullable = false, unique = true, length = 32)
     private String roomCode;
 
     @Column(nullable = false)
@@ -23,27 +19,22 @@ public class Room {
 
     private String section;
 
-    // WAITING = room created, students can join; ACTIVE = session started; CLOSED = session ended
     @Column(nullable = false)
-    private String status = "WAITING";
+    private String status = "WAITING"; // WAITING, ACTIVE, COMPLETED
 
     private LocalDateTime createdAt = LocalDateTime.now();
-
     private LocalDateTime startedAt;
 
-    @OneToMany(mappedBy = "room", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
-    private List<RoomParticipant> participants = new ArrayList<>();
-
-    // Default Constructor
     public Room() {}
 
     public Room(String roomCode, String teacherName, String section) {
         this.roomCode = roomCode;
         this.teacherName = teacherName;
         this.section = section;
+        this.status = "WAITING";
+        this.createdAt = LocalDateTime.now();
     }
 
-    // Getters and Setters
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
 
@@ -64,7 +55,4 @@ public class Room {
 
     public LocalDateTime getStartedAt() { return startedAt; }
     public void setStartedAt(LocalDateTime startedAt) { this.startedAt = startedAt; }
-
-    public List<RoomParticipant> getParticipants() { return participants; }
-    public void setParticipants(List<RoomParticipant> participants) { this.participants = participants; }
 }

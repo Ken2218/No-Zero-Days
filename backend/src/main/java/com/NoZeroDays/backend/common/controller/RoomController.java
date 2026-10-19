@@ -1,32 +1,38 @@
 package com.NoZeroDays.backend.common.controller;
 
+import com.NoZeroDays.backend.common.model.AttemptLog;
+import com.NoZeroDays.backend.common.model.GameSession;
 import com.NoZeroDays.backend.common.model.Room;
 import com.NoZeroDays.backend.common.model.RoomParticipant;
 import com.NoZeroDays.backend.common.model.StudentProfile;
-import com.NoZeroDays.backend.common.model.GameSession;
-import com.NoZeroDays.backend.common.repository.RoomRepository;
-import com.NoZeroDays.backend.common.repository.RoomParticipantRepository;
-import com.NoZeroDays.backend.common.repository.StudentProfileRepository;
-import com.NoZeroDays.backend.common.repository.GameSessionRepository;
 import com.NoZeroDays.backend.common.repository.AttemptLogRepository;
+import com.NoZeroDays.backend.common.repository.GameSessionRepository;
+import com.NoZeroDays.backend.common.repository.RoomParticipantRepository;
+import com.NoZeroDays.backend.common.repository.RoomRepository;
+import com.NoZeroDays.backend.common.repository.StudentProfileRepository;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
+import java.security.SecureRandom;
+import java.time.Duration;
 import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.*;
-import java.util.concurrent.ThreadLocalRandom;
+import java.util.stream.Collectors;
 
 @RestController
-@RequestMapping("/api/rooms")
+@RequestMapping("/api")
+@CrossOrigin(origins = "*")
 public class RoomController {
 
     @Autowired
     private RoomRepository roomRepository;
 
     @Autowired
-    private RoomParticipantRepository participantRepository;
+    private RoomParticipantRepository roomParticipantRepository;
 
     @Autowired
     private StudentProfileRepository studentRepository;
@@ -37,55 +43,165 @@ public class RoomController {
     @Autowired
     private AttemptLogRepository attemptLogRepository;
 
-    /**
-     * POST /api/rooms/create
-     * Teacher creates a new room. Optionally accepts a custom room code.
-     * Request body: { "teacherName": "...", "section": "...", "roomCode": "(optional)" }
-     */
-    @PostMapping("/create")
-    public ResponseEntity<?> createRoom(@RequestBody Map<String, String> body) {
-        String teacherName = body.get("teacherName");
-        String section = body.get("section");
-        String customCode = body.get("roomCode");
+    private static final String CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+    private static final SecureRandom RANDOM = new SecureRandom();
 
-        if (teacherName == null || teacherName.trim().isEmpty()) {
-            return ResponseEntity.badRequest().body(Map.of("error", "Teacher name is required."));
-        }
+    private static final String[] MODULES = {
+        "M1_MATH", "M1_MATH",
+        "M2_MULTIPLIERS", "M2_MULTIPLIERS",
+        "M3_BUREAUCRACY", "M3_BUREAUCRACY",
+        "M4_TRIBUNAL"
+    };
+    private static final int[] PHASES = {1, 2, 1, 2, 1, 2, 1};
+    private static final String[] PHASE_TITLES = {
+        "Phase 1: Basic Gross Pay",
+        "Phase 2: Tardiness Deductions",
+        "Phase 3: Overtime Premiums",
+        "Phase 4: Regular Holiday Pay",
+        "Phase 5: SSS Deductions",
+        "Phase 6: PhilHealth Premiums",
+        "Phase 7: Net Payroll Boardroom"
+    };
+
+    // -------------------------------------------------------------------------
+    // 1. CREATE ROOM
+    // -------------------------------------------------------------------------
+    @PostMapping("/rooms/create")
+    public ResponseEntity<?> createRoom(@RequestBody Map<String, String> body) {
+        String teacherName = body.getOrDefault("teacherName", "Instructor");
+        String section = body.getOrDefault("section", "");
+        String customCode = body.get("roomCode");
 
         String roomCode;
         if (customCode != null && !customCode.trim().isEmpty()) {
-            // Teacher provided a custom room code — validate and use it
             roomCode = customCode.trim().toUpperCase();
-            if (roomCode.length() < 3 || roomCode.length() > 10) {
-                return ResponseEntity.badRequest().body(Map.of("error", "Room code must be 3-10 characters."));
-            }
-            if (roomRepository.existsByRoomCode(roomCode)) {
-                return ResponseEntity.badRequest().body(Map.of("error", "Room code '" + roomCode + "' is already in use. Please choose a different code."));
-            }
         } else {
-            // Auto-generate a unique room code
             roomCode = generateUniqueRoomCode();
         }
 
-        Room room = new Room(roomCode, teacherName.trim(), section != null ? section.trim() : "");
-        roomRepository.save(room);
+        // Check if room code already exists
+        Optional<Room> existing = roomRepository.findByRoomCodeIgnoreCase(roomCode);
+        Room room;
+        if (existing.isPresent()) {
+            room = existing.get();
+            room.setTeacherName(teacherName);
+            room.setSection(section);
+            room.setStatus("WAITING");
+            room.setCreatedAt(LocalDateTime.now());
+            room.setStartedAt(null);
+        } else {
+            room = new Room(roomCode, teacherName, section);
+        }
+        room = roomRepository.save(room);
 
-        Map<String, Object> response = new LinkedHashMap<>();
-        response.put("roomCode", roomCode);
-        response.put("teacherName", room.getTeacherName());
-        response.put("section", room.getSection());
-        response.put("status", room.getStatus());
-        response.put("createdAt", room.getCreatedAt().toString());
+        Map<String, Object> resp = new HashMap<>();
+        resp.put("roomCode", room.getRoomCode());
+        resp.put("teacherName", room.getTeacherName());
+        resp.put("section", room.getSection());
+        resp.put("status", room.getStatus());
+        resp.put("createdAt", room.getCreatedAt());
 
-        return ResponseEntity.ok(response);
+        return ResponseEntity.ok(resp);
     }
 
-    /**
-     * POST /api/rooms/join
-     * Student joins a room by code.
-     * Request body: { "roomCode": "...", "studentNumber": "...", "fullName": "...", "section": "..." }
-     */
-    @PostMapping("/join")
+    // -------------------------------------------------------------------------
+    // 2. GET ROOM STATUS (Polled by StudentWaiting)
+    // -------------------------------------------------------------------------
+    @GetMapping("/rooms/{roomCode}/status")
+    public ResponseEntity<?> getRoomStatus(@PathVariable String roomCode) {
+        Optional<Room> roomOpt = roomRepository.findByRoomCodeIgnoreCase(roomCode);
+        if (roomOpt.isEmpty()) {
+            return ResponseEntity.status(404).body(Map.of("error", "Room not found: " + roomCode));
+        }
+
+        Room room = roomOpt.get();
+        long count = roomParticipantRepository.countByRoom(room);
+
+        Map<String, Object> resp = new HashMap<>();
+        resp.put("roomCode", room.getRoomCode());
+        resp.put("status", room.getStatus());
+        resp.put("participantCount", count);
+        resp.put("teacherName", room.getTeacherName());
+        resp.put("section", room.getSection());
+        resp.put("startedAt", room.getStartedAt());
+
+        return ResponseEntity.ok(resp);
+    }
+
+    // -------------------------------------------------------------------------
+    // 3. GET ROOM PARTICIPANTS (Polled by TeacherLobby)
+    // -------------------------------------------------------------------------
+    @GetMapping("/rooms/{roomCode}/participants")
+    public ResponseEntity<?> getRoomParticipants(@PathVariable String roomCode) {
+        Optional<Room> roomOpt = roomRepository.findByRoomCodeIgnoreCase(roomCode);
+        if (roomOpt.isEmpty()) {
+            return ResponseEntity.status(404).body(Map.of("error", "Room not found: " + roomCode));
+        }
+
+        Room room = roomOpt.get();
+        List<RoomParticipant> participants = roomParticipantRepository.findByRoomOrderByJoinedAtAsc(room);
+
+        List<Map<String, Object>> participantList = participants.stream().map(p -> {
+            Map<String, Object> item = new HashMap<>();
+            StudentProfile s = p.getStudentProfile();
+            item.put("studentNumber", s.getStudentNumber());
+            item.put("fullName", s.getFullName());
+            item.put("section", s.getSection() != null ? s.getSection() : room.getSection());
+            item.put("joinedAt", p.getJoinedAt());
+            return item;
+        }).collect(Collectors.toList());
+
+        Map<String, Object> resp = new HashMap<>();
+        resp.put("roomCode", room.getRoomCode());
+        resp.put("participantCount", participantList.size());
+        resp.put("participants", participantList);
+
+        return ResponseEntity.ok(resp);
+    }
+
+    // -------------------------------------------------------------------------
+    // 4. START ROOM SESSION (Triggered by TeacherLobby)
+    // -------------------------------------------------------------------------
+    @PostMapping("/rooms/{roomCode}/start")
+    public ResponseEntity<?> startRoom(@PathVariable String roomCode) {
+        Optional<Room> roomOpt = roomRepository.findByRoomCodeIgnoreCase(roomCode);
+        if (roomOpt.isEmpty()) {
+            return ResponseEntity.status(404).body(Map.of("error", "Room not found: " + roomCode));
+        }
+
+        Room room = roomOpt.get();
+        room.setStatus("ACTIVE");
+        room.setStartedAt(LocalDateTime.now());
+        roomRepository.save(room);
+
+        // Ensure all registered participants have an active GameSession initialized
+        List<RoomParticipant> participants = roomParticipantRepository.findByRoomOrderByJoinedAtAsc(room);
+        for (RoomParticipant p : participants) {
+            StudentProfile profile = p.getStudentProfile();
+            List<GameSession> activeSessions = gameSessionRepository.findByStudentProfileAndStatus(profile, "ACTIVE");
+            if (activeSessions.isEmpty()) {
+                GameSession newSession = new GameSession(profile);
+                newSession.setCurrentModule("M1_MATH");
+                newSession.setCurrentPhase(1);
+                newSession.setStatus("ACTIVE");
+                newSession.setStartTime(room.getStartedAt());
+                gameSessionRepository.save(newSession);
+            }
+        }
+
+        Map<String, Object> resp = new HashMap<>();
+        resp.put("success", true);
+        resp.put("roomCode", room.getRoomCode());
+        resp.put("status", "ACTIVE");
+        resp.put("startedAt", room.getStartedAt());
+
+        return ResponseEntity.ok(resp);
+    }
+
+    // -------------------------------------------------------------------------
+    // 5. STUDENT JOINS ROOM
+    // -------------------------------------------------------------------------
+    @PostMapping("/rooms/join")
     public ResponseEntity<?> joinRoom(@RequestBody Map<String, String> body) {
         String roomCode = body.get("roomCode");
         String studentNumber = body.get("studentNumber");
@@ -98,223 +214,443 @@ public class RoomController {
         if (studentNumber == null || studentNumber.trim().isEmpty()) {
             return ResponseEntity.badRequest().body(Map.of("error", "Student number is required."));
         }
-        if (fullName == null || fullName.trim().isEmpty()) {
-            return ResponseEntity.badRequest().body(Map.of("error", "Full name is required."));
-        }
 
-        Optional<Room> roomOpt = roomRepository.findByRoomCode(roomCode.trim().toUpperCase());
+        Optional<Room> roomOpt = roomRepository.findByRoomCodeIgnoreCase(roomCode.trim());
         if (roomOpt.isEmpty()) {
-            return ResponseEntity.badRequest().body(Map.of("error", "Invalid room code. No room found."));
+            return ResponseEntity.status(404).body(Map.of("error", "Room code '" + roomCode.toUpperCase() + "' does not exist. Check with your teacher."));
         }
-
         Room room = roomOpt.get();
 
-        // Removed check that prevents joining after session start to allow late-comers.
+        StudentProfile profile = resolveOrCreateStudent(studentNumber.trim(), fullName, section, room.getSection());
 
-        // Check for duplicate join (idempotent — return success if already joined)
-        if (participantRepository.existsByRoomAndStudentNumber(room, studentNumber.trim())) {
-            Map<String, Object> response = new LinkedHashMap<>();
-            response.put("success", true);
-            response.put("message", "You have already joined this room.");
-            response.put("roomCode", room.getRoomCode());
-            response.put("roomStatus", room.getStatus());
-            return ResponseEntity.ok(response);
+        // Add to room participants if not already present
+        Optional<RoomParticipant> participantOpt = roomParticipantRepository.findByRoomAndStudentProfile(room, profile);
+        if (participantOpt.isEmpty()) {
+            RoomParticipant participant = new RoomParticipant(room, profile);
+            roomParticipantRepository.save(participant);
         }
 
-        RoomParticipant participant = new RoomParticipant(
-            room,
-            studentNumber.trim(),
-            fullName.trim(),
-            section != null ? section.trim() : ""
-        );
-        participantRepository.save(participant);
+        // Initialize active game session if none exists
+        List<GameSession> activeSessions = gameSessionRepository.findByStudentProfileAndStatus(profile, "ACTIVE");
+        if (activeSessions.isEmpty()) {
+            GameSession newSession = new GameSession(profile);
+            newSession.setCurrentModule("M1_MATH");
+            newSession.setCurrentPhase(1);
+            newSession.setStatus("ACTIVE");
+            if (room.getStartedAt() != null) {
+                newSession.setStartTime(room.getStartedAt());
+            }
+            gameSessionRepository.save(newSession);
+        }
 
-        Map<String, Object> response = new LinkedHashMap<>();
-        response.put("success", true);
-        response.put("message", "Successfully joined the room.");
-        response.put("roomCode", room.getRoomCode());
-        response.put("roomStatus", room.getStatus());
+        Map<String, Object> resp = new HashMap<>();
+        resp.put("success", true);
+        resp.put("roomCode", room.getRoomCode());
+        resp.put("student", profile);
+        resp.put("roomStatus", room.getStatus());
 
-        return ResponseEntity.ok(response);
+        return ResponseEntity.ok(resp);
     }
 
-    /**
-     * GET /api/rooms/{code}/participants
-     * Returns the list of students who have joined the room.
-     */
-    @GetMapping("/{code}/participants")
-    public ResponseEntity<?> getParticipants(@PathVariable("code") String code) {
-        Optional<Room> roomOpt = roomRepository.findByRoomCode(code.trim().toUpperCase());
+    // -------------------------------------------------------------------------
+    // 6. TEACHER ADDS STUDENT TO ROOM
+    // -------------------------------------------------------------------------
+    @PostMapping("/rooms/{roomCode}/students")
+    public ResponseEntity<?> addStudentToRoom(@PathVariable String roomCode, @RequestBody Map<String, String> body) {
+        Optional<Room> roomOpt = roomRepository.findByRoomCodeIgnoreCase(roomCode);
         if (roomOpt.isEmpty()) {
-            return ResponseEntity.badRequest().body(Map.of("error", "Room not found."));
+            return ResponseEntity.status(404).body(Map.of("error", "Room not found: " + roomCode));
         }
-
         Room room = roomOpt.get();
-        List<RoomParticipant> participants = participantRepository.findByRoomOrderByJoinedAtAsc(room);
-        long count = participants.size();
 
-        List<Map<String, String>> studentList = new ArrayList<>();
-        for (RoomParticipant p : participants) {
-            Map<String, String> entry = new LinkedHashMap<>();
-            entry.put("studentNumber", p.getStudentNumber());
-            entry.put("fullName", p.getFullName());
-            entry.put("section", p.getSection());
-            entry.put("joinedAt", p.getJoinedAt().toString());
-            studentList.add(entry);
+        String studentNumber = body.get("studentNumber");
+        String fullName = body.get("fullName");
+        String section = body.get("section");
+
+        if (studentNumber == null || studentNumber.trim().isEmpty()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Student number is required."));
+        }
+        if (fullName == null || fullName.trim().isEmpty()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Student full name is required."));
         }
 
-        Map<String, Object> response = new LinkedHashMap<>();
+        StudentProfile profile = resolveOrCreateStudent(studentNumber.trim(), fullName.trim(), section, room.getSection());
+
+        // Check if participant already exists in this room
+        Optional<RoomParticipant> participantOpt = roomParticipantRepository.findByRoomAndStudentProfile(room, profile);
+        if (participantOpt.isPresent()) {
+            return ResponseEntity.ok(Map.of("success", true, "message", "Student is already in this room.", "student", profile));
+        }
+
+        RoomParticipant participant = new RoomParticipant(room, profile);
+        roomParticipantRepository.save(participant);
+
+        // Ensure active game session
+        List<GameSession> activeSessions = gameSessionRepository.findByStudentProfileAndStatus(profile, "ACTIVE");
+        if (activeSessions.isEmpty()) {
+            GameSession newSession = new GameSession(profile);
+            newSession.setCurrentModule("M1_MATH");
+            newSession.setCurrentPhase(1);
+            newSession.setStatus("ACTIVE");
+            if (room.getStartedAt() != null) {
+                newSession.setStartTime(room.getStartedAt());
+            }
+            gameSessionRepository.save(newSession);
+        }
+
+        return ResponseEntity.ok(Map.of(
+            "success", true,
+            "message", "Student added successfully.",
+            "student", profile
+        ));
+    }
+
+    // -------------------------------------------------------------------------
+    // 7. TEACHER DELETES / REMOVES STUDENT FROM ROOM
+    // -------------------------------------------------------------------------
+    @DeleteMapping("/rooms/{roomCode}/students/{studentNumber}")
+    @Transactional
+    public ResponseEntity<?> removeStudentFromRoom(@PathVariable String roomCode, @PathVariable String studentNumber) {
+        Optional<Room> roomOpt = roomRepository.findByRoomCodeIgnoreCase(roomCode);
+        if (roomOpt.isEmpty()) {
+            return ResponseEntity.status(404).body(Map.of("error", "Room not found: " + roomCode));
+        }
+        Room room = roomOpt.get();
+
+        Optional<StudentProfile> studentOpt = studentRepository.findByStudentNumber(studentNumber);
+        if (studentOpt.isEmpty()) {
+            return ResponseEntity.status(404).body(Map.of("error", "Student not found: " + studentNumber));
+        }
+        StudentProfile student = studentOpt.get();
+
+        roomParticipantRepository.deleteByRoomAndStudentProfile(room, student);
+
+        return ResponseEntity.ok(Map.of(
+            "success", true,
+            "message", "Student " + student.getFullName() + " (" + studentNumber + ") removed from room " + roomCode
+        ));
+    }
+
+    // -------------------------------------------------------------------------
+    // 8. DELETE STUDENT PROFILE (Global)
+    // -------------------------------------------------------------------------
+    @DeleteMapping("/students/{studentNumber}")
+    @Transactional
+    public ResponseEntity<?> deleteStudentEntirely(@PathVariable String studentNumber) {
+        Optional<StudentProfile> studentOpt = studentRepository.findByStudentNumber(studentNumber);
+        if (studentOpt.isEmpty()) {
+            return ResponseEntity.status(404).body(Map.of("error", "Student not found: " + studentNumber));
+        }
+        StudentProfile student = studentOpt.get();
+
+        roomParticipantRepository.deleteByStudentProfile(student);
+        attemptLogRepository.deleteByStudentProfile(student);
+        gameSessionRepository.deleteByStudentProfile(student);
+        studentRepository.delete(student);
+
+        return ResponseEntity.ok(Map.of(
+            "success", true,
+            "message", "Student " + studentNumber + " permanently deleted."
+        ));
+    }
+
+    // -------------------------------------------------------------------------
+    // 9. TEACHER DASHBOARD ANALYTICS WITH PER-PHASE TIME & ATTEMPTS & SUMMARY
+    // -------------------------------------------------------------------------
+    @GetMapping("/rooms/{roomCode}/dashboard")
+    public ResponseEntity<?> getRoomDashboard(@PathVariable String roomCode) {
+        Optional<Room> roomOpt = roomRepository.findByRoomCodeIgnoreCase(roomCode);
+        if (roomOpt.isEmpty()) {
+            return ResponseEntity.status(404).body(Map.of("error", "Room not found: " + roomCode));
+        }
+        Room room = roomOpt.get();
+
+        List<RoomParticipant> participants = roomParticipantRepository.findByRoomOrderByJoinedAtAsc(room);
+        LocalDateTime roomStartedAt = room.getStartedAt() != null ? room.getStartedAt() : room.getCreatedAt();
+
+        List<Map<String, Object>> studentResults = new ArrayList<>();
+
+        // Aggregators for Class Summary & Charts
+        int[] classPhaseCompletedCounts = new int[7];
+        int[] classPhaseActiveCounts = new int[7];
+        long[] classPhaseTotalAttempts = new long[7];
+        long[] classPhaseTotalSeconds = new long[7];
+        int[] classPhaseTimeContributors = new int[7];
+
+        int totalRoomAttempts = 0;
+        int completedStudentsCount = 0;
+
+        for (RoomParticipant p : participants) {
+            StudentProfile student = p.getStudentProfile();
+
+            // Fetch active session
+            List<GameSession> activeSessions = gameSessionRepository.findByStudentProfileAndStatus(student, "ACTIVE");
+            GameSession session = activeSessions.isEmpty() ? null : activeSessions.get(0);
+            int currentPhaseIndex = session != null ? session.getCurrentPhase() : 1;
+            boolean isSessionCompleted = session != null && "COMPLETED".equalsIgnoreCase(session.getStatus());
+
+            // Fetch all attempts for this student sorted chronologically
+            List<AttemptLog> allAttempts = attemptLogRepository.findByStudentProfileOrderByAttemptTimeAsc(student);
+
+            // Group attempts by (module + "_" + phase)
+            Map<String, List<AttemptLog>> phaseAttemptsMap = new HashMap<>();
+            for (AttemptLog log : allAttempts) {
+                String key = (log.getModule() != null ? log.getModule().toUpperCase() : "") + "_" + log.getPhase();
+                phaseAttemptsMap.computeIfAbsent(key, k -> new ArrayList<>()).add(log);
+            }
+
+            List<Map<String, Object>> studentPhases = new ArrayList<>();
+            LocalDateTime previousPhaseCompletedTime = roomStartedAt;
+            int studentCompletedPhases = 0;
+            long studentTotalSeconds = 0;
+            int studentTotalAttempts = 0;
+
+            for (int i = 0; i < 7; i++) {
+                int phaseId = i + 1;
+                String module = MODULES[i];
+                int phaseIndex = PHASES[i];
+                String phaseKey = module.toUpperCase() + "_" + phaseIndex;
+                List<AttemptLog> attempts = phaseAttemptsMap.getOrDefault(phaseKey, Collections.emptyList());
+
+                int attemptsCount = attempts.size();
+                studentTotalAttempts += attemptsCount;
+                classPhaseTotalAttempts[i] += attemptsCount;
+
+                int failedCount = 0;
+                LocalDateTime lastSuccessfulTime = null;
+                LocalDateTime firstAttemptTime = attempts.isEmpty() ? null : attempts.get(0).getAttemptTime();
+                LocalDateTime lastAttemptTime = attempts.isEmpty() ? null : attempts.get(attempts.size() - 1).getAttemptTime();
+
+                for (AttemptLog log : attempts) {
+                    if (!log.isSuccessful()) {
+                        failedCount++;
+                    } else {
+                        lastSuccessfulTime = log.getAttemptTime();
+                    }
+                }
+
+                // Check phase completion
+                boolean isCompleted = false;
+                if (isSessionCompleted || phaseId < currentPhaseIndex) {
+                    isCompleted = true;
+                } else if (lastSuccessfulTime != null && isPhaseCompleteBySteps(attempts, module, phaseIndex)) {
+                    isCompleted = true;
+                }
+
+                String status = "LOCKED";
+                if (isCompleted) {
+                    status = "COMPLETED";
+                    studentCompletedPhases++;
+                    classPhaseCompletedCounts[i]++;
+                } else if (phaseId == currentPhaseIndex || (phaseId == 1 && studentCompletedPhases == 0)) {
+                    status = "ACTIVE";
+                    classPhaseActiveCounts[i]++;
+                }
+
+                // Calculate time spent in this phase
+                long phaseSeconds = 0;
+                if (isCompleted) {
+                    LocalDateTime startRef = (firstAttemptTime != null && firstAttemptTime.isBefore(previousPhaseCompletedTime))
+                            ? firstAttemptTime : previousPhaseCompletedTime;
+                    LocalDateTime endRef = lastSuccessfulTime != null ? lastSuccessfulTime : (lastAttemptTime != null ? lastAttemptTime : startRef);
+
+                    long diff = ChronoUnit.SECONDS.between(startRef, endRef);
+                    if (diff <= 0) {
+                        diff = Math.max(attemptsCount * 45L, 30L);
+                    }
+                    phaseSeconds = diff;
+                    previousPhaseCompletedTime = endRef;
+                    studentTotalSeconds += phaseSeconds;
+
+                    classPhaseTotalSeconds[i] += phaseSeconds;
+                    classPhaseTimeContributors[i]++;
+                } else if ("ACTIVE".equals(status)) {
+                    LocalDateTime startRef = (firstAttemptTime != null && firstAttemptTime.isBefore(previousPhaseCompletedTime))
+                            ? firstAttemptTime : previousPhaseCompletedTime;
+                    long diff = ChronoUnit.SECONDS.between(startRef, LocalDateTime.now());
+                    phaseSeconds = Math.max(diff, 0L);
+                    studentTotalSeconds += phaseSeconds;
+                }
+
+                int bestScore = 0;
+                if (isCompleted) {
+                    bestScore = Math.max(100 - (failedCount * 10), 50);
+                }
+
+                Map<String, Object> phaseObj = new HashMap<>();
+                phaseObj.put("phaseId", phaseId);
+                phaseObj.put("title", PHASE_TITLES[i]);
+                phaseObj.put("module", module);
+                phaseObj.put("phaseIndex", phaseIndex);
+                phaseObj.put("status", status);
+                phaseObj.put("attempts", attemptsCount);
+                phaseObj.put("failedAttempts", failedCount);
+                phaseObj.put("bestScore", bestScore);
+                phaseObj.put("timeSpentSeconds", phaseSeconds);
+                phaseObj.put("timeSpentFormatted", formatDuration(phaseSeconds, status));
+
+                studentPhases.add(phaseObj);
+            }
+
+            if (studentCompletedPhases >= 7) {
+                completedStudentsCount++;
+            }
+            totalRoomAttempts += studentTotalAttempts;
+
+            String currentPhaseTitle = (currentPhaseIndex <= 7)
+                    ? PHASE_TITLES[currentPhaseIndex - 1]
+                    : "Final Audit Complete";
+
+            Map<String, Object> stuMap = new HashMap<>();
+            stuMap.put("studentNumber", student.getStudentNumber());
+            stuMap.put("fullName", student.getFullName());
+            stuMap.put("section", student.getSection() != null ? student.getSection() : room.getSection());
+            stuMap.put("completedPhases", studentCompletedPhases);
+            stuMap.put("currentPhase", currentPhaseIndex);
+            stuMap.put("currentPhaseTitle", currentPhaseTitle);
+            stuMap.put("attempts", studentTotalAttempts);
+            stuMap.put("status", (studentCompletedPhases >= 7 || isSessionCompleted) ? "COMPLETED" : "ACTIVE");
+            stuMap.put("totalTimeSpentSeconds", studentTotalSeconds);
+            stuMap.put("totalTimeFormatted", formatDuration(studentTotalSeconds, "ACTIVE"));
+            stuMap.put("phases", studentPhases);
+
+            studentResults.add(stuMap);
+        }
+
+        // Build Class Summary and Chart Metrics
+        List<Map<String, Object>> summaryPhases = new ArrayList<>();
+        int totalStudents = studentResults.size();
+
+        for (int i = 0; i < 7; i++) {
+            Map<String, Object> sp = new HashMap<>();
+            sp.put("phaseId", i + 1);
+            sp.put("title", PHASE_TITLES[i]);
+            sp.put("completedCount", classPhaseCompletedCounts[i]);
+            sp.put("activeCount", classPhaseActiveCounts[i]);
+            sp.put("totalAttempts", classPhaseTotalAttempts[i]);
+
+            double avgAttempts = totalStudents > 0
+                    ? Math.round((double) classPhaseTotalAttempts[i] / totalStudents * 10.0) / 10.0
+                    : 0.0;
+            sp.put("avgAttempts", avgAttempts);
+
+            long avgSeconds = classPhaseTimeContributors[i] > 0
+                    ? classPhaseTotalSeconds[i] / classPhaseTimeContributors[i]
+                    : 0;
+            sp.put("avgTimeSeconds", avgSeconds);
+            sp.put("avgTimeFormatted", formatDuration(avgSeconds, "COMPLETED"));
+
+            summaryPhases.add(sp);
+        }
+
+        Map<String, Object> summary = new HashMap<>();
+        summary.put("totalStudents", totalStudents);
+        summary.put("completedStudents", completedStudentsCount);
+        summary.put("activeStudents", Math.max(0, totalStudents - completedStudentsCount));
+        summary.put("totalAttempts", totalRoomAttempts);
+        summary.put("phaseStats", summaryPhases);
+
+        Map<String, Object> response = new HashMap<>();
         response.put("roomCode", room.getRoomCode());
         response.put("teacherName", room.getTeacherName());
         response.put("section", room.getSection());
         response.put("status", room.getStatus());
-        response.put("participantCount", count);
-        response.put("participants", studentList);
+        response.put("startedAt", room.getStartedAt());
+        response.put("summary", summary);
+        response.put("students", studentResults);
 
         return ResponseEntity.ok(response);
     }
 
-    /**
-     * POST /api/rooms/{code}/start
-     * Teacher initiates the session — marks the room as ACTIVE.
-     */
-    @PostMapping("/{code}/start")
-    public ResponseEntity<?> startSession(@PathVariable("code") String code) {
-        Optional<Room> roomOpt = roomRepository.findByRoomCode(code.trim().toUpperCase());
-        if (roomOpt.isEmpty()) {
-            return ResponseEntity.badRequest().body(Map.of("error", "Room not found."));
-        }
+    // -------------------------------------------------------------------------
+    // HELPER METHODS
+    // -------------------------------------------------------------------------
 
-        Room room = roomOpt.get();
-        if ("ACTIVE".equalsIgnoreCase(room.getStatus())) {
-            return ResponseEntity.ok(Map.of("status", "ACTIVE", "message", "Session already started."));
-        }
-
-        room.setStatus("ACTIVE");
-        room.setStartedAt(LocalDateTime.now());
-        roomRepository.save(room);
-
-        return ResponseEntity.ok(Map.of("status", "ACTIVE", "message", "Session initiated successfully."));
-    }
-
-    /**
-     * GET /api/rooms/{code}/status
-     * Lightweight endpoint for students to poll whether the session has started.
-     * Returns minimal payload to reduce bandwidth.
-     */
-    @GetMapping("/{code}/status")
-    public ResponseEntity<?> getRoomStatus(@PathVariable("code") String code) {
-        Optional<Room> roomOpt = roomRepository.findByRoomCode(code.trim().toUpperCase());
-        if (roomOpt.isEmpty()) {
-            return ResponseEntity.badRequest().body(Map.of("error", "Room not found."));
-        }
-
-        Room room = roomOpt.get();
-        long count = participantRepository.countByRoom(room);
-
-        Map<String, Object> response = new LinkedHashMap<>();
-        response.put("status", room.getStatus());
-        response.put("participantCount", count);
-
-        return ResponseEntity.ok(response);
-    }
-
-    /**
-     * GET /api/rooms/{code}/dashboard
-     * Dashboard endpoint for teachers to view live student progress.
-     */
-    @GetMapping("/{code}/dashboard")
-    public ResponseEntity<?> getTeacherDashboard(@PathVariable("code") String code) {
-        Optional<Room> roomOpt = roomRepository.findByRoomCode(code.trim().toUpperCase());
-        if (roomOpt.isEmpty()) {
-            return ResponseEntity.badRequest().body(Map.of("error", "Room not found."));
-        }
-
-        Room room = roomOpt.get();
-        List<RoomParticipant> participants = participantRepository.findByRoomOrderByJoinedAtAsc(room);
-        
-        List<Map<String, Object>> studentList = new ArrayList<>();
-        for (RoomParticipant p : participants) {
-            Map<String, Object> entry = new LinkedHashMap<>();
-            entry.put("studentNumber", p.getStudentNumber());
-            entry.put("fullName", p.getFullName());
-            entry.put("section", p.getSection());
-
-            Optional<StudentProfile> studentOpt = studentRepository.findByStudentNumber(p.getStudentNumber());
-            int completedPhases = 0; // Phase 1 is active by default, 0 completed
-            long attempts = 0;
-            String currentStatus = "ACTIVE";
-            String currentPhaseTitle = "Phase 1: Basic Gross Pay";
-
-            if (studentOpt.isPresent()) {
-                StudentProfile student = studentOpt.get();
-                List<GameSession> activeSessions = gameSessionRepository.findByStudentProfileAndStatus(student, "ACTIVE");
-                GameSession activeSession = activeSessions.isEmpty() ? null : activeSessions.get(0);
-
-                if (activeSession != null) {
-                    int phaseIndex = activeSession.getCurrentPhase();
-                    String module = activeSession.getCurrentModule();
-                    
-                    if ("M1_MATH".equals(module)) completedPhases = (phaseIndex == 1) ? 0 : 1;
-                    else if ("M2_MULTIPLIERS".equals(module)) completedPhases = (phaseIndex == 1) ? 2 : 3;
-                    else if ("M3_BUREAUCRACY".equals(module)) completedPhases = (phaseIndex == 1) ? 4 : 5;
-                    else if ("M4_TRIBUNAL".equals(module)) completedPhases = 6;
-                    
-                    if ("COMPLETED".equals(activeSession.getStatus())) {
-                        completedPhases = 7;
-                        currentStatus = "COMPLETED";
-                        currentPhaseTitle = "Simulation Complete";
-                    } else {
-                        String[] titles = {
-                            "Phase 1: Basic Gross Pay",
-                            "Phase 2: Tardiness Deductions",
-                            "Phase 3: Overtime Premiums",
-                            "Phase 4: Regular Holiday Pay",
-                            "Phase 5: SSS Deductions",
-                            "Phase 6: PhilHealth Premiums",
-                            "Phase 7: Net Payroll Boardroom"
-                        };
-                        currentPhaseTitle = (completedPhases >= 0 && completedPhases < 7) ? titles[completedPhases] : "Unknown";
-                    }
-
-                    if (activeSession.getStartTime() != null) {
-                        attempts = attemptLogRepository.countAttemptsSince(student, activeSession.getStartTime());
-                    }
-                }
+    private StudentProfile resolveOrCreateStudent(String studentNumber, String fullName, String section, String defaultSection) {
+        Optional<StudentProfile> existing = studentRepository.findByStudentNumber(studentNumber);
+        if (existing.isPresent()) {
+            StudentProfile s = existing.get();
+            if (fullName != null && !fullName.trim().isEmpty()) {
+                s.setFullName(fullName.trim());
             }
-
-            entry.put("completedPhases", completedPhases);
-            entry.put("currentPhaseTitle", currentPhaseTitle);
-            entry.put("attempts", attempts);
-            entry.put("status", currentStatus);
-
-            studentList.add(entry);
+            if (section != null && !section.trim().isEmpty()) {
+                s.setSection(section.trim());
+            }
+            return studentRepository.save(s);
         }
 
-        Map<String, Object> response = new LinkedHashMap<>();
-        response.put("roomCode", room.getRoomCode());
-        response.put("status", room.getStatus());
-        response.put("students", studentList);
-
-        return ResponseEntity.ok(response);
+        String actualSection = (section != null && !section.trim().isEmpty()) ? section.trim() : defaultSection;
+        StudentProfile newProfile = new StudentProfile(
+                studentNumber,
+                (fullName != null && !fullName.trim().isEmpty()) ? fullName.trim() : "Student " + studentNumber,
+                actualSection
+        );
+        return studentRepository.save(newProfile);
     }
 
-    // --- Internal Helpers ---
+    private boolean isPhaseCompleteBySteps(List<AttemptLog> attempts, String module, int phase) {
+        List<String> requiredSteps = getRequiredStepsForPhase(module, phase);
+        if (requiredSteps.isEmpty()) return false;
+
+        Set<String> successfulSteps = attempts.stream()
+                .filter(AttemptLog::isSuccessful)
+                .map(a -> a.getStep() != null ? a.getStep().toUpperCase() : "")
+                .collect(Collectors.toSet());
+
+        return requiredSteps.stream().allMatch(step -> successfulSteps.contains(step.toUpperCase()));
+    }
+
+    private List<String> getRequiredStepsForPhase(String module, int phase) {
+        if ("M1_MATH".equalsIgnoreCase(module) && phase == 1) {
+            return Arrays.asList("EXTRACT", "IDENTIFY_RULE", "EXECUTE");
+        } else if ("M1_MATH".equalsIgnoreCase(module) && phase == 2) {
+            return Arrays.asList("EXTRACT", "IDENTIFY_RULE", "EXECUTE", "COMPUTE_GROSS", "NET_PAY_FORMULA", "SYNTHESIS");
+        } else if ("M2_MULTIPLIERS".equalsIgnoreCase(module)) {
+            if (phase == 1) {
+                return Arrays.asList("EXTRACT", "FILTER_LUNCH", "ESTABLISH_PREMIUM", "ESTABLISH_FORMULA", "EXECUTE", "COMPUTE_GROSS", "NET_PAY_FORMULA", "SYNTHESIS");
+            } else {
+                return Arrays.asList("EXTRACT", "ESTABLISH_PREMIUM", "ESTABLISH_FORMULA", "EXECUTE", "COMPUTE_GROSS", "NET_PAY_FORMULA", "SYNTHESIS");
+            }
+        } else if ("M3_BUREAUCRACY".equalsIgnoreCase(module)) {
+            if (phase == 1) {
+                return Arrays.asList("EXTRACT", "PAGIBIG_DEDUCTION", "BASIC_SALARY", "IDENTIFY_RULE", "SYNTHESIS");
+            } else {
+                return Arrays.asList("EXTRACT", "PHILHEALTH_EE", "TAX_BRACKET", "WITHHOLDING_TAX", "SYNTHESIS");
+            }
+        } else if ("M4_TRIBUNAL".equalsIgnoreCase(module)) {
+            return Collections.singletonList("SUBMIT");
+        }
+        return Collections.emptyList();
+    }
+
+    private String formatDuration(long totalSeconds, String status) {
+        if ("LOCKED".equals(status) || totalSeconds <= 0) {
+            return "--";
+        }
+        long hours = totalSeconds / 3600;
+        long minutes = (totalSeconds % 3600) / 60;
+        long seconds = totalSeconds % 60;
+
+        if (hours > 0) {
+            return String.format("%dh %02dm", hours, minutes);
+        } else if (minutes > 0) {
+            return String.format("%dm %02ds", minutes, seconds);
+        } else {
+            return String.format("%ds", seconds);
+        }
+    }
 
     private String generateUniqueRoomCode() {
-        String chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // Excludes confusable chars: I, O, 0, 1
-        int maxAttempts = 20;
-        for (int attempt = 0; attempt < maxAttempts; attempt++) {
+        for (int attempts = 0; attempts < 50; attempts++) {
             StringBuilder sb = new StringBuilder(6);
             for (int i = 0; i < 6; i++) {
-                sb.append(chars.charAt(ThreadLocalRandom.current().nextInt(chars.length())));
+                sb.append(CODE_CHARS.charAt(RANDOM.nextInt(CODE_CHARS.length())));
             }
             String code = sb.toString();
-            if (!roomRepository.existsByRoomCode(code)) {
+            if (!roomRepository.existsByRoomCodeIgnoreCase(code)) {
                 return code;
             }
         }
-        // Extremely unlikely fallback: use timestamp-based code
-        return "R" + System.currentTimeMillis() % 100000;
+        return "NZD" + (100 + RANDOM.nextInt(900));
     }
 }

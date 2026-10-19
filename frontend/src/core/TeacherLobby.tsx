@@ -29,8 +29,18 @@ export default function TeacherLobby({ roomCode, teacherName, section, onInitiat
   const [isCreatingRoom, setIsCreatingRoom] = useState(false);
   const [customRoomCode, setCustomRoomCode] = useState('');
 
+  // Add Student state
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [newStudentNumber, setNewStudentNumber] = useState('');
+  const [newStudentName, setNewStudentName] = useState('');
+  const [isAddingStudent, setIsAddingStudent] = useState(false);
+  const [addStudentError, setAddStudentError] = useState('');
+
+  // Delete student loading state
+  const [deletingStudentNum, setDeletingStudentNum] = useState<string | null>(null);
+
   const generateRandomCode = () => {
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
     let code = '';
     for (let i = 0; i < 6; i++) {
       code += chars.charAt(Math.floor(Math.random() * chars.length));
@@ -40,6 +50,7 @@ export default function TeacherLobby({ roomCode, teacherName, section, onInitiat
 
   // Fetch participants from backend
   const fetchParticipants = useCallback(async () => {
+    if (!roomCode) return;
     try {
       const res = await fetch(`${API_BASE_URL}/api/rooms/${roomCode}/participants`);
       if (res.ok) {
@@ -86,10 +97,13 @@ export default function TeacherLobby({ roomCode, teacherName, section, onInitiat
       if (!response.ok) {
         let errorDetail = `HTTP ${response.status}`;
         try {
+          const errData = await response.json();
+          errorDetail = errData.error || errorDetail;
+        } catch (_) {
           const errBody = await response.text();
-          errorDetail += `: ${errBody.substring(0, 200)}`;
-        } catch (_) {}
-        throw new Error(`Backend error — ${errorDetail}`);
+          if (errBody) errorDetail += `: ${errBody.substring(0, 150)}`;
+        }
+        throw new Error(errorDetail);
       }
 
       const data = await response.json();
@@ -103,9 +117,9 @@ export default function TeacherLobby({ roomCode, teacherName, section, onInitiat
       }
 
       onRoomCreated(data.roomCode);
-    } catch (err) {
+    } catch (err: any) {
       console.error('[TeacherLobby] Create room error:', err);
-      setError('Failed to create room.');
+      setError(err.message || 'Failed to create room.');
     } finally {
       setIsCreatingRoom(false);
     }
@@ -117,14 +131,14 @@ export default function TeacherLobby({ roomCode, teacherName, section, onInitiat
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
     }).catch(() => {
-      // Fallback: select the text
+      // Fallback
     });
   };
 
   // Initiate the session
   const handleInitiate = async () => {
     if (participantCount === 0) {
-      setError('Cannot start a session with no students. Wait for students to join.');
+      setError('Cannot start a session with no students. Add or wait for students to join.');
       return;
     }
     setInitiating(true);
@@ -152,6 +166,64 @@ export default function TeacherLobby({ roomCode, teacherName, section, onInitiat
     }
   };
 
+  // Add student manually
+  const handleAddStudent = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newStudentNumber.trim() || !newStudentName.trim()) {
+      setAddStudentError('Student number and full name are required.');
+      return;
+    }
+    setIsAddingStudent(true);
+    setAddStudentError('');
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/rooms/${roomCode}/students`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          studentNumber: newStudentNumber.trim(),
+          fullName: newStudentName.trim(),
+          section: section
+        })
+      });
+      if (res.ok) {
+        setNewStudentNumber('');
+        setNewStudentName('');
+        setShowAddModal(false);
+        fetchParticipants();
+      } else {
+        const data = await res.json().catch(() => ({}));
+        setAddStudentError(data.error || 'Failed to add student.');
+      }
+    } catch (err: any) {
+      setAddStudentError(err.message || 'Connection error.');
+    } finally {
+      setIsAddingStudent(false);
+    }
+  };
+
+  // Remove student from room
+  const handleRemoveStudent = async (studentNum: string, studentName: string) => {
+    if (!window.confirm(`Are you sure you want to remove ${studentName} (${studentNum}) from the room?`)) {
+      return;
+    }
+    setDeletingStudentNum(studentNum);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/rooms/${roomCode}/students/${studentNum}`, {
+        method: 'DELETE'
+      });
+      if (res.ok) {
+        fetchParticipants();
+      } else {
+        const data = await res.json().catch(() => ({}));
+        alert(data.error || 'Failed to remove student.');
+      }
+    } catch (err: any) {
+      alert('Error removing student: ' + err.message);
+    } finally {
+      setDeletingStudentNum(null);
+    }
+  };
+
   return (
     <div className="lobby-container">
       <div className="glow-overlay"></div>
@@ -171,7 +243,7 @@ export default function TeacherLobby({ roomCode, teacherName, section, onInitiat
             <div style={{ padding: '20px', background: 'rgba(15, 23, 42, 0.6)', border: '1px solid #334155', borderRadius: '8px', marginBottom: '20px' }}>
               <h3 style={{ color: '#fbbf24', marginTop: 0 }}>GENERATE A CLASSROOM</h3>
               <p style={{ color: '#94a3b8', fontSize: '0.9rem', marginBottom: '15px' }}>
-                You have not started a session yet. Create a room to get a code for your students.
+                Create a room session to generate a passcode for your enrolled students.
               </p>
               
               <div style={{ marginBottom: '20px' }}>
@@ -196,23 +268,23 @@ export default function TeacherLobby({ roomCode, teacherName, section, onInitiat
                   </button>
                 </div>
                 <span style={{ color: '#475569', fontSize: '0.75rem', marginTop: '4px', display: 'block' }}>
-                  Leave blank for a random code.
+                  Leave blank for a random 6-character code.
                 </span>
               </div>
 
               <button 
                 onClick={handleCreateRoom}
                 disabled={isCreatingRoom}
-                style={{ width: '100%', padding: '12px', background: '#3b82f6', border: 'none', color: '#fff', fontSize: '1rem', fontWeight: 'bold', cursor: 'pointer' }}
+                style={{ width: '100%', padding: '12px', background: '#3b82f6', border: 'none', color: '#fff', fontSize: '1rem', fontWeight: 'bold', cursor: 'pointer', borderRadius: '4px' }}
               >
                 {isCreatingRoom ? 'CREATING...' : 'CREATE ROOM >'}
               </button>
             </div>
           ) : (
-            <div className="room-code-display" onClick={handleCopyCode}>
+            <div className="room-code-display" onClick={handleCopyCode} title="Click to copy code">
               <span className="room-code-label">SHARE THIS ROOM CODE WITH YOUR STUDENTS</span>
               <div className="room-code-value">{roomCode}</div>
-              <span className="room-code-hint">Click to copy</span>
+              <span className="room-code-hint">Click anywhere to copy</span>
               {copied && <span className="copied-toast">COPIED!</span>}
             </div>
           )}
@@ -228,31 +300,75 @@ export default function TeacherLobby({ roomCode, teacherName, section, onInitiat
             <button className="lobby-back-btn" onClick={onBack}>[ EXIT ROOM ]</button>
           </div>
 
-          {/* Student Counter */}
-          <div className="student-counter">
-            <span className="counter-icon">👥</span>
-            <span className="counter-text">{participantCount} STUDENT{participantCount !== 1 ? 'S' : ''} JOINED</span>
-            <div className="counter-pulse"></div>
+          {/* Action Row & Student Counter */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+            <div className="student-counter" style={{ margin: 0 }}>
+              <span className="counter-icon">👥</span>
+              <span className="counter-text">{participantCount} STUDENT{participantCount !== 1 ? 'S' : ''} ENROLLED</span>
+              <div className="counter-pulse"></div>
+            </div>
+
+            {roomCode && (
+              <button
+                type="button"
+                onClick={() => setShowAddModal(true)}
+                style={{
+                  background: 'rgba(59, 130, 246, 0.15)',
+                  border: '1px solid #3b82f6',
+                  color: '#60a5fa',
+                  padding: '8px 14px',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  fontWeight: 'bold',
+                  fontSize: '0.85rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px'
+                }}
+              >
+                <span>➕</span> ADD STUDENT
+              </button>
+            )}
           </div>
 
           {/* Student List */}
           <div className="student-list-container">
-            <div className="student-list-header">
+            <div className="student-list-header" style={{ gridTemplateColumns: '40px 1.5fr 1.2fr 80px' }}>
               <span>#</span>
               <span>STUDENT NAME</span>
               <span>STUDENT NUMBER</span>
+              <span style={{ textAlign: 'right' }}>ACTION</span>
             </div>
             {participants.length === 0 ? (
               <div className="empty-list-message">
                 <span className="empty-icon">📡</span>
-                Waiting for students to join using code <strong style={{ color: '#facc15' }}>{roomCode}</strong>...
+                Waiting for students to join using code <strong style={{ color: '#facc15' }}>{roomCode}</strong> or add them manually above.
               </div>
             ) : (
               participants.map((p, index) => (
-                <div key={p.studentNumber} className="student-list-row" style={{ animationDelay: `${index * 0.05}s` }}>
+                <div key={p.studentNumber} className="student-list-row" style={{ gridTemplateColumns: '40px 1.5fr 1.2fr 80px', animationDelay: `${index * 0.05}s`, alignItems: 'center' }}>
                   <span className="row-index">{index + 1}</span>
-                  <span>{p.fullName}</span>
+                  <span style={{ fontWeight: 'bold' }}>{p.fullName}</span>
                   <span style={{ color: '#94a3b8' }}>{p.studentNumber}</span>
+                  <div style={{ textAlign: 'right' }}>
+                    <button
+                      type="button"
+                      disabled={deletingStudentNum === p.studentNumber}
+                      onClick={() => handleRemoveStudent(p.studentNumber, p.fullName)}
+                      style={{
+                        background: 'rgba(239, 68, 68, 0.15)',
+                        border: '1px solid #ef4444',
+                        color: '#f87171',
+                        padding: '3px 8px',
+                        borderRadius: '3px',
+                        cursor: 'pointer',
+                        fontSize: '0.75rem'
+                      }}
+                      title="Remove from room"
+                    >
+                      {deletingStudentNum === p.studentNumber ? '...' : 'DELETE'}
+                    </button>
+                  </div>
                 </div>
               ))
             )}
@@ -277,7 +393,7 @@ export default function TeacherLobby({ roomCode, teacherName, section, onInitiat
           <button
             className="initiate-btn"
             onClick={handleInitiate}
-            disabled={initiating || participantCount === 0}
+            disabled={initiating || participantCount === 0 || !roomCode}
           >
             {initiating ? 'STARTING SESSION...' : `INITIATE SESSION > (${participantCount} STUDENT${participantCount !== 1 ? 'S' : ''})`}
           </button>
@@ -287,6 +403,92 @@ export default function TeacherLobby({ roomCode, teacherName, section, onInitiat
           <span>Room active // Students will be directed to Phase 1 after session initiation</span>
         </div>
       </div>
+
+      {/* ADD STUDENT MODAL */}
+      {showAddModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(0, 0, 0, 0.75)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000,
+          padding: '20px'
+        }}>
+          <div style={{
+            background: '#0f172a',
+            border: '2px solid #3b82f6',
+            borderRadius: '8px',
+            width: '100%',
+            maxWidth: '450px',
+            padding: '24px',
+            boxShadow: '0 0 30px rgba(59, 130, 246, 0.3)'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+              <h3 style={{ color: '#60a5fa', margin: 0, fontSize: '1.2rem' }}>➕ ENROLL NEW STUDENT</h3>
+              <button 
+                onClick={() => setShowAddModal(false)}
+                style={{ background: 'transparent', border: 'none', color: '#94a3b8', fontSize: '1.3rem', cursor: 'pointer' }}
+              >
+                ✕
+              </button>
+            </div>
+
+            {addStudentError && (
+              <div style={{ background: 'rgba(239, 68, 68, 0.15)', border: '1px solid #ef4444', color: '#fca5a5', padding: '8px 12px', borderRadius: '4px', fontSize: '0.8rem', marginBottom: '12px' }}>
+                {addStudentError}
+              </div>
+            )}
+
+            <form onSubmit={handleAddStudent}>
+              <div style={{ marginBottom: '12px' }}>
+                <label style={{ display: 'block', color: '#94a3b8', fontSize: '0.8rem', marginBottom: '4px' }}>STUDENT NUMBER / ID</label>
+                <input
+                  type="text"
+                  placeholder="e.g., 2024-00142"
+                  value={newStudentNumber}
+                  onChange={(e) => setNewStudentNumber(e.target.value)}
+                  style={{ width: '100%', padding: '10px', background: '#0b1120', border: '1px solid #334155', color: '#fff', borderRadius: '4px', boxSizing: 'border-box' }}
+                  required
+                />
+              </div>
+
+              <div style={{ marginBottom: '16px' }}>
+                <label style={{ display: 'block', color: '#94a3b8', fontSize: '0.8rem', marginBottom: '4px' }}>FULL NAME</label>
+                <input
+                  type="text"
+                  placeholder="e.g., Maria Santos"
+                  value={newStudentName}
+                  onChange={(e) => setNewStudentName(e.target.value)}
+                  style={{ width: '100%', padding: '10px', background: '#0b1120', border: '1px solid #334155', color: '#fff', borderRadius: '4px', boxSizing: 'border-box' }}
+                  required
+                />
+              </div>
+
+              <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+                <button
+                  type="button"
+                  onClick={() => setShowAddModal(false)}
+                  style={{ padding: '8px 16px', background: 'transparent', border: '1px solid #475569', color: '#cbd5e1', borderRadius: '4px', cursor: 'pointer' }}
+                >
+                  CANCEL
+                </button>
+                <button
+                  type="submit"
+                  disabled={isAddingStudent}
+                  style={{ padding: '8px 18px', background: '#3b82f6', border: 'none', color: '#fff', fontWeight: 'bold', borderRadius: '4px', cursor: 'pointer' }}
+                >
+                  {isAddingStudent ? 'ADDING...' : 'CONFIRM & ADD'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
