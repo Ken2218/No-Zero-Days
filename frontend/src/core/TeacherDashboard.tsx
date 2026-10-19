@@ -59,6 +59,9 @@ export default function TeacherDashboard({ roomCode, teacherName, onBack }: Teac
   const [students, setStudents] = useState<StudentProgress[]>([]);
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [roomSection, setRoomSection] = useState('');
+  const [teacherEmail, setTeacherEmail] = useState('');
+  const [sendingEmailReport, setSendingEmailReport] = useState(false);
+  const [emailReportToast, setEmailReportToast] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [copied, setCopied] = useState(false);
@@ -91,6 +94,7 @@ export default function TeacherDashboard({ roomCode, teacherName, onBack }: Teac
         setStudents(data.students || []);
         setSummary(data.summary || null);
         if (data.section) setRoomSection(data.section);
+        if (data.teacherEmail) setTeacherEmail(data.teacherEmail);
         setError('');
       } else {
         const errData = await res.json().catch(() => ({}));
@@ -101,6 +105,30 @@ export default function TeacherDashboard({ roomCode, teacherName, onBack }: Teac
       setError('Connection error. Server unreachable.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleSendReportEmail = async () => {
+    if (!roomCode) return;
+    setSendingEmailReport(true);
+    setEmailReportToast('');
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/rooms/${roomCode}/send-report`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ teacherEmail })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setEmailReportToast(`✓ Classroom audit report with Excel spreadsheet sent to ${teacherEmail || 'your email'}!`);
+        setTimeout(() => setEmailReportToast(''), 5000);
+      } else {
+        alert(data.error || 'Failed to send report.');
+      }
+    } catch (err: any) {
+      alert('Error sending email report: ' + err.message);
+    } finally {
+      setSendingEmailReport(false);
     }
   };
 
@@ -465,6 +493,32 @@ export default function TeacherDashboard({ roomCode, teacherName, onBack }: Teac
             >
               <span>➕</span> ENROLL STUDENT
             </button>
+            <button
+              className="dash-btn dash-btn-outline"
+              style={{ color: '#34d399', borderColor: '#059669', background: 'rgba(16, 185, 129, 0.1)' }}
+              onClick={() => window.open(`${API_BASE_URL}/api/rooms/${roomCode}/report/excel`, '_blank')}
+              title="Download Classroom Audit Report as multi-sheet Excel spreadsheet (.xlsx)"
+            >
+              <span>📊</span> EXCEL REPORT
+            </button>
+            <button
+              className="dash-btn dash-btn-outline"
+              onClick={() => window.open(`${API_BASE_URL}/api/rooms/${roomCode}/report/preview`, '_blank')}
+              title="Preview & Print Full Classroom Audit Report"
+            >
+              <span>📄</span> AUDIT REPORT
+            </button>
+            {teacherEmail && (
+              <button
+                className="dash-btn dash-btn-outline"
+                style={{ color: '#38bdf8', borderColor: '#0284c7', background: 'rgba(56, 189, 248, 0.1)' }}
+                onClick={handleSendReportEmail}
+                disabled={sendingEmailReport}
+                title={`Email classroom report with attached Excel spreadsheet to ${teacherEmail}`}
+              >
+                <span>✉️</span> {sendingEmailReport ? 'SENDING...' : 'EMAIL REPORT'}
+              </button>
+            )}
             <button className="dash-btn dash-btn-outline" onClick={fetchDashboardStats} title="Refresh Live Data">
               <span>⟳</span> REFRESH
             </button>
@@ -473,6 +527,22 @@ export default function TeacherDashboard({ roomCode, teacherName, onBack }: Teac
             </button>
           </div>
         </header>
+
+        {emailReportToast && (
+          <div style={{
+            background: 'rgba(34, 197, 94, 0.15)',
+            border: '1px solid #22c55e',
+            color: '#4ade80',
+            padding: '10px 18px',
+            borderRadius: '6px',
+            marginBottom: '16px',
+            fontSize: '0.9rem',
+            fontWeight: 'bold',
+            textAlign: 'center'
+          }}>
+            {emailReportToast}
+          </div>
+        )}
 
         {error && (
           <div style={{
@@ -687,7 +757,7 @@ export default function TeacherDashboard({ roomCode, teacherName, onBack }: Teac
                     </div>
                     <div className="stat-item">
                       <span>TOTAL ATTEMPTS</span>
-                      <strong style={{ color: stu.attempts > 8 ? '#f87171' : '#f8fafc' }}>
+                      <strong style={{ color: stu.attempts === 0 ? '#10b981' : stu.attempts >= 3 ? '#f87171' : '#fbbf24' }}>
                         {stu.attempts} attempt{stu.attempts !== 1 ? 's' : ''}
                       </strong>
                     </div>

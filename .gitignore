@@ -1,0 +1,14 @@
+# Environment Secrets
+.env
+*.env
+.env.local
+.env.*.local
+
+# Node & Build
+node_modules/
+dist/
+build/
+
+# Java & Maven
+target/
+.mvn/

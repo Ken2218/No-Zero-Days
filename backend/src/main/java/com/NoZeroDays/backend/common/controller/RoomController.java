@@ -12,6 +12,10 @@ import com.NoZeroDays.backend.common.repository.RoomRepository;
 import com.NoZeroDays.backend.common.repository.StudentProfileRepository;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
@@ -43,6 +47,9 @@ public class RoomController {
     @Autowired
     private AttemptLogRepository attemptLogRepository;
 
+    @Autowired
+    private com.NoZeroDays.backend.common.service.EmailReportService emailReportService;
+
     private static final String CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
     private static final SecureRandom RANDOM = new SecureRandom();
 
@@ -70,6 +77,7 @@ public class RoomController {
     public ResponseEntity<?> createRoom(@RequestBody Map<String, String> body) {
         String teacherName = body.getOrDefault("teacherName", "Instructor");
         String section = body.getOrDefault("section", "");
+        String teacherEmail = body.getOrDefault("teacherEmail", "");
         String customCode = body.get("roomCode");
 
         String roomCode;
@@ -86,17 +94,21 @@ public class RoomController {
             room = existing.get();
             room.setTeacherName(teacherName);
             room.setSection(section);
+            if (!teacherEmail.isBlank()) {
+                room.setTeacherEmail(teacherEmail.trim());
+            }
             room.setStatus("WAITING");
             room.setCreatedAt(LocalDateTime.now());
             room.setStartedAt(null);
         } else {
-            room = new Room(roomCode, teacherName, section);
+            room = new Room(roomCode, teacherName, section, teacherEmail.trim());
         }
         room = roomRepository.save(room);
 
         Map<String, Object> resp = new HashMap<>();
         resp.put("roomCode", room.getRoomCode());
         resp.put("teacherName", room.getTeacherName());
+        resp.put("teacherEmail", room.getTeacherEmail());
         resp.put("section", room.getSection());
         resp.put("status", room.getStatus());
         resp.put("createdAt", room.getCreatedAt());
@@ -122,6 +134,7 @@ public class RoomController {
         resp.put("status", room.getStatus());
         resp.put("participantCount", count);
         resp.put("teacherName", room.getTeacherName());
+        resp.put("teacherEmail", room.getTeacherEmail());
         resp.put("section", room.getSection());
         resp.put("startedAt", room.getStartedAt());
 
@@ -148,6 +161,7 @@ public class RoomController {
             item.put("fullName", s.getFullName());
             item.put("section", s.getSection() != null ? s.getSection() : room.getSection());
             item.put("joinedAt", p.getJoinedAt());
+            item.put("status", p.getStatus() != null ? p.getStatus() : "ACCEPTED");
             return item;
         }).collect(Collectors.toList());
 
@@ -226,7 +240,11 @@ public class RoomController {
         // Add to room participants if not already present
         Optional<RoomParticipant> participantOpt = roomParticipantRepository.findByRoomAndStudentProfile(room, profile);
         if (participantOpt.isEmpty()) {
-            RoomParticipant participant = new RoomParticipant(room, profile);
+            RoomParticipant participant = new RoomParticipant(room, profile, "ACCEPTED");
+            roomParticipantRepository.save(participant);
+        } else {
+            RoomParticipant participant = participantOpt.get();
+            participant.setStatus("ACCEPTED");
             roomParticipantRepository.save(participant);
         }
 
@@ -253,7 +271,7 @@ public class RoomController {
     }
 
     // -------------------------------------------------------------------------
-    // 6. TEACHER ADDS STUDENT TO ROOM
+    // 6. TEACHER ADDS STUDENT TO ROOM (WITH VALIDATION & INVITATION)
     // -------------------------------------------------------------------------
     @PostMapping("/rooms/{roomCode}/students")
     public ResponseEntity<?> addStudentToRoom(@PathVariable String roomCode, @RequestBody Map<String, String> body) {
@@ -265,7 +283,6 @@ public class RoomController {
 
         String studentNumber = body.get("studentNumber");
         String fullName = body.get("fullName");
-        String section = body.get("section");
 
         if (studentNumber == null || studentNumber.trim().isEmpty()) {
             return ResponseEntity.badRequest().body(Map.of("error", "Student number is required."));
@@ -274,21 +291,128 @@ public class RoomController {
             return ResponseEntity.badRequest().body(Map.of("error", "Student full name is required."));
         }
 
-        StudentProfile profile = resolveOrCreateStudent(studentNumber.trim(), fullName.trim(), section, room.getSection());
+        String trimmedNumber = studentNumber.trim();
+        String trimmedName = fullName.trim();
 
-        // Check if participant already exists in this room
-        Optional<RoomParticipant> participantOpt = roomParticipantRepository.findByRoomAndStudentProfile(room, profile);
-        if (participantOpt.isPresent()) {
-            return ResponseEntity.ok(Map.of("success", true, "message", "Student is already in this room.", "student", profile));
+        // 1. Validation: student number must exist in database
+        Optional<StudentProfile> studentOpt = studentRepository.findByStudentNumber(trimmedNumber);
+        if (studentOpt.isEmpty()) {
+            return ResponseEntity.status(404).body(Map.of(
+                "error", "Student number '" + trimmedNumber + "' does not exist. Student must register an account first."
+            ));
         }
 
-        RoomParticipant participant = new RoomParticipant(room, profile);
+        StudentProfile profile = studentOpt.get();
+
+        // 2. Validation: student name must match registered record
+        if (profile.getFullName() == null || !profile.getFullName().trim().equalsIgnoreCase(trimmedName)) {
+            return ResponseEntity.badRequest().body(Map.of(
+                "error", "Student name '" + trimmedName + "' does not match registered record for ID '" + trimmedNumber + "'. (Expected: " + profile.getFullName() + ")"
+            ));
+        }
+
+        // 3. Check if participant already exists in this room
+        Optional<RoomParticipant> participantOpt = roomParticipantRepository.findByRoomAndStudentProfile(room, profile);
+        if (participantOpt.isPresent()) {
+            RoomParticipant existing = participantOpt.get();
+            if ("ACCEPTED".equalsIgnoreCase(existing.getStatus())) {
+                return ResponseEntity.badRequest().body(Map.of(
+                    "error", "Student " + profile.getFullName() + " (" + trimmedNumber + ") is already in this room."
+                ));
+            } else if ("INVITED".equalsIgnoreCase(existing.getStatus())) {
+                return ResponseEntity.badRequest().body(Map.of(
+                    "error", "Student " + profile.getFullName() + " (" + trimmedNumber + ") has already been invited to this room."
+                ));
+            } else {
+                existing.setStatus("INVITED");
+                existing.setJoinedAt(LocalDateTime.now());
+                roomParticipantRepository.save(existing);
+                return ResponseEntity.ok(Map.of(
+                    "success", true,
+                    "message", "Invitation re-sent to " + profile.getFullName() + ".",
+                    "student", profile
+                ));
+            }
+        }
+
+        RoomParticipant participant = new RoomParticipant(room, profile, "INVITED");
         roomParticipantRepository.save(participant);
 
-        // Ensure active game session
-        List<GameSession> activeSessions = gameSessionRepository.findByStudentProfileAndStatus(profile, "ACTIVE");
+        return ResponseEntity.ok(Map.of(
+            "success", true,
+            "message", "Student " + profile.getFullName() + " added and invited to room.",
+            "student", profile
+        ));
+    }
+
+    // -------------------------------------------------------------------------
+    // 6A. CHECK STUDENT INVITATIONS (Polled by Student UI)
+    // -------------------------------------------------------------------------
+    @GetMapping("/students/{studentNumber}/invitations")
+    public ResponseEntity<?> getStudentInvitations(@PathVariable String studentNumber) {
+        Optional<StudentProfile> studentOpt = studentRepository.findByStudentNumber(studentNumber.trim());
+        if (studentOpt.isEmpty()) {
+            return ResponseEntity.ok(Map.of("hasInvitation", false));
+        }
+
+        StudentProfile student = studentOpt.get();
+        Optional<RoomParticipant> inviteOpt =
+                roomParticipantRepository.findFirstByStudentProfileAndStatusOrderByJoinedAtDesc(student, "INVITED");
+
+        if (inviteOpt.isEmpty()) {
+            return ResponseEntity.ok(Map.of("hasInvitation", false));
+        }
+
+        RoomParticipant p = inviteOpt.get();
+        Room room = p.getRoom();
+
+        Map<String, Object> resp = new HashMap<>();
+        resp.put("hasInvitation", true);
+        resp.put("roomCode", room.getRoomCode());
+        resp.put("teacherName", room.getTeacherName());
+        resp.put("teacherEmail", room.getTeacherEmail());
+        resp.put("section", room.getSection());
+        resp.put("roomStatus", room.getStatus());
+
+        return ResponseEntity.ok(resp);
+    }
+
+    // -------------------------------------------------------------------------
+    // 6B. STUDENT ACCEPTS ROOM INVITATION
+    // -------------------------------------------------------------------------
+    @PostMapping("/rooms/{roomCode}/invitations/accept")
+    public ResponseEntity<?> acceptRoomInvitation(@PathVariable String roomCode, @RequestBody Map<String, String> body) {
+        String studentNumber = body.get("studentNumber");
+        if (studentNumber == null || studentNumber.trim().isEmpty()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Student number is required."));
+        }
+
+        Optional<Room> roomOpt = roomRepository.findByRoomCodeIgnoreCase(roomCode.trim());
+        if (roomOpt.isEmpty()) {
+            return ResponseEntity.status(404).body(Map.of("error", "Room not found: " + roomCode));
+        }
+        Room room = roomOpt.get();
+
+        Optional<StudentProfile> studentOpt = studentRepository.findByStudentNumber(studentNumber.trim());
+        if (studentOpt.isEmpty()) {
+            return ResponseEntity.status(404).body(Map.of("error", "Student not found: " + studentNumber));
+        }
+        StudentProfile student = studentOpt.get();
+
+        Optional<RoomParticipant> partOpt = roomParticipantRepository.findByRoomAndStudentProfile(room, student);
+        if (partOpt.isEmpty()) {
+            return ResponseEntity.status(404).body(Map.of("error", "No invitation found for room " + roomCode));
+        }
+
+        RoomParticipant participant = partOpt.get();
+        participant.setStatus("ACCEPTED");
+        participant.setJoinedAt(LocalDateTime.now());
+        roomParticipantRepository.save(participant);
+
+        // Ensure active game session exists
+        List<GameSession> activeSessions = gameSessionRepository.findByStudentProfileAndStatus(student, "ACTIVE");
         if (activeSessions.isEmpty()) {
-            GameSession newSession = new GameSession(profile);
+            GameSession newSession = new GameSession(student);
             newSession.setCurrentModule("M1_MATH");
             newSession.setCurrentPhase(1);
             newSession.setStatus("ACTIVE");
@@ -298,10 +422,44 @@ public class RoomController {
             gameSessionRepository.save(newSession);
         }
 
+        Map<String, Object> resp = new HashMap<>();
+        resp.put("success", true);
+        resp.put("message", "Invitation accepted.");
+        resp.put("roomCode", room.getRoomCode());
+        resp.put("roomStatus", room.getStatus());
+        resp.put("student", student);
+
+        return ResponseEntity.ok(resp);
+    }
+
+    // -------------------------------------------------------------------------
+    // 6C. STUDENT DECLINES ROOM INVITATION
+    // -------------------------------------------------------------------------
+    @PostMapping("/rooms/{roomCode}/invitations/decline")
+    @Transactional
+    public ResponseEntity<?> declineRoomInvitation(@PathVariable String roomCode, @RequestBody Map<String, String> body) {
+        String studentNumber = body.get("studentNumber");
+        if (studentNumber == null || studentNumber.trim().isEmpty()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Student number is required."));
+        }
+
+        Optional<Room> roomOpt = roomRepository.findByRoomCodeIgnoreCase(roomCode.trim());
+        if (roomOpt.isEmpty()) {
+            return ResponseEntity.status(404).body(Map.of("error", "Room not found: " + roomCode));
+        }
+        Room room = roomOpt.get();
+
+        Optional<StudentProfile> studentOpt = studentRepository.findByStudentNumber(studentNumber.trim());
+        if (studentOpt.isEmpty()) {
+            return ResponseEntity.status(404).body(Map.of("error", "Student not found: " + studentNumber));
+        }
+        StudentProfile student = studentOpt.get();
+
+        roomParticipantRepository.deleteByRoomAndStudentProfile(room, student);
+
         return ResponseEntity.ok(Map.of(
             "success", true,
-            "message", "Student added successfully.",
-            "student", profile
+            "message", "Room invitation declined."
         ));
     }
 
@@ -412,22 +570,26 @@ public class RoomController {
                 String phaseKey = module.toUpperCase() + "_" + phaseIndex;
                 List<AttemptLog> attempts = phaseAttemptsMap.getOrDefault(phaseKey, Collections.emptyList());
 
-                int attemptsCount = attempts.size();
-                studentTotalAttempts += attemptsCount;
-                classPhaseTotalAttempts[i] += attemptsCount;
-
                 int failedCount = 0;
+                int drillResets = 0;
                 LocalDateTime lastSuccessfulTime = null;
                 LocalDateTime firstAttemptTime = attempts.isEmpty() ? null : attempts.get(0).getAttemptTime();
                 LocalDateTime lastAttemptTime = attempts.isEmpty() ? null : attempts.get(attempts.size() - 1).getAttemptTime();
 
                 for (AttemptLog log : attempts) {
-                    if (!log.isSuccessful()) {
+                    if ("system=DRILL_RESET".equals(log.getUserInputData())) {
+                        drillResets++;
+                    } else if (!log.isSuccessful()) {
                         failedCount++;
                     } else {
                         lastSuccessfulTime = log.getAttemptTime();
                     }
                 }
+
+                // 3 mistakes = 1 attempt; drill resets (e.g. 3 strikes / red-herring) count as 1 attempt
+                int attemptsCount = Math.max(drillResets, failedCount / 3);
+                studentTotalAttempts += attemptsCount;
+                classPhaseTotalAttempts[i] += attemptsCount;
 
                 // Check phase completion
                 boolean isCompleted = false;
@@ -553,6 +715,7 @@ public class RoomController {
         Map<String, Object> response = new HashMap<>();
         response.put("roomCode", room.getRoomCode());
         response.put("teacherName", room.getTeacherName());
+        response.put("teacherEmail", room.getTeacherEmail());
         response.put("section", room.getSection());
         response.put("status", room.getStatus());
         response.put("startedAt", room.getStartedAt());
@@ -652,5 +815,84 @@ public class RoomController {
             }
         }
         return "NZD" + (100 + RANDOM.nextInt(900));
+    }
+
+    // -------------------------------------------------------------------------
+    // 10. MANUAL EMAIL CLASSROOM REPORT DISPATCH
+    // -------------------------------------------------------------------------
+    @PostMapping("/rooms/{roomCode}/send-report")
+    public ResponseEntity<?> sendRoomReportEmail(
+            @PathVariable String roomCode,
+            @RequestBody(required = false) Map<String, String> body) {
+        Optional<Room> roomOpt = roomRepository.findByRoomCodeIgnoreCase(roomCode);
+        if (roomOpt.isEmpty()) {
+            return ResponseEntity.status(404).body(Map.of("error", "Room not found: " + roomCode));
+        }
+        Room room = roomOpt.get();
+        if (body != null && body.containsKey("teacherEmail") && !body.get("teacherEmail").trim().isEmpty()) {
+            room.setTeacherEmail(body.get("teacherEmail").trim());
+            roomRepository.save(room);
+        }
+        if (room.getTeacherEmail() == null || room.getTeacherEmail().trim().isEmpty()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "No teacher email address configured for room " + roomCode));
+        }
+
+        try {
+            emailReportService.sendClassroomReportSync(room, null);
+            return ResponseEntity.ok(Map.of(
+                "success", true,
+                "message", "Classroom audit report sent to " + room.getTeacherEmail()
+            ));
+        } catch (org.springframework.mail.MailAuthenticationException mae) {
+            return ResponseEntity.status(401).body(Map.of(
+                "error", "SMTP Authentication Failed: Gmail rejected login credentials. Please set your Gmail address and 16-character Google App Password in application.properties (spring.mail.username and spring.mail.password)."
+            ));
+        } catch (IllegalStateException ise) {
+            return ResponseEntity.status(400).body(Map.of(
+                "error", ise.getMessage()
+            ));
+        } catch (Exception ex) {
+            return ResponseEntity.status(500).body(Map.of(
+                "error", "Failed to send email to " + room.getTeacherEmail() + ": " + ex.getMessage()
+            ));
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // 11. HTML REPORT PREVIEW IN BROWSER
+    // -------------------------------------------------------------------------
+    @GetMapping(value = "/rooms/{roomCode}/report/preview", produces = "text/html;charset=UTF-8")
+    public ResponseEntity<String> previewRoomReport(@PathVariable String roomCode) {
+        Optional<Room> roomOpt = roomRepository.findByRoomCodeIgnoreCase(roomCode);
+        if (roomOpt.isEmpty()) {
+            return ResponseEntity.status(404).body("<h1>Room not found: " + roomCode + "</h1>");
+        }
+        Room room = roomOpt.get();
+        String html = emailReportService.generateClassroomReportHtml(room);
+        return ResponseEntity.ok(html);
+    }
+
+    // -------------------------------------------------------------------------
+    // 12. EXCEL CLASSROOM REPORT DOWNLOAD (.XLSX)
+    // -------------------------------------------------------------------------
+    @GetMapping("/rooms/{roomCode}/report/excel")
+    public ResponseEntity<byte[]> downloadRoomReportExcel(@PathVariable String roomCode) {
+        Optional<Room> roomOpt = roomRepository.findByRoomCodeIgnoreCase(roomCode);
+        if (roomOpt.isEmpty()) {
+            return ResponseEntity.status(404).build();
+        }
+        Room room = roomOpt.get();
+        try {
+            byte[] excelBytes = emailReportService.generateClassroomReportExcel(room);
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"));
+            headers.setContentDisposition(ContentDisposition.attachment()
+                    .filename("Classroom_Audit_Report_" + room.getRoomCode() + ".xlsx")
+                    .build());
+            return new ResponseEntity<>(excelBytes, headers, HttpStatus.OK);
+        } catch (Exception ex) {
+            System.err.println("[RoomController] Error generating Excel report: " + ex.getMessage());
+            return ResponseEntity.status(500).build();
+        }
     }
 }

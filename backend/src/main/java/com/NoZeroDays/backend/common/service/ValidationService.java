@@ -3,9 +3,11 @@ package com.NoZeroDays.backend.common.service;
 import com.NoZeroDays.backend.common.dto.ValidationRequest;
 import com.NoZeroDays.backend.common.dto.ValidationResponse;
 import com.NoZeroDays.backend.common.model.AttemptLog;
+import com.NoZeroDays.backend.common.model.RoomParticipant;
 import com.NoZeroDays.backend.common.model.StudentProfile;
 import com.NoZeroDays.backend.common.repository.AttemptLogRepository;
 import com.NoZeroDays.backend.common.repository.GameSessionRepository;
+import com.NoZeroDays.backend.common.repository.RoomParticipantRepository;
 import com.NoZeroDays.backend.common.repository.StudentProfileRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -36,6 +38,12 @@ public class ValidationService {
 
     @Autowired
     private GameSessionRepository gameSessionRepository;
+
+    @Autowired
+    private RoomParticipantRepository roomParticipantRepository;
+
+    @Autowired
+    private EmailReportService emailReportService;
 
     // -------------------------------------------------------------------------
     // Public utility: float tolerance comparison
@@ -244,6 +252,17 @@ public class ValidationService {
                 session.setCurrentPhase(currentCompletedPhase + 1);
                 if (currentCompletedPhase >= 7) {
                     session.setStatus("COMPLETED");
+
+                    // Trigger classroom email report to teacher if enrolled in a room
+                    try {
+                        Optional<RoomParticipant> rp =
+                                roomParticipantRepository.findFirstByStudentProfileOrderByJoinedAtDesc(student);
+                        if (rp.isPresent() && rp.get().getRoom() != null) {
+                            emailReportService.sendClassroomReport(rp.get().getRoom(), student);
+                        }
+                    } catch (Exception e) {
+                        System.err.println("[ValidationService] Failed to trigger email report: " + e.getMessage());
+                    }
                 }
                 gameSessionRepository.save(session);
             }

@@ -30,11 +30,24 @@ function App() {
   const [currentView, setCurrentView] = useState('LOGIN'); 
   const [student, setStudent] = useState(null);
   const [showCalculator, setShowCalculator] = useState(false);
+  const [autoOpenGuide, setAutoOpenGuide] = useState(false);
 
   // --- ROOM MANAGEMENT STATE ---
   const [roomCode, setRoomCode] = useState('');
   const [teacherName, setTeacherName] = useState('');
   const [teacherSection, setTeacherSection] = useState('');
+  const [teacherEmail, setTeacherEmail] = useState('');
+
+  // --- INVITATION STATE ---
+  const [roomInvitation, setRoomInvitation] = useState<{
+    roomCode: string;
+    teacherName: string;
+    section: string;
+    teacherEmail?: string;
+    roomStatus?: string;
+  } | null>(null);
+  const [isAcceptingInvite, setIsAcceptingInvite] = useState(false);
+  const [isDecliningInvite, setIsDecliningInvite] = useState(false);
 
   // --- 2. GAMEPLAY SCENARIO STATE ---
   // NOTE: All fields used by any phase/popup must have safe defaults here to prevent
@@ -184,6 +197,250 @@ function App() {
   useEffect(() => {
     console.log(`[DEBUG INTRO GATE] Student has seen the narrative briefing intro: ${hasSeenIntro}`);
   }, [hasSeenIntro]);
+
+  // Poll for pending room invitations when logged in as a student
+  useEffect(() => {
+    const currentStudentNumber = (student as any)?.studentNumber;
+    if (
+      !currentStudentNumber ||
+      currentView === 'STUDENT_WAITING' ||
+      currentView === 'TEACHER_LOBBY' ||
+      currentView === 'TEACHER_DASHBOARD' ||
+      currentView === 'LOGIN'
+    ) {
+      return;
+    }
+
+    const checkInvitations = async () => {
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/students/${currentStudentNumber}/invitations`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.hasInvitation && data.roomCode) {
+            setRoomInvitation({
+              roomCode: data.roomCode,
+              teacherName: data.teacherName,
+              section: data.section,
+              teacherEmail: data.teacherEmail,
+              roomStatus: data.roomStatus
+            });
+          } else {
+            setRoomInvitation(null);
+          }
+        }
+      } catch (err) {
+        console.error('[App] Invitation polling error:', err);
+      }
+    };
+
+    checkInvitations();
+    const interval = setInterval(checkInvitations, 3000);
+    return () => clearInterval(interval);
+  }, [student, currentView]);
+
+  const handleAcceptInvitation = async () => {
+    if (!roomInvitation || !(student as any)?.studentNumber) return;
+    setIsAcceptingInvite(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/rooms/${roomInvitation.roomCode}/invitations/accept`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          studentNumber: (student as any).studentNumber
+        })
+      });
+      if (res.ok) {
+        const targetCode = roomInvitation.roomCode;
+        setRoomCode(targetCode);
+        localStorage.setItem('studentRoomCode', targetCode);
+        setRoomInvitation(null);
+        setCurrentView('STUDENT_WAITING');
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        alert(errData.error || 'Failed to accept invitation.');
+      }
+    } catch (err: any) {
+      alert('Error accepting invitation: ' + err.message);
+    } finally {
+      setIsAcceptingInvite(false);
+    }
+  };
+
+  const handleDeclineInvitation = async () => {
+    if (!roomInvitation || !(student as any)?.studentNumber) return;
+    setIsDecliningInvite(true);
+    try {
+      await fetch(`${API_BASE_URL}/api/rooms/${roomInvitation.roomCode}/invitations/decline`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          studentNumber: (student as any).studentNumber
+        })
+      });
+      setRoomInvitation(null);
+    } catch (err: any) {
+      console.error('[App] Decline invitation error:', err);
+      setRoomInvitation(null);
+    } finally {
+      setIsDecliningInvite(false);
+    }
+  };
+
+  const renderInvitationModal = () => {
+    if (!roomInvitation) return null;
+    return (
+      <div style={{
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        background: 'rgba(5, 10, 20, 0.85)',
+        backdropFilter: 'blur(6px)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        zIndex: 99999,
+        padding: '20px',
+        animation: 'fadeIn 0.25s ease'
+      }}>
+        <div style={{
+          background: '#0d1527',
+          border: '2px solid #38bdf8',
+          borderRadius: '10px',
+          width: '100%',
+          maxWidth: '500px',
+          padding: '28px',
+          boxShadow: '0 0 40px rgba(56, 189, 248, 0.35)',
+          textAlign: 'center',
+          position: 'relative'
+        }}>
+          {/* Terminal Title Bar */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            borderBottom: '1px solid #1e293b',
+            paddingBottom: '12px',
+            marginBottom: '20px'
+          }}>
+            <div style={{ display: 'flex', gap: '6px' }}>
+              <span style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#ef4444', display: 'inline-block' }} />
+              <span style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#f59e0b', display: 'inline-block' }} />
+              <span style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#10b981', display: 'inline-block' }} />
+            </div>
+            <span style={{
+              color: '#38bdf8',
+              fontSize: '0.8rem',
+              fontFamily: 'monospace',
+              letterSpacing: '1px',
+              fontWeight: 'bold'
+            }}>
+              ROOM_INVITATION_DETECTED.EXE
+            </span>
+            <div style={{ width: '30px' }} />
+          </div>
+
+          {/* Radar Icon */}
+          <div style={{ fontSize: '2.8rem', marginBottom: '12px' }}>
+            📡
+          </div>
+
+          <h2 style={{
+            color: '#facc15',
+            fontSize: '1.35rem',
+            margin: '0 0 8px 0',
+            letterSpacing: '1px',
+            fontWeight: 'bold'
+          }}>
+            YOU HAVE BEEN ADDED TO A ROOM!
+          </h2>
+
+          <p style={{
+            color: '#94a3b8',
+            fontSize: '0.88rem',
+            marginBottom: '22px',
+            lineHeight: '1.5'
+          }}>
+            Your instructor has invited you to join a live classroom session.
+          </p>
+
+          {/* Room Details Card */}
+          <div style={{
+            background: '#070d19',
+            border: '1px solid #1e3a5f',
+            borderRadius: '8px',
+            padding: '16px 20px',
+            marginBottom: '24px',
+            textAlign: 'left'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px', alignItems: 'center' }}>
+              <span style={{ color: '#64748b', fontSize: '0.8rem', fontFamily: 'monospace' }}>ROOM CODE:</span>
+              <span style={{ color: '#38bdf8', fontSize: '1.3rem', fontWeight: 'bold', letterSpacing: '2px', fontFamily: 'monospace' }}>
+                {roomInvitation.roomCode}
+              </span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px' }}>
+              <span style={{ color: '#64748b', fontSize: '0.8rem', fontFamily: 'monospace' }}>TEACHER:</span>
+              <span style={{ color: '#f1f5f9', fontSize: '0.9rem', fontWeight: 'bold' }}>
+                {roomInvitation.teacherName || 'Instructor'}
+              </span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <span style={{ color: '#64748b', fontSize: '0.8rem', fontFamily: 'monospace' }}>SECTION:</span>
+              <span style={{ color: '#cbd5e1', fontSize: '0.9rem' }}>
+                {roomInvitation.section || 'General'}
+              </span>
+            </div>
+          </div>
+
+          {/* Buttons: ACCEPT & DECLINE */}
+          <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+            <button
+              type="button"
+              disabled={isAcceptingInvite || isDecliningInvite}
+              onClick={handleDeclineInvitation}
+              style={{
+                flex: 1,
+                background: 'rgba(239, 68, 68, 0.15)',
+                border: '1px solid #ef4444',
+                color: '#f87171',
+                padding: '12px 18px',
+                borderRadius: '6px',
+                fontSize: '0.9rem',
+                fontWeight: 'bold',
+                letterSpacing: '1px',
+                cursor: 'pointer'
+              }}
+            >
+              {isDecliningInvite ? 'DECLINING...' : '[ DECLINE ]'}
+            </button>
+
+            <button
+              type="button"
+              disabled={isAcceptingInvite || isDecliningInvite}
+              onClick={handleAcceptInvitation}
+              style={{
+                flex: 1.4,
+                background: '#059669',
+                border: '1px solid #10b981',
+                color: '#ffffff',
+                padding: '12px 18px',
+                borderRadius: '6px',
+                fontSize: '0.9rem',
+                fontWeight: 'bold',
+                letterSpacing: '1px',
+                cursor: 'pointer',
+                boxShadow: '0 0 16px rgba(16, 185, 129, 0.4)'
+              }}
+            >
+              {isAcceptingInvite ? 'CONNECTING...' : '[ ACCEPT ]'}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
 
 
   const generateCalendarDays = (totalDays) => {
@@ -1265,12 +1522,14 @@ function App() {
     return <Login 
       onLoginSuccess={(stu) => {
         setStudent(stu);
+        setAutoOpenGuide(true);
         setCurrentView('DASHBOARD');
       }}
-      onTeacherCreateRoom={(code, name, sec) => {
+      onTeacherCreateRoom={(code, name, sec, email) => {
         setRoomCode(code);
         setTeacherName(name);
         setTeacherSection(sec);
+        setTeacherEmail(email || '');
         setCurrentView('TEACHER_LOBBY');
       }}
       onStudentJoinRoom={(code, stu) => {
@@ -1285,16 +1544,22 @@ function App() {
     return <TeacherLobby
       roomCode={roomCode}
       teacherName={teacherName}
+      teacherEmail={teacherEmail}
       section={teacherSection}
       onInitiateSession={() => {
         localStorage.setItem('teacherRoomStatus', 'ACTIVE');
+        // Do not redirect; stay in teacher's room where they can monitor joined students
+      }}
+      onViewDashboard={() => {
         setCurrentView('TEACHER_DASHBOARD');
       }}
       onBack={() => {
         localStorage.removeItem('teacher');
+        localStorage.removeItem('teacherRoomStatus');
         setRoomCode('');
         setTeacherName('');
         setTeacherSection('');
+        setTeacherEmail('');
         setCurrentView('LOGIN');
       }}
       onRoomCreated={(code) => setRoomCode(code)}
@@ -1306,12 +1571,8 @@ function App() {
       roomCode={roomCode}
       teacherName={teacherName}
       onBack={() => {
-        localStorage.removeItem('teacher');
-        localStorage.removeItem('teacherRoomStatus');
-        setRoomCode('');
-        setTeacherName('');
-        setTeacherSection('');
-        setCurrentView('LOGIN');
+        // Return to teacher lobby
+        setCurrentView('TEACHER_LOBBY');
       }}
     />;
   }
@@ -1320,12 +1581,17 @@ function App() {
     return <StudentWaiting
       roomCode={roomCode}
       studentName={student?.fullName || 'Student'}
+      studentNumber={student?.studentNumber || ''}
       onSessionStarted={() => {
-        // Student is redirected to Phase 1 room
-        setActivePhaseIndex(1);
-        handleRerollScenario(true, 1);
-        setCurrentView('PHASE1');
-        setFeedback('Session started! Simulator Room 1 entered. Scan HR Contract desk and June Calendar wall to extract variables.');
+        // Student is redirected to the phases dashboard (not Phase 1), with guide open
+        setAutoOpenGuide(true);
+        setCurrentView('DASHBOARD');
+      }}
+      onKickedOut={() => {
+        setRoomCode('');
+        localStorage.removeItem('studentRoomCode');
+        setAutoOpenGuide(false);
+        setCurrentView('DASHBOARD');
       }}
       onBack={() => {
         setRoomCode('');
@@ -1336,49 +1602,55 @@ function App() {
   }
 
   if (currentView === 'DASHBOARD') {
-    return <Dashboard 
-      roomCode={roomCode}
-      theme={theme}
-      toggleTheme={toggleTheme}
-      onSelectPhase={(phase) => {
-        setActivePhaseIndex(phase);
-        handleRerollScenario(true, phase);
-        
-        let targetView = 'PHASE';
-        if (phase === 1) {
-          targetView = 'PHASE1';
-          setFeedback('Simulator Room 1 entered. Scan HR Contract desk and June Calendar wall to extract variables.');
-        } else if (phase === 2) {
-          targetView = 'PHASE2';
-          setFeedback('Security & Biometrics Room entered. Scan the Biometrics Terminal and DOLE Poster to audit the tardiness deduction.');
-        } else if (phase === 3) {
-          targetView = 'PHASE3';
-          setFeedback('Production Line Room entered. Scan the Production Time Card and DOLE Overtime Poster to audit overtime premiums.');
-        } else if (phase === 4) {
-          targetView = 'PHASE4';
-          setFeedback('Factory Breakroom entered. Scan the Corkboard Corporate Memos and Timesheet Terminal to audit Regular Holiday Pay.');
-        } else if (phase === 5) {
-          targetView = 'PHASE5';
-          setFeedback('PC Lab / Bureaucracy Room entered. Scan the SSS contribution table and employee loan statement on the monitor to audit SSS deductions.');
-        } else if (phase === 6) {
-          targetView = 'PHASE6';
-          setFeedback('PC Lab / Bureaucracy Room entered. Scan the PhilHealth table and HR salary database to audit PhilHealth premium deductions.');
-        } else if (phase === 7) {
-          targetView = 'PHASE7';
-          setFeedback('Executive Boardroom entered. Scan the Master Case File in the Audit Folder on the table to perform the final payroll run.');
-        } else {
-          setFeedback(`Room for Phase ${phase} entered.`);
-        }
-        
-        setCurrentView(targetView);
-      }} 
-      onStudentJoinRoom={(code, studentObj) => {
-        setStudent(studentObj);
-        setRoomCode(code);
-        localStorage.setItem('studentRoomCode', code);
-        setCurrentView('STUDENT_WAITING');
-      }}
-    />;
+    return (
+      <>
+        <Dashboard 
+          roomCode={roomCode}
+          theme={theme}
+          toggleTheme={toggleTheme}
+          initialGuideOpen={autoOpenGuide}
+          onSelectPhase={(phase) => {
+            setActivePhaseIndex(phase);
+            handleRerollScenario(true, phase);
+            
+            let targetView = 'PHASE';
+            if (phase === 1) {
+              targetView = 'PHASE1';
+              setFeedback('Simulator Room 1 entered. Scan HR Contract desk and June Calendar wall to extract variables.');
+            } else if (phase === 2) {
+              targetView = 'PHASE2';
+              setFeedback('Security & Biometrics Room entered. Scan the Biometrics Terminal and DOLE Poster to audit the tardiness deduction.');
+            } else if (phase === 3) {
+              targetView = 'PHASE3';
+              setFeedback('Production Line Room entered. Scan the Production Time Card and DOLE Overtime Poster to audit overtime premiums.');
+            } else if (phase === 4) {
+              targetView = 'PHASE4';
+              setFeedback('Factory Breakroom entered. Scan the Corkboard Corporate Memos and Timesheet Terminal to audit Regular Holiday Pay.');
+            } else if (phase === 5) {
+              targetView = 'PHASE5';
+              setFeedback('PC Lab / Bureaucracy Room entered. Scan the SSS contribution table and employee loan statement on the monitor to audit SSS deductions.');
+            } else if (phase === 6) {
+              targetView = 'PHASE6';
+              setFeedback('PC Lab / Bureaucracy Room entered. Scan the PhilHealth table and HR salary database to audit PhilHealth premium deductions.');
+            } else if (phase === 7) {
+              targetView = 'PHASE7';
+              setFeedback('Executive Boardroom entered. Scan the Master Case File in the Audit Folder on the table to perform the final payroll run.');
+            } else {
+              setFeedback(`Room for Phase ${phase} entered.`);
+            }
+            
+            setCurrentView(targetView);
+          }} 
+          onStudentJoinRoom={(code, studentObj) => {
+            setStudent(studentObj);
+            setRoomCode(code);
+            localStorage.setItem('studentRoomCode', code);
+            setCurrentView('STUDENT_WAITING');
+          }}
+        />
+        {renderInvitationModal()}
+      </>
+    );
   }
 
   return (
@@ -1623,6 +1895,9 @@ function App() {
           onToggle={() => setShowCalculator(prev => !prev)} 
         />
       )}
+
+      {/* Student Room Invitation Modal */}
+      {renderInvitationModal()}
 
     </div>
   );

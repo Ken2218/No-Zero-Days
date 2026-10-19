@@ -8,6 +8,7 @@ export default function Login({ onLoginSuccess, onTeacherCreateRoom, onStudentJo
   const [role, setRole] = useState('GRADE12-ABM');
   const [section, setSection] = useState('GRADE12-ABM'); // kept for backward compatibility
   const [teacherSection, setTeacherSection] = useState('');
+  const [teacherEmail, setTeacherEmail] = useState('');
   const [teacherRoomCode, setTeacherRoomCode] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -19,8 +20,6 @@ export default function Login({ onLoginSuccess, onTeacherCreateRoom, onStudentJo
   const [joinError, setJoinError] = useState('');
 
   const isTeacher = role === 'OM-TEACHER';
-
-
 
   const handleRoleChange = (e) => {
     const newRole = e.target.value;
@@ -78,6 +77,15 @@ export default function Login({ onLoginSuccess, onTeacherCreateRoom, onStudentJo
       setError('Please enter your full name.');
       return;
     }
+    if (!teacherEmail.trim()) {
+      setError('Please enter your email address to receive completion reports.');
+      return;
+    }
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(teacherEmail.trim())) {
+      setError('Please enter a valid email address (e.g., teacher@school.edu).');
+      return;
+    }
 
     setLoading(true);
     setError('');
@@ -86,10 +94,11 @@ export default function Login({ onLoginSuccess, onTeacherCreateRoom, onStudentJo
       // Store teacher info in localStorage without a room code initially
       localStorage.setItem('teacher', JSON.stringify({
         teacherName: fullName.trim(),
+        teacherEmail: teacherEmail.trim(),
         section: teacherSection.trim(),
         roomCode: ''
       }));
-      onTeacherCreateRoom('', fullName.trim(), teacherSection.trim());
+      onTeacherCreateRoom('', fullName.trim(), teacherSection.trim(), teacherEmail.trim());
     } catch (err) {
       console.error('[Auth] Login error:', err);
       setError('Failed to login.');
@@ -99,8 +108,6 @@ export default function Login({ onLoginSuccess, onTeacherCreateRoom, onStudentJo
   };
 
   // Student: Join Room logic moved to Dashboard
-
-
 
   return (
     <div className="auth-container">
@@ -139,19 +146,37 @@ export default function Login({ onLoginSuccess, onTeacherCreateRoom, onStudentJo
               </div>
             )}
 
-            {/* Section — only for Teachers */}
+            {/* Teacher Fields: Email & Section */}
             {isTeacher && (
-              <div className="input-group">
-                <label>SECTION</label>
-                <input 
-                  type="text" 
-                  placeholder="e.g., Grade 12 - ABM A"
-                  value={teacherSection}
-                  onChange={(e) => setTeacherSection(e.target.value)}
-                  disabled={loading}
-                  className="retro-input"
-                />
-              </div>
+              <>
+                <div className="input-group">
+                  <label>EMAIL ADDRESS (FOR STUDENT REPORTS)</label>
+                  <input 
+                    type="email" 
+                    placeholder="e.g., teacher@school.edu"
+                    value={teacherEmail}
+                    onChange={(e) => setTeacherEmail(e.target.value)}
+                    disabled={loading}
+                    className="retro-input"
+                    required
+                  />
+                  <span style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '4px', display: 'block' }}>
+                    Phase time &amp; attempt reports will be sent here upon student completion.
+                  </span>
+                </div>
+
+                <div className="input-group">
+                  <label>SECTION</label>
+                  <input 
+                    type="text" 
+                    placeholder="e.g., Grade 12 - ABM A"
+                    value={teacherSection}
+                    onChange={(e) => setTeacherSection(e.target.value)}
+                    disabled={loading}
+                    className="retro-input"
+                  />
+                </div>
+              </>
             )}
 
             <div className="input-group">

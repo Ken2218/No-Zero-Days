@@ -12,6 +12,10 @@ import java.util.Optional;
 @Repository
 public interface RoomParticipantRepository extends JpaRepository<RoomParticipant, Long> {
     List<RoomParticipant> findByRoomOrderByJoinedAtAsc(Room room);
+    List<RoomParticipant> findByStudentProfile(StudentProfile studentProfile);
+    List<RoomParticipant> findByStudentProfileAndStatus(StudentProfile studentProfile, String status);
+    Optional<RoomParticipant> findFirstByStudentProfileOrderByJoinedAtDesc(StudentProfile studentProfile);
+    Optional<RoomParticipant> findFirstByStudentProfileAndStatusOrderByJoinedAtDesc(StudentProfile studentProfile, String status);
     Optional<RoomParticipant> findByRoomAndStudentProfile(Room room, StudentProfile studentProfile);
     void deleteByRoomAndStudentProfile(Room room, StudentProfile studentProfile);
     void deleteByStudentProfile(StudentProfile studentProfile);

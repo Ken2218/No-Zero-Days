@@ -7,22 +7,26 @@ interface Participant {
   fullName: string;
   section: string;
   joinedAt: string;
+  status?: string;
 }
 
 interface TeacherLobbyProps {
   roomCode: string;
   teacherName: string;
+  teacherEmail?: string;
   section: string;
   onInitiateSession: () => void;
   onBack: () => void;
   onRoomCreated: (code: string) => void;
+  onViewDashboard?: () => void;
 }
 
-export default function TeacherLobby({ roomCode, teacherName, section, onInitiateSession, onBack, onRoomCreated }: TeacherLobbyProps) {
+export default function TeacherLobby({ roomCode, teacherName, teacherEmail, section, onInitiateSession, onBack, onRoomCreated, onViewDashboard }: TeacherLobbyProps) {
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [participantCount, setParticipantCount] = useState(0);
   const [copied, setCopied] = useState(false);
   const [initiating, setInitiating] = useState(false);
+  const [sessionActive, setSessionActive] = useState(false);
   const [error, setError] = useState('');
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -38,6 +42,11 @@ export default function TeacherLobby({ roomCode, teacherName, section, onInitiat
 
   // Delete student loading state
   const [deletingStudentNum, setDeletingStudentNum] = useState<string | null>(null);
+
+  // Email report state
+  const [currentTeacherEmail, setCurrentTeacherEmail] = useState(teacherEmail || '');
+  const [sendingEmailReport, setSendingEmailReport] = useState(false);
+  const [emailReportToast, setEmailReportToast] = useState('');
 
   const generateRandomCode = () => {
     const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -63,18 +72,39 @@ export default function TeacherLobby({ roomCode, teacherName, section, onInitiat
     }
   }, [roomCode]);
 
-  // Poll every 3 seconds for new participants, but ONLY if a room is active
+  // Check room status from backend
+  const checkRoomStatus = useCallback(async () => {
+    if (!roomCode) return;
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/rooms/${roomCode}/status`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.status === 'ACTIVE') {
+          setSessionActive(true);
+        }
+        if (data.teacherEmail) {
+          setCurrentTeacherEmail(data.teacherEmail);
+        }
+      }
+    } catch (_) {}
+  }, [roomCode]);
+
+  // Poll every 3 seconds for new participants & status, but ONLY if a room is active
   useEffect(() => {
     if (roomCode) {
       fetchParticipants(); // Initial fetch
-      pollIntervalRef.current = setInterval(fetchParticipants, 3000);
+      checkRoomStatus();
+      pollIntervalRef.current = setInterval(() => {
+        fetchParticipants();
+        checkRoomStatus();
+      }, 3000);
     }
     return () => {
       if (pollIntervalRef.current) {
         clearInterval(pollIntervalRef.current);
       }
     };
-  }, [fetchParticipants, roomCode]);
+  }, [fetchParticipants, checkRoomStatus, roomCode]);
 
   const handleCreateRoom = async () => {
     setIsCreatingRoom(true);
@@ -83,6 +113,7 @@ export default function TeacherLobby({ roomCode, teacherName, section, onInitiat
     try {
       const payload: Record<string, string> = {
         teacherName: teacherName,
+        teacherEmail: currentTeacherEmail.trim(),
         section: section
       };
       if (customRoomCode.trim()) {
@@ -149,10 +180,8 @@ export default function TeacherLobby({ roomCode, teacherName, section, onInitiat
         headers: { 'Content-Type': 'application/json' }
       });
       if (res.ok) {
-        // Stop polling
-        if (pollIntervalRef.current) {
-          clearInterval(pollIntervalRef.current);
-        }
+        setSessionActive(true);
+        // Do NOT stop polling: keep polling alive so teacher sees joined students in real-time
         onInitiateSession();
       } else {
         const data = await res.json();
@@ -224,6 +253,31 @@ export default function TeacherLobby({ roomCode, teacherName, section, onInitiat
     }
   };
 
+  const handleSendReportEmail = async () => {
+    if (!roomCode) return;
+    const targetEmail = currentTeacherEmail || teacherEmail;
+    setSendingEmailReport(true);
+    setEmailReportToast('');
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/rooms/${roomCode}/send-report`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ teacherEmail: targetEmail })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setEmailReportToast(`✓ Classroom audit report sent to ${targetEmail || 'your email'}!`);
+        setTimeout(() => setEmailReportToast(''), 4500);
+      } else {
+        alert(data.error || 'Failed to send report.');
+      }
+    } catch (err: any) {
+      alert('Error sending email report: ' + err.message);
+    } finally {
+      setSendingEmailReport(false);
+    }
+  };
+
   return (
     <div className="lobby-container">
       <div className="glow-overlay"></div>
@@ -240,14 +294,43 @@ export default function TeacherLobby({ roomCode, teacherName, section, onInitiat
         <div className="lobby-body">
           {/* Room Creation UI (if room not yet created) */}
           {!roomCode ? (
-            <div style={{ padding: '20px', background: 'rgba(15, 23, 42, 0.6)', border: '1px solid #334155', borderRadius: '8px', marginBottom: '20px' }}>
-              <h3 style={{ color: '#fbbf24', marginTop: 0 }}>GENERATE A CLASSROOM</h3>
-              <p style={{ color: '#94a3b8', fontSize: '0.9rem', marginBottom: '15px' }}>
+            <div style={{ padding: '24px', background: 'rgba(15, 23, 42, 0.7)', border: '1px solid #334155', borderRadius: '8px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+                <h3 style={{ color: '#fbbf24', margin: 0, fontSize: '1.2rem', letterSpacing: '1px' }}>GENERATE A CLASSROOM</h3>
+                <button 
+                  type="button" 
+                  className="lobby-back-btn" 
+                  onClick={onBack}
+                  style={{ margin: 0 }}
+                >
+                  [ EXIT ]
+                </button>
+              </div>
+
+              <p style={{ color: '#94a3b8', fontSize: '0.9rem', marginBottom: '16px' }}>
                 Create a room session to generate a passcode for your enrolled students.
               </p>
+
+              <div style={{ marginBottom: '20px' }}>
+                <label style={{ display: 'block', color: '#60a5fa', fontSize: '0.8rem', fontWeight: 'bold', marginBottom: '8px', letterSpacing: '1px' }}>
+                  TEACHER REPORT EMAIL
+                </label>
+                <input 
+                  type="email" 
+                  placeholder="e.g., teacher@school.edu"
+                  value={currentTeacherEmail}
+                  onChange={(e) => setCurrentTeacherEmail(e.target.value)}
+                  disabled={isCreatingRoom}
+                  style={{ width: '100%', boxSizing: 'border-box', padding: '12px', background: '#0b1120', border: '1px solid #334155', borderRadius: '4px', color: '#fff', fontSize: '1rem' }}
+                  required
+                />
+                <span style={{ color: '#64748b', fontSize: '0.75rem', marginTop: '6px', display: 'block' }}>
+                  Each teacher's room will send reports exclusively to their entered email address.
+                </span>
+              </div>
               
               <div style={{ marginBottom: '20px' }}>
-                <label style={{ display: 'block', color: '#60a5fa', fontSize: '0.8rem', fontWeight: 'bold', marginBottom: '5px' }}>ROOM CODE (Optional)</label>
+                <label style={{ display: 'block', color: '#60a5fa', fontSize: '0.8rem', fontWeight: 'bold', marginBottom: '8px', letterSpacing: '1px' }}>ROOM CODE (Optional)</label>
                 <div style={{ display: 'flex', gap: '10px' }}>
                   <input 
                     type="text" 
@@ -256,151 +339,416 @@ export default function TeacherLobby({ roomCode, teacherName, section, onInitiat
                     onChange={(e) => setCustomRoomCode(e.target.value.toUpperCase())}
                     disabled={isCreatingRoom}
                     maxLength={10}
-                    style={{ flex: 1, padding: '10px', background: '#0b1120', border: '1px solid #334155', color: '#fff', fontSize: '1.2rem', letterSpacing: '3px', textTransform: 'uppercase' }}
+                    style={{ flex: 1, padding: '12px', background: '#0b1120', border: '1px solid #334155', borderRadius: '4px', color: '#fff', fontSize: '1.2rem', letterSpacing: '3px', textTransform: 'uppercase' }}
                   />
                   <button
                     type="button"
                     onClick={generateRandomCode}
                     disabled={isCreatingRoom}
-                    style={{ padding: '0 15px', background: '#1e293b', border: '1px solid #475569', color: '#cbd5e1', cursor: 'pointer', fontWeight: 'bold' }}
+                    style={{ padding: '0 18px', background: '#1e293b', border: '1px solid #475569', borderRadius: '4px', color: '#cbd5e1', cursor: 'pointer', fontWeight: 'bold' }}
                   >
                     🎲 GENERATE
                   </button>
                 </div>
-                <span style={{ color: '#475569', fontSize: '0.75rem', marginTop: '4px', display: 'block' }}>
+                <span style={{ color: '#64748b', fontSize: '0.75rem', marginTop: '6px', display: 'block' }}>
                   Leave blank for a random 6-character code.
                 </span>
               </div>
 
+              {error && (
+                <div style={{
+                  background: 'rgba(239, 68, 68, 0.15)',
+                  border: '1px solid #ef4444',
+                  color: '#fca5a5',
+                  padding: '10px 14px',
+                  borderRadius: '4px',
+                  fontSize: '0.85rem',
+                  marginBottom: '15px'
+                }}>
+                  {error}
+                </div>
+              )}
+
               <button 
                 onClick={handleCreateRoom}
                 disabled={isCreatingRoom}
-                style={{ width: '100%', padding: '12px', background: '#3b82f6', border: 'none', color: '#fff', fontSize: '1rem', fontWeight: 'bold', cursor: 'pointer', borderRadius: '4px' }}
+                style={{ width: '100%', padding: '14px', background: '#2563eb', border: 'none', color: '#fff', fontSize: '1rem', fontWeight: 'bold', cursor: 'pointer', borderRadius: '4px', letterSpacing: '1px' }}
               >
                 {isCreatingRoom ? 'CREATING...' : 'CREATE ROOM >'}
               </button>
             </div>
           ) : (
-            <div className="room-code-display" onClick={handleCopyCode} title="Click to copy code">
-              <span className="room-code-label">SHARE THIS ROOM CODE WITH YOUR STUDENTS</span>
-              <div className="room-code-value">{roomCode}</div>
-              <span className="room-code-hint">Click anywhere to copy</span>
-              {copied && <span className="copied-toast">COPIED!</span>}
-            </div>
-          )}
-
-          {/* Room Info */}
-          <div className="room-info-bar">
-            <div className="room-info-item">
-              <span>TEACHER: </span><strong>{teacherName}</strong>
-            </div>
-            <div className="room-info-item">
-              <span>SECTION: </span><strong>{section || 'N/A'}</strong>
-            </div>
-            <button className="lobby-back-btn" onClick={onBack}>[ EXIT ROOM ]</button>
-          </div>
-
-          {/* Action Row & Student Counter */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
-            <div className="student-counter" style={{ margin: 0 }}>
-              <span className="counter-icon">👥</span>
-              <span className="counter-text">{participantCount} STUDENT{participantCount !== 1 ? 'S' : ''} ENROLLED</span>
-              <div className="counter-pulse"></div>
-            </div>
-
-            {roomCode && (
-              <button
-                type="button"
-                onClick={() => setShowAddModal(true)}
-                style={{
-                  background: 'rgba(59, 130, 246, 0.15)',
-                  border: '1px solid #3b82f6',
-                  color: '#60a5fa',
-                  padding: '8px 14px',
-                  borderRadius: '4px',
-                  cursor: 'pointer',
-                  fontWeight: 'bold',
-                  fontSize: '0.85rem',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px'
-                }}
-              >
-                <span>➕</span> ADD STUDENT
-              </button>
-            )}
-          </div>
-
-          {/* Student List */}
-          <div className="student-list-container">
-            <div className="student-list-header" style={{ gridTemplateColumns: '40px 1.5fr 1.2fr 80px' }}>
-              <span>#</span>
-              <span>STUDENT NAME</span>
-              <span>STUDENT NUMBER</span>
-              <span style={{ textAlign: 'right' }}>ACTION</span>
-            </div>
-            {participants.length === 0 ? (
-              <div className="empty-list-message">
-                <span className="empty-icon">📡</span>
-                Waiting for students to join using code <strong style={{ color: '#facc15' }}>{roomCode}</strong> or add them manually above.
+            <>
+              {/* Room Code Display */}
+              <div className="room-code-display" onClick={handleCopyCode} title="Click to copy code">
+                <span className="room-code-label">SHARE THIS ROOM CODE WITH YOUR STUDENTS</span>
+                <div className="room-code-value">{roomCode}</div>
+                <span className="room-code-hint">Click anywhere to copy</span>
+                {copied && <span className="copied-toast">COPIED!</span>}
               </div>
-            ) : (
-              participants.map((p, index) => (
-                <div key={p.studentNumber} className="student-list-row" style={{ gridTemplateColumns: '40px 1.5fr 1.2fr 80px', animationDelay: `${index * 0.05}s`, alignItems: 'center' }}>
-                  <span className="row-index">{index + 1}</span>
-                  <span style={{ fontWeight: 'bold' }}>{p.fullName}</span>
-                  <span style={{ color: '#94a3b8' }}>{p.studentNumber}</span>
-                  <div style={{ textAlign: 'right' }}>
+
+              {/* Room Info */}
+              <div className="room-info-bar">
+                <div className="room-info-item">
+                  <span>TEACHER: </span><strong>{teacherName}</strong>
+                </div>
+                {(currentTeacherEmail || teacherEmail) && (
+                  <div className="room-info-item">
+                    <span>REPORT EMAIL: </span><strong style={{ color: '#38bdf8' }}>{currentTeacherEmail || teacherEmail}</strong>
+                  </div>
+                )}
+                <div className="room-info-item">
+                  <span>SECTION: </span><strong>{section || 'N/A'}</strong>
+                </div>
+                <button className="lobby-back-btn" onClick={onBack}>[ EXIT ROOM ]</button>
+              </div>
+
+              {/* Action Row & Student Counter */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+                <div className="student-counter" style={{ margin: 0 }}>
+                  <span className="counter-icon">👥</span>
+                  <span className="counter-text">{participantCount} STUDENT{participantCount !== 1 ? 'S' : ''} ENROLLED</span>
+                  <div className="counter-pulse"></div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setShowAddModal(true)}
+                  style={{
+                    background: 'rgba(59, 130, 246, 0.15)',
+                    border: '1px solid #3b82f6',
+                    color: '#60a5fa',
+                    padding: '8px 14px',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    fontWeight: 'bold',
+                    fontSize: '0.85rem',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px'
+                  }}
+                >
+                  <span>➕</span> ADD STUDENT
+                </button>
+              </div>
+
+              {/* Student List */}
+              <div className="student-list-container">
+                <div className="student-list-header" style={{ gridTemplateColumns: '40px 1.5fr 1.2fr 80px' }}>
+                  <span>#</span>
+                  <span>STUDENT NAME</span>
+                  <span>STUDENT NUMBER</span>
+                  <span style={{ textAlign: 'right' }}>ACTION</span>
+                </div>
+                {participants.length === 0 ? (
+                  <div className="empty-list-message">
+                    <span className="empty-icon">📡</span>
+                    Waiting for students to join using code <strong style={{ color: '#facc15' }}>{roomCode}</strong> or add them manually above.
+                  </div>
+                ) : (
+                  participants.map((p, index) => (
+                    <div key={p.studentNumber} className="student-list-row" style={{ gridTemplateColumns: '40px 1.5fr 1.2fr 80px', animationDelay: `${index * 0.05}s`, alignItems: 'center' }}>
+                      <span className="row-index">{index + 1}</span>
+                      <span style={{ fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span>{p.fullName}</span>
+                        {p.status === 'INVITED' ? (
+                          <span style={{
+                            fontSize: '0.65rem',
+                            padding: '2px 6px',
+                            borderRadius: '3px',
+                            background: 'rgba(234, 179, 8, 0.15)',
+                            border: '1px solid #eab308',
+                            color: '#facc15',
+                            letterSpacing: '0.5px',
+                            fontWeight: 'normal'
+                          }}>
+                            INVITED
+                          </span>
+                        ) : (
+                          <span style={{
+                            fontSize: '0.65rem',
+                            padding: '2px 6px',
+                            borderRadius: '3px',
+                            background: 'rgba(34, 197, 94, 0.15)',
+                            border: '1px solid #22c55e',
+                            color: '#4ade80',
+                            letterSpacing: '0.5px',
+                            fontWeight: 'normal'
+                          }}>
+                            JOINED
+                          </span>
+                        )}
+                      </span>
+                      <span style={{ color: '#94a3b8' }}>{p.studentNumber}</span>
+                      <div style={{ textAlign: 'right' }}>
+                        <button
+                          type="button"
+                          disabled={deletingStudentNum === p.studentNumber}
+                          onClick={() => handleRemoveStudent(p.studentNumber, p.fullName)}
+                          style={{
+                            background: 'rgba(239, 68, 68, 0.15)',
+                            border: '1px solid #ef4444',
+                            color: '#f87171',
+                            padding: '3px 8px',
+                            borderRadius: '3px',
+                            cursor: 'pointer',
+                            fontSize: '0.75rem'
+                          }}
+                          title="Remove from room"
+                        >
+                          {deletingStudentNum === p.studentNumber ? '...' : 'DELETE'}
+                        </button>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+
+              {/* Error Banner */}
+              {error && (
+                <div style={{
+                  background: 'rgba(239, 68, 68, 0.15)',
+                  border: '1px solid #ef4444',
+                  color: '#fca5a5',
+                  padding: '10px 14px',
+                  borderRadius: '4px',
+                  fontSize: '0.85rem',
+                  marginBottom: '15px'
+                }}>
+                  {error}
+                </div>
+              )}
+
+              {/* Session Controls */}
+              {sessionActive ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '10px' }}>
+                  <div style={{
+                    background: 'rgba(34, 197, 94, 0.12)',
+                    border: '1px solid #22c55e',
+                    color: '#4ade80',
+                    padding: '14px 18px',
+                    borderRadius: '4px',
+                    fontWeight: 'bold',
+                    fontSize: '0.9rem',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '10px',
+                    letterSpacing: '1px'
+                  }}>
+                    <span style={{
+                      width: '10px',
+                      height: '10px',
+                      borderRadius: '50%',
+                      backgroundColor: '#22c55e',
+                      boxShadow: '0 0 10px #22c55e',
+                      display: 'inline-block'
+                    }}></span>
+                    SESSION ACTIVE // {participantCount} STUDENT{participantCount !== 1 ? 'S' : ''} CONNECTED
+                  </div>
+
+                  {teacherEmail && (
                     <button
                       type="button"
-                      disabled={deletingStudentNum === p.studentNumber}
-                      onClick={() => handleRemoveStudent(p.studentNumber, p.fullName)}
+                      onClick={handleSendReportEmail}
+                      disabled={sendingEmailReport}
                       style={{
-                        background: 'rgba(239, 68, 68, 0.15)',
-                        border: '1px solid #ef4444',
-                        color: '#f87171',
-                        padding: '3px 8px',
-                        borderRadius: '3px',
+                        background: 'rgba(56, 189, 248, 0.12)',
+                        border: '1px solid #0284c7',
+                        color: '#38bdf8',
+                        padding: '10px 16px',
+                        borderRadius: '4px',
                         cursor: 'pointer',
-                        fontSize: '0.75rem'
+                        fontSize: '0.85rem',
+                        fontWeight: 'bold',
+                        letterSpacing: '0.5px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '8px'
                       }}
-                      title="Remove from room"
                     >
-                      {deletingStudentNum === p.studentNumber ? '...' : 'DELETE'}
+                      <span>✉️</span>
+                      <span>{sendingEmailReport ? 'SENDING CLASS REPORT...' : `EMAIL CLASS REPORT TO ${teacherEmail}`}</span>
                     </button>
-                  </div>
+                  )}
+
+                  {roomCode && participantCount > 0 && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => window.open(`${API_BASE_URL}/api/rooms/${roomCode}/report/excel`, '_blank')}
+                        style={{
+                          background: 'rgba(16, 185, 129, 0.15)',
+                          border: '1px solid #10b981',
+                          color: '#34d399',
+                          padding: '10px 16px',
+                          borderRadius: '4px',
+                          cursor: 'pointer',
+                          fontSize: '0.85rem',
+                          fontWeight: 'bold',
+                          letterSpacing: '0.5px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '8px'
+                        }}
+                        title="Download multi-sheet Excel spreadsheet report (.xlsx)"
+                      >
+                        <span>📊</span>
+                        <span>DOWNLOAD EXCEL REPORT (.XLSX)</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => window.open(`${API_BASE_URL}/api/rooms/${roomCode}/report/preview`, '_blank')}
+                        style={{
+                          background: 'rgba(245, 158, 11, 0.1)',
+                          border: '1px solid #f59e0b',
+                          color: '#fbbf24',
+                          padding: '10px 16px',
+                          borderRadius: '4px',
+                          cursor: 'pointer',
+                          fontSize: '0.85rem',
+                          fontWeight: 'bold',
+                          letterSpacing: '0.5px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '8px'
+                        }}
+                      >
+                        <span>📄</span>
+                        <span>PREVIEW AUDIT REPORT IN BROWSER</span>
+                      </button>
+                    </>
+                  )}
+
+                  {emailReportToast && (
+                    <div style={{ color: '#4ade80', fontSize: '0.85rem', textAlign: 'center', fontWeight: 'bold' }}>
+                      {emailReportToast}
+                    </div>
+                  )}
+
+                  {onViewDashboard && (
+                    <button
+                      type="button"
+                      onClick={onViewDashboard}
+                      style={{
+                        background: '#1e293b',
+                        border: '1px solid #3b82f6',
+                        color: '#60a5fa',
+                        padding: '10px 16px',
+                        borderRadius: '4px',
+                        cursor: 'pointer',
+                        fontSize: '0.85rem',
+                        fontWeight: 'bold',
+                        letterSpacing: '0.5px'
+                      }}
+                    >
+                      📊 VIEW LIVE ANALYTICS DASHBOARD &gt;
+                    </button>
+                  )}
                 </div>
-              ))
-            )}
-          </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  <button
+                    className="initiate-btn"
+                    onClick={handleInitiate}
+                    disabled={initiating || participantCount === 0 || !roomCode}
+                  >
+                    {initiating ? 'STARTING SESSION...' : `INITIATE SESSION > (${participantCount} STUDENT${participantCount !== 1 ? 'S' : ''})`}
+                  </button>
 
-          {/* Error Banner */}
-          {error && (
-            <div style={{
-              background: 'rgba(239, 68, 68, 0.15)',
-              border: '1px solid #ef4444',
-              color: '#fca5a5',
-              padding: '10px 14px',
-              borderRadius: '4px',
-              fontSize: '0.85rem',
-              marginBottom: '15px'
-            }}>
-              {error}
-            </div>
+                  {teacherEmail && participantCount > 0 && (
+                    <button
+                      type="button"
+                      onClick={handleSendReportEmail}
+                      disabled={sendingEmailReport}
+                      style={{
+                        background: 'rgba(56, 189, 248, 0.1)',
+                        border: '1px solid #0284c7',
+                        color: '#38bdf8',
+                        padding: '10px 16px',
+                        borderRadius: '4px',
+                        cursor: 'pointer',
+                        fontSize: '0.85rem',
+                        fontWeight: 'bold',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '8px'
+                      }}
+                    >
+                      <span>✉️</span>
+                      <span>{sendingEmailReport ? 'SENDING CLASS REPORT...' : `EMAIL CLASS REPORT NOW`}</span>
+                    </button>
+                  )}
+
+                  {roomCode && participantCount > 0 && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => window.open(`${API_BASE_URL}/api/rooms/${roomCode}/report/excel`, '_blank')}
+                        style={{
+                          background: 'rgba(16, 185, 129, 0.15)',
+                          border: '1px solid #10b981',
+                          color: '#34d399',
+                          padding: '10px 16px',
+                          borderRadius: '4px',
+                          cursor: 'pointer',
+                          fontSize: '0.85rem',
+                          fontWeight: 'bold',
+                          letterSpacing: '0.5px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '8px'
+                        }}
+                        title="Download multi-sheet Excel spreadsheet report (.xlsx)"
+                      >
+                        <span>📊</span>
+                        <span>DOWNLOAD EXCEL REPORT (.XLSX)</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => window.open(`${API_BASE_URL}/api/rooms/${roomCode}/report/preview`, '_blank')}
+                        style={{
+                          background: 'rgba(245, 158, 11, 0.1)',
+                          border: '1px solid #f59e0b',
+                          color: '#fbbf24',
+                          padding: '10px 16px',
+                          borderRadius: '4px',
+                          cursor: 'pointer',
+                          fontSize: '0.85rem',
+                          fontWeight: 'bold',
+                          letterSpacing: '0.5px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '8px'
+                        }}
+                      >
+                        <span>📄</span>
+                        <span>PREVIEW AUDIT REPORT IN BROWSER</span>
+                      </button>
+                    </>
+                  )}
+
+                  {emailReportToast && (
+                    <div style={{ color: '#4ade80', fontSize: '0.85rem', textAlign: 'center', fontWeight: 'bold' }}>
+                      {emailReportToast}
+                    </div>
+                  )}
+                </div>
+              )}
+            </>
           )}
-
-          {/* Initiate Session Button */}
-          <button
-            className="initiate-btn"
-            onClick={handleInitiate}
-            disabled={initiating || participantCount === 0 || !roomCode}
-          >
-            {initiating ? 'STARTING SESSION...' : `INITIATE SESSION > (${participantCount} STUDENT${participantCount !== 1 ? 'S' : ''})`}
-          </button>
         </div>
 
         <div className="lobby-footer">
-          <span>Room active // Students will be directed to Phase 1 after session initiation</span>
+          <span>{roomCode ? 'Room active // Students will be directed to Phase 1 after session initiation' : 'Create a room to generate a passcode'}</span>
         </div>
       </div>
 

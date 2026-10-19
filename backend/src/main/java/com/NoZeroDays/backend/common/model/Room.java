@@ -19,6 +19,8 @@ public class Room {
 
     private String section;
 
+    private String teacherEmail;
+
     @Column(nullable = false)
     private String status = "WAITING"; // WAITING, ACTIVE, COMPLETED
 
@@ -35,6 +37,15 @@ public class Room {
         this.createdAt = LocalDateTime.now();
     }
 
+    public Room(String roomCode, String teacherName, String section, String teacherEmail) {
+        this.roomCode = roomCode;
+        this.teacherName = teacherName;
+        this.section = section;
+        this.teacherEmail = teacherEmail;
+        this.status = "WAITING";
+        this.createdAt = LocalDateTime.now();
+    }
+
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
 
@@ -43,6 +54,9 @@ public class Room {
 
     public String getTeacherName() { return teacherName; }
     public void setTeacherName(String teacherName) { this.teacherName = teacherName; }
+
+    public String getTeacherEmail() { return teacherEmail; }
+    public void setTeacherEmail(String teacherEmail) { this.teacherEmail = teacherEmail; }
 
     public String getSection() { return section; }
     public void setSection(String section) { this.section = section; }

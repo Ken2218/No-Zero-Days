@@ -21,6 +21,9 @@ public class RoomParticipant {
     @JoinColumn(name = "student_profile_id", nullable = false)
     private StudentProfile studentProfile;
 
+    @Column(nullable = false, length = 20)
+    private String status = "ACCEPTED";
+
     private LocalDateTime joinedAt = LocalDateTime.now();
 
     public RoomParticipant() {}
@@ -29,6 +32,14 @@ public class RoomParticipant {
         this.room = room;
         this.studentProfile = studentProfile;
         this.joinedAt = LocalDateTime.now();
+        this.status = "ACCEPTED";
+    }
+
+    public RoomParticipant(Room room, StudentProfile studentProfile, String status) {
+        this.room = room;
+        this.studentProfile = studentProfile;
+        this.joinedAt = LocalDateTime.now();
+        this.status = status != null ? status : "ACCEPTED";
     }
 
     public Long getId() { return id; }
@@ -42,4 +53,7 @@ public class RoomParticipant {
 
     public LocalDateTime getJoinedAt() { return joinedAt; }
     public void setJoinedAt(LocalDateTime joinedAt) { this.joinedAt = joinedAt; }
+
+    public String getStatus() { return status != null ? status : "ACCEPTED"; }
+    public void setStatus(String status) { this.status = status; }
 }

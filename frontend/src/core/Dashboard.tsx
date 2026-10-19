@@ -10,9 +10,10 @@ interface DashboardProps {
   roomCode: string;
   theme?: 'dark' | 'light';
   toggleTheme?: () => void;
+  initialGuideOpen?: boolean;
 }
 
-export default function Dashboard({ onSelectPhase, onStudentJoinRoom, roomCode, theme, toggleTheme }: DashboardProps) {
+export default function Dashboard({ onSelectPhase, onStudentJoinRoom, roomCode, theme, toggleTheme, initialGuideOpen }: DashboardProps) {
   const [student, setStudent] = useState({ fullName: 'Temporary Student', studentNumber: 'STU-UNKNOWN', section: 'ABM-A' });
   const [progressList, setProgressList] = useState([]);
   const [selectedPhaseSummary, setSelectedPhaseSummary] = useState(null);
@@ -24,17 +25,21 @@ export default function Dashboard({ onSelectPhase, onStudentJoinRoom, roomCode, 
   const [joinLoading, setJoinLoading] = useState(false);
   const [joinError, setJoinError] = useState('');
 
-  // ── Onboarding guide: auto-open on first login ──
+  // ── Onboarding guide: auto-open on login or session redirect ──
   const [isGuideOpen, setIsGuideOpen] = useState(false);
 
   useEffect(() => {
+    if (initialGuideOpen) {
+      const timer = setTimeout(() => setIsGuideOpen(true), 400);
+      return () => clearTimeout(timer);
+    }
     const hasSeenTutorial = localStorage.getItem('hasSeenTutorial');
     if (!hasSeenTutorial) {
       // Small delay so the dashboard renders before the modal appears
       const timer = setTimeout(() => setIsGuideOpen(true), 600);
       return () => clearTimeout(timer);
     }
-  }, []);
+  }, [initialGuideOpen]);
 
   const defaultRoadmap = [
     { phaseId: 1, title: "Phase 1: Basic Gross Pay", description: "Audit morning Lobby Daily Rate and Shifts worked.", status: "ACTIVE", bestScore: 0, module: "M1_MATH", phaseIndex: 1 },

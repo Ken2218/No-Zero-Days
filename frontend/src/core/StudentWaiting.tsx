@@ -5,32 +5,60 @@ import './Auth.css';
 interface StudentWaitingProps {
   roomCode: string;
   studentName: string;
+  studentNumber?: string;
   onSessionStarted: () => void;
+  onKickedOut: () => void;
   onBack: () => void;
 }
 
-export default function StudentWaiting({ roomCode, studentName, onSessionStarted, onBack }: StudentWaitingProps) {
+export default function StudentWaiting({ roomCode, studentName, studentNumber, onSessionStarted, onKickedOut, onBack }: StudentWaitingProps) {
   const [status, setStatus] = useState('WAITING');
   const [participantCount, setParticipantCount] = useState(0);
   const [dots, setDots] = useState('');
+  const [kickedOut, setKickedOut] = useState(false);
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const dotsIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const hasInitiallyJoinedRef = useRef(false);
 
-  // Poll for session status every 3 seconds
+  // Poll for session status and membership every 2.5 seconds
   useEffect(() => {
     const checkStatus = async () => {
       try {
+        // 1. Check room status
         const res = await fetch(`${API_BASE_URL}/api/rooms/${roomCode}/status`);
-        if (res.ok) {
+        if (!res.ok) {
+          if (res.status === 404) {
+            handleKickOut();
+            return;
+          }
+        } else {
           const data = await res.json();
           setStatus(data.status);
           setParticipantCount(data.participantCount || 0);
 
           if (data.status === 'ACTIVE') {
-            // Session has started! Navigate to Phase 1
+            // Session has started! Navigate to Phases dashboard
             if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
             if (dotsIntervalRef.current) clearInterval(dotsIntervalRef.current);
             onSessionStarted();
+            return;
+          }
+        }
+
+        // 2. Check if student is still in participants list
+        if (studentNumber) {
+          const partRes = await fetch(`${API_BASE_URL}/api/rooms/${roomCode}/participants`);
+          if (partRes.ok) {
+            const partData = await partRes.json();
+            const list = partData.participants || [];
+            const isPresent = list.some((p: any) => p.studentNumber === studentNumber);
+
+            if (isPresent) {
+              hasInitiallyJoinedRef.current = true;
+            } else if (hasInitiallyJoinedRef.current) {
+              // Was present before, now removed by teacher!
+              handleKickOut();
+            }
           }
         }
       } catch (err) {
@@ -38,13 +66,19 @@ export default function StudentWaiting({ roomCode, studentName, onSessionStarted
       }
     };
 
+    const handleKickOut = () => {
+      if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+      if (dotsIntervalRef.current) clearInterval(dotsIntervalRef.current);
+      setKickedOut(true);
+    };
+
     checkStatus(); // Immediate first check
-    pollIntervalRef.current = setInterval(checkStatus, 3000);
+    pollIntervalRef.current = setInterval(checkStatus, 2500);
 
     return () => {
       if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
     };
-  }, [roomCode, onSessionStarted]);
+  }, [roomCode, studentNumber, onSessionStarted]);
 
   // Animated loading dots
   useEffect(() => {
@@ -55,6 +89,55 @@ export default function StudentWaiting({ roomCode, studentName, onSessionStarted
       if (dotsIntervalRef.current) clearInterval(dotsIntervalRef.current);
     };
   }, []);
+
+  if (kickedOut) {
+    return (
+      <div className="auth-container">
+        <div className="glow-overlay"></div>
+        <div className="scanlines"></div>
+
+        <div className="auth-card" style={{ maxWidth: '480px', textAlign: 'center', borderColor: '#ef4444', boxShadow: '0 0 30px rgba(239, 68, 68, 0.4)' }}>
+          <div className="terminal-header" style={{ borderColor: '#ef4444' }}>
+            <span className="dot red"></span>
+            <span className="dot yellow"></span>
+            <span className="dot green"></span>
+            <span className="terminal-title" style={{ color: '#f87171' }}>ROOM_NOTICE.EXE</span>
+          </div>
+
+          <div className="auth-body" style={{ padding: '30px 20px' }}>
+            <div style={{ fontSize: '3.5rem', marginBottom: '15px' }}>🚫</div>
+            <h2 style={{ color: '#ef4444', fontSize: '1.4rem', margin: '0 0 10px 0', letterSpacing: '1px' }}>
+              YOU HAVE BEEN KICKED OUT
+            </h2>
+            <p style={{ color: '#cbd5e1', fontSize: '0.95rem', marginBottom: '25px', lineHeight: '1.5' }}>
+              You were removed from room <strong style={{ color: '#facc15' }}>{roomCode}</strong> by the instructor.
+            </p>
+            <button
+              onClick={onKickedOut}
+              style={{
+                width: '100%',
+                padding: '12px',
+                background: '#ef4444',
+                border: 'none',
+                color: '#fff',
+                fontSize: '1rem',
+                fontWeight: 'bold',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                letterSpacing: '1px'
+              }}
+            >
+              PROCEED TO PHASES &gt;
+            </button>
+          </div>
+
+          <div className="auth-footer" style={{ borderColor: '#ef4444' }}>
+            <span>Disconnected from classroom session</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="auth-container">
