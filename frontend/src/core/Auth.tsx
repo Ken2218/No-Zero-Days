@@ -55,7 +55,7 @@ export default function Login({ onLoginSuccess, onTeacherCreateRoom, onStudentJo
         try {
           const errBody = await response.text();
           errorDetail += `: ${errBody.substring(0, 200)}`;
-        } catch (_) {}
+        } catch (_) { }
         throw new Error(`Backend error — ${errorDetail}`);
       }
 
@@ -113,7 +113,7 @@ export default function Login({ onLoginSuccess, onTeacherCreateRoom, onStudentJo
     <div className="auth-container">
       <div className="glow-overlay"></div>
       <div className="scanlines"></div>
-      
+
       <div className="auth-card">
         <div className="terminal-header">
           <span className="dot red"></span>
@@ -135,8 +135,8 @@ export default function Login({ onLoginSuccess, onTeacherCreateRoom, onStudentJo
             {!isTeacher && (
               <div className="input-group">
                 <label>STUDENT NUMBER</label>
-                <input 
-                  type="text" 
+                <input
+                  type="text"
                   placeholder="e.g., 2026-1002"
                   value={studentNumber}
                   onChange={(e) => setStudentNumber(e.target.value)}
@@ -151,8 +151,8 @@ export default function Login({ onLoginSuccess, onTeacherCreateRoom, onStudentJo
               <>
                 <div className="input-group">
                   <label>EMAIL ADDRESS (FOR STUDENT REPORTS)</label>
-                  <input 
-                    type="email" 
+                  <input
+                    type="email"
                     placeholder="e.g., teacher@school.edu"
                     value={teacherEmail}
                     onChange={(e) => setTeacherEmail(e.target.value)}
@@ -167,8 +167,8 @@ export default function Login({ onLoginSuccess, onTeacherCreateRoom, onStudentJo
 
                 <div className="input-group">
                   <label>SECTION</label>
-                  <input 
-                    type="text" 
+                  <input
+                    type="text"
                     placeholder="e.g., Grade 12 - ABM A"
                     value={teacherSection}
                     onChange={(e) => setTeacherSection(e.target.value)}
@@ -181,8 +181,8 @@ export default function Login({ onLoginSuccess, onTeacherCreateRoom, onStudentJo
 
             <div className="input-group">
               <label>FULL NAME</label>
-              <input 
-                type="text" 
+              <input
+                type="text"
                 placeholder="e.g., Juan Dela Cruz"
                 value={fullName}
                 onChange={(e) => setFullName(e.target.value)}
@@ -193,8 +193,8 @@ export default function Login({ onLoginSuccess, onTeacherCreateRoom, onStudentJo
 
             <div className="input-group">
               <label>ROLE</label>
-              <select 
-                value={role} 
+              <select
+                value={role}
                 onChange={handleRoleChange}
                 disabled={loading}
                 className="retro-select"

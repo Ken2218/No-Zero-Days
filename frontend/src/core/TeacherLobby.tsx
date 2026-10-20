@@ -255,24 +255,37 @@ export default function TeacherLobby({ roomCode, teacherName, teacherEmail, sect
 
   const handleSendReportEmail = async () => {
     if (!roomCode) return;
-    const targetEmail = currentTeacherEmail || teacherEmail;
+    const targetEmail = (currentTeacherEmail || teacherEmail || '').trim();
+    if (!targetEmail) {
+      const emailInput = prompt('Enter teacher email to receive classroom report:');
+      if (!emailInput || !emailInput.trim()) return;
+      setCurrentTeacherEmail(emailInput.trim());
+      sendEmailTo(emailInput.trim());
+      return;
+    }
+    sendEmailTo(targetEmail);
+  };
+
+  const sendEmailTo = async (email: string) => {
     setSendingEmailReport(true);
     setEmailReportToast('');
     try {
       const res = await fetch(`${API_BASE_URL}/api/rooms/${roomCode}/send-report`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ teacherEmail: targetEmail })
+        body: JSON.stringify({ teacherEmail: email })
       });
       const data = await res.json();
       if (res.ok) {
-        setEmailReportToast(`✓ Classroom audit report sent to ${targetEmail || 'your email'}!`);
-        setTimeout(() => setEmailReportToast(''), 4500);
+        setEmailReportToast(`✓ Classroom report sent to ${email}!`);
+        setTimeout(() => setEmailReportToast(''), 5000);
       } else {
-        alert(data.error || 'Failed to send report.');
+        setEmailReportToast(`✕ ${data.error || 'Failed to send report.'}`);
+        setTimeout(() => setEmailReportToast(''), 6000);
       }
     } catch (err: any) {
-      alert('Error sending email report: ' + err.message);
+      setEmailReportToast(`✕ Error sending email: ${err.message}`);
+      setTimeout(() => setEmailReportToast(''), 6000);
     } finally {
       setSendingEmailReport(false);
     }
@@ -547,85 +560,48 @@ export default function TeacherLobby({ roomCode, teacherName, teacherEmail, sect
                     SESSION ACTIVE // {participantCount} STUDENT{participantCount !== 1 ? 'S' : ''} CONNECTED
                   </div>
 
-                  {teacherEmail && (
-                    <button
-                      type="button"
-                      onClick={handleSendReportEmail}
-                      disabled={sendingEmailReport}
-                      style={{
-                        background: 'rgba(56, 189, 248, 0.12)',
-                        border: '1px solid #0284c7',
-                        color: '#38bdf8',
-                        padding: '10px 16px',
-                        borderRadius: '4px',
-                        cursor: 'pointer',
-                        fontSize: '0.85rem',
-                        fontWeight: 'bold',
-                        letterSpacing: '0.5px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: '8px'
-                      }}
-                    >
-                      <span>✉️</span>
-                      <span>{sendingEmailReport ? 'SENDING CLASS REPORT...' : `EMAIL CLASS REPORT TO ${teacherEmail}`}</span>
-                    </button>
-                  )}
-
-                  {roomCode && participantCount > 0 && (
-                    <>
-                      <button
-                        type="button"
-                        onClick={() => window.open(`${API_BASE_URL}/api/rooms/${roomCode}/report/excel`, '_blank')}
-                        style={{
-                          background: 'rgba(16, 185, 129, 0.15)',
-                          border: '1px solid #10b981',
-                          color: '#34d399',
-                          padding: '10px 16px',
-                          borderRadius: '4px',
-                          cursor: 'pointer',
-                          fontSize: '0.85rem',
-                          fontWeight: 'bold',
-                          letterSpacing: '0.5px',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          gap: '8px'
-                        }}
-                        title="Download multi-sheet Excel spreadsheet report (.xlsx)"
-                      >
-                        <span>📊</span>
-                        <span>DOWNLOAD EXCEL REPORT (.XLSX)</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => window.open(`${API_BASE_URL}/api/rooms/${roomCode}/report/preview`, '_blank')}
-                        style={{
-                          background: 'rgba(245, 158, 11, 0.1)',
-                          border: '1px solid #f59e0b',
-                          color: '#fbbf24',
-                          padding: '10px 16px',
-                          borderRadius: '4px',
-                          cursor: 'pointer',
-                          fontSize: '0.85rem',
-                          fontWeight: 'bold',
-                          letterSpacing: '0.5px',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          gap: '8px'
-                        }}
-                      >
-                        <span>📄</span>
-                        <span>PREVIEW AUDIT REPORT IN BROWSER</span>
-                      </button>
-                    </>
-                  )}
+                  <button
+                    type="button"
+                    onClick={handleSendReportEmail}
+                    disabled={sendingEmailReport}
+                    style={{
+                      background: 'rgba(56, 189, 248, 0.15)',
+                      border: '1px solid #0284c7',
+                      color: '#38bdf8',
+                      padding: '10px 16px',
+                      borderRadius: '4px',
+                      cursor: 'pointer',
+                      fontSize: '0.85rem',
+                      fontWeight: 'bold',
+                      letterSpacing: '0.5px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '8px'
+                    }}
+                    title="Send classroom audit report to teacher email"
+                  >
+                    <span>✉️</span>
+                    <span>
+                      {sendingEmailReport
+                        ? 'SENDING EMAIL REPORT...'
+                        : (currentTeacherEmail || teacherEmail
+                            ? `SEND EMAIL REPORT TO ${(currentTeacherEmail || teacherEmail).toUpperCase()}`
+                            : 'SEND EMAIL REPORT')}
+                    </span>
+                  </button>
 
                   {emailReportToast && (
-                    <div style={{ color: '#4ade80', fontSize: '0.85rem', textAlign: 'center', fontWeight: 'bold' }}>
+                    <div style={{
+                      color: emailReportToast.startsWith('✕') ? '#f87171' : '#4ade80',
+                      fontSize: '0.85rem',
+                      textAlign: 'center',
+                      fontWeight: 'bold',
+                      padding: '8px 12px',
+                      background: emailReportToast.startsWith('✕') ? 'rgba(239, 68, 68, 0.12)' : 'rgba(34, 197, 94, 0.12)',
+                      borderRadius: '4px',
+                      border: emailReportToast.startsWith('✕') ? '1px solid #ef4444' : '1px solid #22c55e'
+                    }}>
                       {emailReportToast}
                     </div>
                   )}
@@ -660,87 +636,52 @@ export default function TeacherLobby({ roomCode, teacherName, teacherEmail, sect
                     {initiating ? 'STARTING SESSION...' : `INITIATE SESSION > (${participantCount} STUDENT${participantCount !== 1 ? 'S' : ''})`}
                   </button>
 
-                  {teacherEmail && participantCount > 0 && (
-                    <button
-                      type="button"
-                      onClick={handleSendReportEmail}
-                      disabled={sendingEmailReport}
-                      style={{
-                        background: 'rgba(56, 189, 248, 0.1)',
-                        border: '1px solid #0284c7',
-                        color: '#38bdf8',
-                        padding: '10px 16px',
-                        borderRadius: '4px',
-                        cursor: 'pointer',
-                        fontSize: '0.85rem',
-                        fontWeight: 'bold',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: '8px'
-                      }}
-                    >
-                      <span>✉️</span>
-                      <span>{sendingEmailReport ? 'SENDING CLASS REPORT...' : `EMAIL CLASS REPORT NOW`}</span>
-                    </button>
-                  )}
-
-                  {roomCode && participantCount > 0 && (
-                    <>
-                      <button
-                        type="button"
-                        onClick={() => window.open(`${API_BASE_URL}/api/rooms/${roomCode}/report/excel`, '_blank')}
-                        style={{
-                          background: 'rgba(16, 185, 129, 0.15)',
-                          border: '1px solid #10b981',
-                          color: '#34d399',
-                          padding: '10px 16px',
-                          borderRadius: '4px',
-                          cursor: 'pointer',
-                          fontSize: '0.85rem',
-                          fontWeight: 'bold',
-                          letterSpacing: '0.5px',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          gap: '8px'
-                        }}
-                        title="Download multi-sheet Excel spreadsheet report (.xlsx)"
-                      >
-                        <span>📊</span>
-                        <span>DOWNLOAD EXCEL REPORT (.XLSX)</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => window.open(`${API_BASE_URL}/api/rooms/${roomCode}/report/preview`, '_blank')}
-                        style={{
-                          background: 'rgba(245, 158, 11, 0.1)',
-                          border: '1px solid #f59e0b',
-                          color: '#fbbf24',
-                          padding: '10px 16px',
-                          borderRadius: '4px',
-                          cursor: 'pointer',
-                          fontSize: '0.85rem',
-                          fontWeight: 'bold',
-                          letterSpacing: '0.5px',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          gap: '8px'
-                        }}
-                      >
-                        <span>📄</span>
-                        <span>PREVIEW AUDIT REPORT IN BROWSER</span>
-                      </button>
-                    </>
-                  )}
+                  <button
+                    type="button"
+                    onClick={handleSendReportEmail}
+                    disabled={sendingEmailReport}
+                    style={{
+                      background: 'rgba(56, 189, 248, 0.15)',
+                      border: '1px solid #0284c7',
+                      color: '#38bdf8',
+                      padding: '10px 16px',
+                      borderRadius: '4px',
+                      cursor: 'pointer',
+                      fontSize: '0.85rem',
+                      fontWeight: 'bold',
+                      letterSpacing: '0.5px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '8px'
+                    }}
+                    title="Send classroom audit report to teacher email"
+                  >
+                    <span>✉️</span>
+                    <span>
+                      {sendingEmailReport
+                        ? 'SENDING EMAIL REPORT...'
+                        : (currentTeacherEmail || teacherEmail
+                            ? `SEND EMAIL REPORT TO ${(currentTeacherEmail || teacherEmail).toUpperCase()}`
+                            : 'SEND EMAIL REPORT')}
+                    </span>
+                  </button>
 
                   {emailReportToast && (
-                    <div style={{ color: '#4ade80', fontSize: '0.85rem', textAlign: 'center', fontWeight: 'bold' }}>
+                    <div style={{
+                      color: emailReportToast.startsWith('✕') ? '#f87171' : '#4ade80',
+                      fontSize: '0.85rem',
+                      textAlign: 'center',
+                      fontWeight: 'bold',
+                      padding: '8px 12px',
+                      background: emailReportToast.startsWith('✕') ? 'rgba(239, 68, 68, 0.12)' : 'rgba(34, 197, 94, 0.12)',
+                      borderRadius: '4px',
+                      border: emailReportToast.startsWith('✕') ? '1px solid #ef4444' : '1px solid #22c55e'
+                    }}>
                       {emailReportToast}
                     </div>
                   )}
+
                 </div>
               )}
             </>

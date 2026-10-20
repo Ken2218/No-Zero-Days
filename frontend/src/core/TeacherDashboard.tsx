@@ -110,23 +110,37 @@ export default function TeacherDashboard({ roomCode, teacherName, onBack }: Teac
 
   const handleSendReportEmail = async () => {
     if (!roomCode) return;
+    const targetEmail = (teacherEmail || '').trim();
+    if (!targetEmail) {
+      const emailInput = prompt('Enter teacher email to receive classroom report:');
+      if (!emailInput || !emailInput.trim()) return;
+      setTeacherEmail(emailInput.trim());
+      sendDashboardEmailTo(emailInput.trim());
+      return;
+    }
+    sendDashboardEmailTo(targetEmail);
+  };
+
+  const sendDashboardEmailTo = async (email: string) => {
     setSendingEmailReport(true);
     setEmailReportToast('');
     try {
       const res = await fetch(`${API_BASE_URL}/api/rooms/${roomCode}/send-report`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ teacherEmail })
+        body: JSON.stringify({ teacherEmail: email })
       });
       const data = await res.json();
       if (res.ok) {
-        setEmailReportToast(`✓ Classroom audit report with Excel spreadsheet sent to ${teacherEmail || 'your email'}!`);
+        setEmailReportToast(`✓ Classroom report sent to ${email}!`);
         setTimeout(() => setEmailReportToast(''), 5000);
       } else {
-        alert(data.error || 'Failed to send report.');
+        setEmailReportToast(`✕ ${data.error || 'Failed to send report.'}`);
+        setTimeout(() => setEmailReportToast(''), 6000);
       }
     } catch (err: any) {
-      alert('Error sending email report: ' + err.message);
+      setEmailReportToast(`✕ Error sending email: ${err.message}`);
+      setTimeout(() => setEmailReportToast(''), 6000);
     } finally {
       setSendingEmailReport(false);
     }
@@ -495,30 +509,13 @@ export default function TeacherDashboard({ roomCode, teacherName, onBack }: Teac
             </button>
             <button
               className="dash-btn dash-btn-outline"
-              style={{ color: '#34d399', borderColor: '#059669', background: 'rgba(16, 185, 129, 0.1)' }}
-              onClick={() => window.open(`${API_BASE_URL}/api/rooms/${roomCode}/report/excel`, '_blank')}
-              title="Download Classroom Audit Report as multi-sheet Excel spreadsheet (.xlsx)"
+              style={{ color: '#38bdf8', borderColor: '#0284c7', background: 'rgba(56, 189, 248, 0.1)' }}
+              onClick={handleSendReportEmail}
+              disabled={sendingEmailReport}
+              title={teacherEmail ? `Email classroom report to ${teacherEmail}` : 'Send classroom report to email'}
             >
-              <span>📊</span> EXCEL REPORT
+              <span>✉️</span> {sendingEmailReport ? 'SENDING...' : 'EMAIL REPORT'}
             </button>
-            <button
-              className="dash-btn dash-btn-outline"
-              onClick={() => window.open(`${API_BASE_URL}/api/rooms/${roomCode}/report/preview`, '_blank')}
-              title="Preview & Print Full Classroom Audit Report"
-            >
-              <span>📄</span> AUDIT REPORT
-            </button>
-            {teacherEmail && (
-              <button
-                className="dash-btn dash-btn-outline"
-                style={{ color: '#38bdf8', borderColor: '#0284c7', background: 'rgba(56, 189, 248, 0.1)' }}
-                onClick={handleSendReportEmail}
-                disabled={sendingEmailReport}
-                title={`Email classroom report with attached Excel spreadsheet to ${teacherEmail}`}
-              >
-                <span>✉️</span> {sendingEmailReport ? 'SENDING...' : 'EMAIL REPORT'}
-              </button>
-            )}
             <button className="dash-btn dash-btn-outline" onClick={fetchDashboardStats} title="Refresh Live Data">
               <span>⟳</span> REFRESH
             </button>
@@ -530,9 +527,9 @@ export default function TeacherDashboard({ roomCode, teacherName, onBack }: Teac
 
         {emailReportToast && (
           <div style={{
-            background: 'rgba(34, 197, 94, 0.15)',
-            border: '1px solid #22c55e',
-            color: '#4ade80',
+            background: emailReportToast.startsWith('✕') ? 'rgba(239, 68, 68, 0.15)' : 'rgba(34, 197, 94, 0.15)',
+            border: emailReportToast.startsWith('✕') ? '1px solid #ef4444' : '1px solid #22c55e',
+            color: emailReportToast.startsWith('✕') ? '#fca5a5' : '#4ade80',
             padding: '10px 18px',
             borderRadius: '6px',
             marginBottom: '16px',
@@ -543,6 +540,7 @@ export default function TeacherDashboard({ roomCode, teacherName, onBack }: Teac
             {emailReportToast}
           </div>
         )}
+
 
         {error && (
           <div style={{
