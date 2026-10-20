@@ -9,15 +9,8 @@ export default function Login({ onLoginSuccess, onTeacherCreateRoom, onStudentJo
   const [section, setSection] = useState('GRADE12-ABM'); // kept for backward compatibility
   const [teacherSection, setTeacherSection] = useState('');
   const [teacherEmail, setTeacherEmail] = useState('');
-  const [teacherRoomCode, setTeacherRoomCode] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-
-  // Join Room Modal state
-  const [showJoinModal, setShowJoinModal] = useState(false);
-  const [joinRoomCode, setJoinRoomCode] = useState('');
-  const [joinLoading, setJoinLoading] = useState(false);
-  const [joinError, setJoinError] = useState('');
 
   const isTeacher = role === 'OM-TEACHER';
 
@@ -46,7 +39,7 @@ export default function Login({ onLoginSuccess, onTeacherCreateRoom, onStudentJo
         body: JSON.stringify({
           studentNumber: studentNumber.trim(),
           fullName: fullName.trim(),
-          section: section
+          section: '' // Section will be inherited when student joins teacher's room
         })
       });
 
@@ -77,6 +70,10 @@ export default function Login({ onLoginSuccess, onTeacherCreateRoom, onStudentJo
       setError('Please enter your full name.');
       return;
     }
+    if (!teacherSection.trim()) {
+      setError('Please enter your section (e.g., Grade 12 - ABM A).');
+      return;
+    }
     if (!teacherEmail.trim()) {
       setError('Please enter your email address to receive completion reports.');
       return;
@@ -91,14 +88,47 @@ export default function Login({ onLoginSuccess, onTeacherCreateRoom, onStudentJo
     setError('');
 
     try {
-      // Store teacher info in localStorage without a room code initially
+      // Check if teacher already has an existing active room for this name and section
+      let existingCode = '';
+      let existingSection = teacherSection.trim();
+      try {
+        const queryParams = new URLSearchParams({
+          teacherName: fullName.trim(),
+          section: teacherSection.trim(),
+          teacherEmail: teacherEmail.trim()
+        });
+        console.log('[Auth] Checking for existing room:', { teacherName: fullName.trim(), section: teacherSection.trim() });
+        const findRes = await fetch(`${API_BASE_URL}/api/rooms/find-by-teacher?${queryParams.toString()}`);
+        if (findRes.ok) {
+          const findData = await findRes.json();
+          console.log('[Auth] find-by-teacher response:', findData);
+          if (findData.found && findData.roomCode) {
+            existingCode = findData.roomCode;
+            // Use the section from the existing room if available
+            if (findData.section) {
+              existingSection = findData.section;
+            }
+          }
+        } else {
+          console.warn('[Auth] find-by-teacher returned non-OK status:', findRes.status);
+        }
+      } catch (checkErr) {
+        console.warn('[Auth] Room recovery check error:', checkErr);
+      }
+
+      // Store teacher info in localStorage with restored room code
       localStorage.setItem('teacher', JSON.stringify({
         teacherName: fullName.trim(),
         teacherEmail: teacherEmail.trim(),
-        section: teacherSection.trim(),
-        roomCode: ''
+        section: existingSection,
+        roomCode: existingCode
       }));
-      onTeacherCreateRoom('', fullName.trim(), teacherSection.trim(), teacherEmail.trim());
+      if (existingCode) {
+        localStorage.setItem('teacherRoomStatus', 'ACTIVE');
+        console.log('[Auth] Recovered existing room:', existingCode, 'section:', existingSection);
+      }
+
+      onTeacherCreateRoom(existingCode, fullName.trim(), existingSection, teacherEmail.trim());
     } catch (err) {
       console.error('[Auth] Login error:', err);
       setError('Failed to login.');

@@ -5,6 +5,7 @@ import OnboardingGuide from '../components/Shared/OnboardingGuide';
 import './Auth.css';
 
 interface DashboardProps {
+  student?: any;
   onSelectPhase: (phaseId: number) => void;
   onStudentJoinRoom: (code: string, student: any) => void;
   roomCode: string;
@@ -13,8 +14,15 @@ interface DashboardProps {
   initialGuideOpen?: boolean;
 }
 
-export default function Dashboard({ onSelectPhase, onStudentJoinRoom, roomCode, theme, toggleTheme, initialGuideOpen }: DashboardProps) {
-  const [student, setStudent] = useState({ fullName: 'Temporary Student', studentNumber: 'STU-UNKNOWN', section: 'ABM-A' });
+export default function Dashboard({ student: propStudent, onSelectPhase, onStudentJoinRoom, roomCode, theme, toggleTheme, initialGuideOpen }: DashboardProps) {
+  const [student, setStudent] = useState(() => {
+    if (propStudent) return propStudent;
+    const saved = localStorage.getItem('student');
+    if (saved) {
+      try { return JSON.parse(saved); } catch (_) {}
+    }
+    return { fullName: 'Student', studentNumber: '', section: '' };
+  });
   const [progressList, setProgressList] = useState([]);
   const [selectedPhaseSummary, setSelectedPhaseSummary] = useState(null);
   const [loadingProgress, setLoadingProgress] = useState(true);
@@ -25,21 +33,20 @@ export default function Dashboard({ onSelectPhase, onStudentJoinRoom, roomCode, 
   const [joinLoading, setJoinLoading] = useState(false);
   const [joinError, setJoinError] = useState('');
 
-  // ── Onboarding guide: auto-open on login or session redirect ──
+  // ── Onboarding guide: strictly auto-opens ONCE per user lifetime ──
   const [isGuideOpen, setIsGuideOpen] = useState(false);
 
   useEffect(() => {
-    if (initialGuideOpen) {
-      const timer = setTimeout(() => setIsGuideOpen(true), 400);
-      return () => clearTimeout(timer);
-    }
     const hasSeenTutorial = localStorage.getItem('hasSeenTutorial');
     if (!hasSeenTutorial) {
       // Small delay so the dashboard renders before the modal appears
-      const timer = setTimeout(() => setIsGuideOpen(true), 600);
+      const timer = setTimeout(() => {
+        setIsGuideOpen(true);
+        localStorage.setItem('hasSeenTutorial', 'true');
+      }, 600);
       return () => clearTimeout(timer);
     }
-  }, [initialGuideOpen]);
+  }, []);
 
   const defaultRoadmap = [
     { phaseId: 1, title: "Phase 1: Basic Gross Pay", description: "Audit morning Lobby Daily Rate and Shifts worked.", status: "ACTIVE", bestScore: 0, module: "M1_MATH", phaseIndex: 1 },
@@ -51,9 +58,10 @@ export default function Dashboard({ onSelectPhase, onStudentJoinRoom, roomCode, 
     { phaseId: 7, title: "Phase 7: Net Payroll Boardroom", description: "Audit the complete Net Pay ledger unscaffolded.", status: "LOCKED", bestScore: 0, module: "M4_TRIBUNAL", phaseIndex: 1 }
   ];
 
-  const fetchProgress = async (studentNum) => {
+  const fetchProgress = async (studentNum: string, currentRoomCode?: string) => {
     try {
-      const res = await fetch(`${API_BASE_URL}/api/progress/status?studentNumber=${studentNum}`);
+      const codeParam = currentRoomCode ? `&roomCode=${encodeURIComponent(currentRoomCode)}` : '';
+      const res = await fetch(`${API_BASE_URL}/api/progress/status?studentNumber=${encodeURIComponent(studentNum)}${codeParam}`);
       if (res.ok) {
         const data = await res.json();
         if (data && data.length > 0) {
@@ -68,15 +76,47 @@ export default function Dashboard({ onSelectPhase, onStudentJoinRoom, roomCode, 
   };
 
   useEffect(() => {
+    if (propStudent) {
+      setStudent(propStudent);
+    }
+  }, [propStudent]);
+
+  useEffect(() => {
+    let currentStudentNum = '';
     const savedStudent = localStorage.getItem('student');
     if (savedStudent) {
-      const parsed = JSON.parse(savedStudent);
-      setStudent(parsed);
-      fetchProgress(parsed.studentNumber);
+      try {
+        const parsed = JSON.parse(savedStudent);
+        setStudent(parsed);
+        currentStudentNum = parsed.studentNumber;
+      } catch (_) {}
+    } else if (propStudent) {
+      setStudent(propStudent);
+      currentStudentNum = propStudent.studentNumber;
+    }
+
+    if (roomCode) {
+      // Sync section directly from room status to ensure it always matches teacher's room
+      fetch(`${API_BASE_URL}/api/rooms/${roomCode}/status`)
+        .then(res => res.ok ? res.json() : null)
+        .then(data => {
+          if (data && data.section) {
+            setStudent(prev => {
+              const updated = { ...prev, section: data.section };
+              localStorage.setItem('student', JSON.stringify(updated));
+              return updated;
+            });
+          }
+        })
+        .catch(() => {});
+    }
+
+    if (currentStudentNum) {
+      fetchProgress(currentStudentNum, roomCode);
     } else {
       setLoadingProgress(false);
     }
-  }, []);
+  }, [roomCode, propStudent]);
 
   const handleLogout = () => {
     localStorage.removeItem('student');
@@ -111,7 +151,24 @@ export default function Dashboard({ onSelectPhase, onStudentJoinRoom, roomCode, 
 
       const joinData = await joinRes.json();
       if (joinData.success) {
-        onStudentJoinRoom(joinRoomCode.trim().toUpperCase(), student);
+        setShowJoinModal(false);
+        setJoinRoomCode('');
+
+        // Reflect section from teacher's room onto student
+        const updatedStudent = joinData.student ? {
+          ...joinData.student,
+          section: joinData.section || joinData.student.section
+        } : {
+          ...student,
+          section: joinData.section || student.section
+        };
+
+        setStudent(updatedStudent);
+        localStorage.setItem('student', JSON.stringify(updatedStudent));
+
+        const targetCode = joinRoomCode.trim().toUpperCase();
+        fetchProgress(updatedStudent.studentNumber, targetCode);
+        onStudentJoinRoom(targetCode, updatedStudent);
       } else {
         throw new Error(joinData.error || 'Could not join the room.');
       }
@@ -200,7 +257,7 @@ export default function Dashboard({ onSelectPhase, onStudentJoinRoom, roomCode, 
               <span>STUDENT:</span> <strong>{student.fullName}</strong>
             </div>
             <div className="info-item">
-              <span>SECTION:</span> <strong>{student.section}</strong>
+              <span>SECTION:</span> <strong>{student.section && student.section !== 'Unassigned' && student.section !== 'GRADE12-ABM' ? student.section : (roomCode ? 'Connecting...' : 'Unassigned (Join Room)')}</strong>
             </div>
             <div className="info-item">
               <span>ID:</span> <strong>{student.studentNumber}</strong>

@@ -53,9 +53,10 @@ interface TeacherDashboardProps {
   roomCode: string;
   teacherName: string;
   onBack: () => void;
+  onExit?: () => void;
 }
 
-export default function TeacherDashboard({ roomCode, teacherName, onBack }: TeacherDashboardProps) {
+export default function TeacherDashboard({ roomCode, teacherName, onBack, onExit }: TeacherDashboardProps) {
   const [students, setStudents] = useState<StudentProgress[]>([]);
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [roomSection, setRoomSection] = useState('');
@@ -149,7 +150,7 @@ export default function TeacherDashboard({ roomCode, teacherName, onBack }: Teac
   useEffect(() => {
     if (roomCode) {
       fetchDashboardStats();
-      pollIntervalRef.current = setInterval(fetchDashboardStats, 3000);
+      pollIntervalRef.current = setInterval(fetchDashboardStats, 5000);
     }
     return () => {
       if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
@@ -499,6 +500,14 @@ export default function TeacherDashboard({ roomCode, teacherName, onBack }: Teac
 
           <div className="dash-actions">
             <button
+              className="dash-btn dash-btn-outline"
+              style={{ color: '#a78bfa', borderColor: '#7c3aed', background: 'rgba(124, 58, 237, 0.12)' }}
+              onClick={onBack}
+              title="Return to the classroom room lobby"
+            >
+              <span>⬅</span> ROOM LOBBY
+            </button>
+            <button
               className="dash-btn dash-btn-primary"
               onClick={() => {
                 setAddStudentSection(roomSection);
@@ -519,8 +528,12 @@ export default function TeacherDashboard({ roomCode, teacherName, onBack }: Teac
             <button className="dash-btn dash-btn-outline" onClick={fetchDashboardStats} title="Refresh Live Data">
               <span>⟳</span> REFRESH
             </button>
-            <button className="dash-btn dash-btn-danger" onClick={onBack}>
-              [ END SESSION ]
+            <button
+              className="dash-btn dash-btn-danger"
+              onClick={onExit || onBack}
+              title="Exit room and log out safely back to login screen"
+            >
+              [ EXIT ROOM ]
             </button>
           </div>
         </header>

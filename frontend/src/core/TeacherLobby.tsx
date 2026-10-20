@@ -26,7 +26,7 @@ export default function TeacherLobby({ roomCode, teacherName, teacherEmail, sect
   const [participantCount, setParticipantCount] = useState(0);
   const [copied, setCopied] = useState(false);
   const [initiating, setInitiating] = useState(false);
-  const [sessionActive, setSessionActive] = useState(false);
+  const [sessionActive, setSessionActive] = useState(true);
   const [error, setError] = useState('');
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -146,6 +146,9 @@ export default function TeacherLobby({ roomCode, teacherName, teacherEmail, sect
         parsed.roomCode = data.roomCode;
         localStorage.setItem('teacher', JSON.stringify(parsed));
       }
+      localStorage.setItem('teacherRoomStatus', 'ACTIVE');
+      setSessionActive(true);
+      onInitiateSession();
 
       onRoomCreated(data.roomCode);
     } catch (err: any) {

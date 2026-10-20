@@ -12,7 +12,6 @@ import Login from './Auth';
 import Dashboard from './Dashboard';
 import TeacherLobby from './TeacherLobby';
 import TeacherDashboard from './TeacherDashboard';
-import StudentWaiting from './StudentWaiting';
 import MissionLog from '../components/Shared/MissionLog';
 import Calculator from '../components/Shared/Calculator';
 import { 
@@ -30,7 +29,6 @@ function App() {
   const [currentView, setCurrentView] = useState('LOGIN'); 
   const [student, setStudent] = useState(null);
   const [showCalculator, setShowCalculator] = useState(false);
-  const [autoOpenGuide, setAutoOpenGuide] = useState(false);
 
   // --- ROOM MANAGEMENT STATE ---
   const [roomCode, setRoomCode] = useState('');
@@ -169,27 +167,19 @@ function App() {
       const parsedTeacher = JSON.parse(savedTeacher);
       setTeacherName(parsedTeacher.teacherName);
       setTeacherSection(parsedTeacher.section);
+      setTeacherEmail(parsedTeacher.teacherEmail || '');
       if (parsedTeacher.roomCode) {
         setRoomCode(parsedTeacher.roomCode);
-        const savedStatus = localStorage.getItem('teacherRoomStatus');
-        if (savedStatus === 'ACTIVE') {
-          setCurrentView('TEACHER_DASHBOARD');
-        } else {
-          setCurrentView('TEACHER_LOBBY');
-        }
-      } else {
-        setCurrentView('TEACHER_LOBBY');
       }
+      setCurrentView('TEACHER_LOBBY');
     } else if (savedStudent) {
       setStudent(JSON.parse(savedStudent));
       
       const savedRoomCode = localStorage.getItem('studentRoomCode');
       if (savedRoomCode) {
         setRoomCode(savedRoomCode);
-        setCurrentView('STUDENT_WAITING');
-      } else {
-        setCurrentView('DASHBOARD');
       }
+      setCurrentView('DASHBOARD');
     }
   }, []);
 
@@ -198,12 +188,12 @@ function App() {
     console.log(`[DEBUG INTRO GATE] Student has seen the narrative briefing intro: ${hasSeenIntro}`);
   }, [hasSeenIntro]);
 
-  // Poll for pending room invitations when logged in as a student
+  // Poll for pending room invitations when logged in as a student without an active room
   useEffect(() => {
     const currentStudentNumber = (student as any)?.studentNumber;
     if (
       !currentStudentNumber ||
-      currentView === 'STUDENT_WAITING' ||
+      roomCode ||
       currentView === 'TEACHER_LOBBY' ||
       currentView === 'TEACHER_DASHBOARD' ||
       currentView === 'LOGIN'
@@ -234,9 +224,9 @@ function App() {
     };
 
     checkInvitations();
-    const interval = setInterval(checkInvitations, 3000);
+    const interval = setInterval(checkInvitations, 6000);
     return () => clearInterval(interval);
-  }, [student, currentView]);
+  }, [student, currentView, roomCode]);
 
   const handleAcceptInvitation = async () => {
     if (!roomInvitation || !(student as any)?.studentNumber) return;
@@ -250,11 +240,21 @@ function App() {
         })
       });
       if (res.ok) {
+        const data = await res.json().catch(() => ({}));
         const targetCode = roomInvitation.roomCode;
+        const updatedStudent = data.student ? {
+          ...data.student,
+          section: data.section || data.student.section
+        } : {
+          ...(student as any),
+          section: roomInvitation.section || (student as any).section
+        };
+        setStudent(updatedStudent);
+        localStorage.setItem('student', JSON.stringify(updatedStudent));
         setRoomCode(targetCode);
         localStorage.setItem('studentRoomCode', targetCode);
         setRoomInvitation(null);
-        setCurrentView('STUDENT_WAITING');
+        setCurrentView('DASHBOARD');
       } else {
         const errData = await res.json().catch(() => ({}));
         alert(errData.error || 'Failed to accept invitation.');
@@ -1522,7 +1522,6 @@ function App() {
     return <Login 
       onLoginSuccess={(stu) => {
         setStudent(stu);
-        setAutoOpenGuide(true);
         setCurrentView('DASHBOARD');
       }}
       onTeacherCreateRoom={(code, name, sec, email) => {
@@ -1530,12 +1529,21 @@ function App() {
         setTeacherName(name);
         setTeacherSection(sec);
         setTeacherEmail(email || '');
+        if (code) {
+          localStorage.setItem('teacherRoomStatus', 'ACTIVE');
+        }
+        // Always route to TEACHER_LOBBY:
+        // When code is present, TeacherLobby displays the active classroom
+        // (Room code banner, enrolled students roster, SEND REPORT button,
+        // and the VIEW LIVE ANALYTICS DASHBOARD button). The room generator is hidden!
+        // When code is empty, TeacherLobby displays the room generator ("GENERATE A CLASSROOM").
         setCurrentView('TEACHER_LOBBY');
       }}
       onStudentJoinRoom={(code, stu) => {
         setRoomCode(code);
         setStudent(stu);
-        setCurrentView('STUDENT_WAITING');
+        localStorage.setItem('studentRoomCode', code);
+        setCurrentView('DASHBOARD');
       }}
     />;
   }
@@ -1548,7 +1556,6 @@ function App() {
       section={teacherSection}
       onInitiateSession={() => {
         localStorage.setItem('teacherRoomStatus', 'ACTIVE');
-        // Do not redirect; stay in teacher's room where they can monitor joined students
       }}
       onViewDashboard={() => {
         setCurrentView('TEACHER_DASHBOARD');
@@ -1562,7 +1569,10 @@ function App() {
         setTeacherEmail('');
         setCurrentView('LOGIN');
       }}
-      onRoomCreated={(code) => setRoomCode(code)}
+      onRoomCreated={(code) => {
+        setRoomCode(code);
+        localStorage.setItem('teacherRoomStatus', 'ACTIVE');
+      }}
     />;
   }
 
@@ -1574,41 +1584,32 @@ function App() {
         // Return to teacher lobby
         setCurrentView('TEACHER_LOBBY');
       }}
+      onExit={() => {
+        // Teacher exits room / logs out back to LOGIN
+        localStorage.removeItem('teacher');
+        localStorage.removeItem('teacherRoomStatus');
+        setRoomCode('');
+        setTeacherName('');
+        setTeacherSection('');
+        setTeacherEmail('');
+        setCurrentView('LOGIN');
+      }}
     />;
   }
 
   if (currentView === 'STUDENT_WAITING') {
-    return <StudentWaiting
-      roomCode={roomCode}
-      studentName={student?.fullName || 'Student'}
-      studentNumber={student?.studentNumber || ''}
-      onSessionStarted={() => {
-        // Student is redirected to the phases dashboard (not Phase 1), with guide open
-        setAutoOpenGuide(true);
-        setCurrentView('DASHBOARD');
-      }}
-      onKickedOut={() => {
-        setRoomCode('');
-        localStorage.removeItem('studentRoomCode');
-        setAutoOpenGuide(false);
-        setCurrentView('DASHBOARD');
-      }}
-      onBack={() => {
-        setRoomCode('');
-        localStorage.removeItem('studentRoomCode');
-        setCurrentView('DASHBOARD');
-      }}
-    />;
+    setCurrentView('DASHBOARD');
+    return null;
   }
 
   if (currentView === 'DASHBOARD') {
     return (
       <>
         <Dashboard 
+          student={student}
           roomCode={roomCode}
           theme={theme}
           toggleTheme={toggleTheme}
-          initialGuideOpen={autoOpenGuide}
           onSelectPhase={(phase) => {
             setActivePhaseIndex(phase);
             handleRerollScenario(true, phase);
@@ -1645,7 +1646,8 @@ function App() {
             setStudent(studentObj);
             setRoomCode(code);
             localStorage.setItem('studentRoomCode', code);
-            setCurrentView('STUDENT_WAITING');
+            localStorage.setItem('student', JSON.stringify(studentObj));
+            setCurrentView('DASHBOARD');
           }}
         />
         {renderInvitationModal()}
