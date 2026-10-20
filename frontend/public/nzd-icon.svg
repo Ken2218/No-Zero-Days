@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100">
+  <!-- Background -->
+  <rect width="100" height="100" rx="10" fill="#0b1120"/>
+
+  <!-- Glow filter for amber text -->
+  <defs>
+    <filter id="glow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="2.5" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- NZD monogram: pixel/blocky style, amber-yellow, centered -->
+  <text
+    x="50"
+    y="58"
+    font-family="'Courier New', Courier, monospace"
+    font-size="36"
+    font-weight="900"
+    fill="#facc15"
+    text-anchor="middle"
+    letter-spacing="2"
+    filter="url(#glow)"
+  >NZD</text>
+
+  <!-- Scan-line accent bar below text -->
+  <rect x="10" y="65" width="80" height="1.5" fill="#facc15" opacity="0.5"/>
+  <rect x="14" y="68" width="72" height="1"   fill="#facc15" opacity="0.3"/>
+  <rect x="18" y="71" width="64" height="0.8" fill="#facc15" opacity="0.15"/>
+</svg>
