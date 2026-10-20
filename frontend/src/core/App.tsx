@@ -26,7 +26,11 @@ import './App.css';
 
 function App() {
   // --- 1. NAVIGATION & SESSION STATE ---
-  const [currentView, setCurrentView] = useState('LOGIN'); 
+  const [currentView, setCurrentView] = useState('LOGIN');
+  // Prevents rendering anything before the localStorage session-restore effect has fired.
+  // Without this, a stale teacher/student in localStorage could cause the app to briefly
+  // show Login then snap to another view (or vice-versa) on every page load.
+  const [sessionChecked, setSessionChecked] = useState(false);
   const [student, setStudent] = useState(null);
   const [showCalculator, setShowCalculator] = useState(false);
 
@@ -158,29 +162,50 @@ function App() {
     setTheme(prev => (prev === 'dark' ? 'light' : 'dark'));
   };
 
-  // Load profile if present in localStorage
+  // Restore a previously authenticated session from localStorage.
+  // The `sessionChecked` flag ensures nothing is rendered until this effect completes,
+  // guaranteeing that unauthenticated visits to "/" always land on the Login screen.
   useEffect(() => {
     const savedStudent = localStorage.getItem('student');
     const savedTeacher = localStorage.getItem('teacher');
 
     if (savedTeacher) {
-      const parsedTeacher = JSON.parse(savedTeacher);
-      setTeacherName(parsedTeacher.teacherName);
-      setTeacherSection(parsedTeacher.section);
-      setTeacherEmail(parsedTeacher.teacherEmail || '');
-      if (parsedTeacher.roomCode) {
-        setRoomCode(parsedTeacher.roomCode);
+      try {
+        const parsedTeacher = JSON.parse(savedTeacher);
+        setTeacherName(parsedTeacher.teacherName || '');
+        setTeacherSection(parsedTeacher.section || '');
+        setTeacherEmail(parsedTeacher.teacherEmail || '');
+        if (parsedTeacher.roomCode) {
+          setRoomCode(parsedTeacher.roomCode);
+        }
+        setCurrentView('TEACHER_LOBBY');
+      } catch (_) {
+        // Corrupted data — clear it and show Login
+        localStorage.removeItem('teacher');
+        localStorage.removeItem('teacherRoomStatus');
+        setCurrentView('LOGIN');
       }
-      setCurrentView('TEACHER_LOBBY');
     } else if (savedStudent) {
-      setStudent(JSON.parse(savedStudent));
-      
-      const savedRoomCode = localStorage.getItem('studentRoomCode');
-      if (savedRoomCode) {
-        setRoomCode(savedRoomCode);
+      try {
+        setStudent(JSON.parse(savedStudent));
+        const savedRoomCode = localStorage.getItem('studentRoomCode');
+        if (savedRoomCode) {
+          setRoomCode(savedRoomCode);
+        }
+        setCurrentView('DASHBOARD');
+      } catch (_) {
+        // Corrupted data — clear it and show Login
+        localStorage.removeItem('student');
+        localStorage.removeItem('studentRoomCode');
+        setCurrentView('LOGIN');
       }
-      setCurrentView('DASHBOARD');
+    } else {
+      // No saved session: always show Login
+      setCurrentView('LOGIN');
     }
+
+    // Mark the session check as complete so the app can render
+    setSessionChecked(true);
   }, []);
 
   // Debug log to trace narrative intro display gates (resolves ESLint unused var)
@@ -1518,6 +1543,14 @@ function App() {
   };
 
   // --- 6. CONDITIONAL SCREEN ROUTERS ---
+
+  // Block rendering until the localStorage session-restore effect has fired.
+  // This guarantees that fresh/unauthenticated navigations to "/" always show the
+  // Login screen and never flash into a phase room or dashboard.
+  if (!sessionChecked) {
+    return null;
+  }
+
   if (currentView === 'LOGIN') {
     return <Login 
       onLoginSuccess={(stu) => {

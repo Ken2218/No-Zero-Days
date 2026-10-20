@@ -3,17 +3,30 @@
 .room-container {
   position: relative;
   width: 100%;
-  max-width: 596px;
-  aspect-ratio: 596 / 476; /* Default to Phase 1 aspect ratio */
+  /*
+   * The aspect-ratio locks the container height to exactly match the
+   * Phase 1 artwork (596 × 476 px native size).  All hotspot coordinates
+   * are percentages of THIS box, so they track the sprite positions
+   * perfectly regardless of screen width.
+   */
+  aspect-ratio: 596 / 476;
+  /* Prevent the container from stretching taller than the image */
+  max-height: 100%;
   margin: 0 auto;
   user-select: none;
   overflow: hidden;
 }
 
 .background-image {
+  /*
+   * Fill the container without cropping.  Because the container already
+   * has a fixed aspect-ratio, `object-fit: contain` is identical to
+   * `width:100%; height:100%` for same-ratio images, but safely letter-
+   * boxes images whose ratio differs (avoids vertical tiling / overflow).
+   */
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
   object-position: center;
   display: block;
   image-rendering: pixelated;

@@ -17,8 +17,7 @@ export default function Phase1Room({ setActivePopup }: Phase1RoomProps) {
       <img 
         src={lobbyImage} 
         alt="Core Lobby" 
-        className="background-image pixelated"
-        style={{ imageRendering: 'pixelated', width: '100%' }}
+        className="background-image"
       />
 
       {/* --- Phase 1: Core Lobby Hotspots --- */}
