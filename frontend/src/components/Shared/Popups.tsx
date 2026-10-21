@@ -196,9 +196,6 @@ export default function Popups({
             <div className="data-box herring-data" style={{ padding: '15px', marginTop: '15px', background: '#1e293b', border: '1px solid #ef4444', borderRadius: '6px' }}>
               <div className="data-row" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}><span>Rice Subsidy:</span> <strong>₱1,200.00 / Month</strong></div>
               <div className="data-row" style={{ display: 'flex', justifyContent: 'space-between' }}><span>Uniform Allowance:</span> <strong>₱1,500.00 / Semester</strong></div>
-              <p className="herring-note" style={{ fontSize: '0.8rem', color: '#94a3b8', marginTop: '10px', fontStyle: 'italic' }}>
-                ⭐ Note: According to Philippine accounting frameworks, standard Gross Basic Pay strictly uses the basic Daily Rate. Filter out these allowance distractions!
-              </p>
             </div>
           </div>
         );
@@ -330,9 +327,6 @@ export default function Popups({
               <div className="data-row" style={{ display: 'flex', justifyContent: 'space-between' }}>
                 <span>Uniform Allowance:</span> <strong>₱500.00</strong>
               </div>
-              <p className="herring-note" style={{ fontSize: '0.8rem', color: '#94a3b8', marginTop: '10px', fontStyle: 'italic' }}>
-                ⭐ Note: According to Philippine accounting frameworks, standard Gross Basic Pay does not include these auxiliary allowance categories. Filter them out!
-              </p>
             </div>
           </div>
         );
@@ -405,9 +399,6 @@ export default function Popups({
               <div className="data-row" style={{ display: 'flex', justifyContent: 'space-between' }}>
                 <span>Performance Bonus:</span> <strong>₱3,000.00</strong>
               </div>
-              <p className="herring-note" style={{ fontSize: '0.8rem', color: '#94a3b8', marginTop: '10px', fontStyle: 'italic' }}>
-                ⭐ Note: Hazard pay and performance bonuses are supplementary and are excluded when calculating basic overtime hourly rates. Filter them out!
-              </p>
             </div>
           </div>
         );
@@ -562,9 +553,6 @@ export default function Popups({
               <div className="data-row" style={{ display: 'flex', justifyContent: 'space-between' }}>
                 <span>Laundry Allowance:</span> <strong>₱300.00 / Month</strong>
               </div>
-              <p className="herring-note" style={{ fontSize: '0.8rem', color: '#94a3b8', marginTop: '10px', fontStyle: 'italic' }}>
-                ⭐ Note: Under standard auditing procedures, allowances like transportation and laundry are auxiliary benefits and do not alter the base Daily Rate used for holiday pay multiplier calculations. Filter them out!
-              </p>
             </div>
           </div>
         );
@@ -634,8 +622,6 @@ export default function Popups({
               </table>
               <div style={{ marginTop: '12px', padding: '8px', background: 'rgba(239, 68, 68, 0.1)', border: '1px solid #ef4444', borderRadius: '4px', fontSize: '0.8rem', color: '#f87171' }}>
                 ⚠️ <strong>CRITICAL AUDIT NOTICE:</strong> If you input the Employer (ER) share into the employee's deduction ledger, you will immediately trigger a compliance red herring reroll.
-                <br /><br />
-                💡 <strong>note:</strong> This might have something to do with Basic Salary Pay
               </div>
             </div>
           </div>

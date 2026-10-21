@@ -37,9 +37,6 @@ export default function EmployeeContractModal({ isOpen, onClose, scenario }: Emp
             <div className="data-row" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
               <span>Monthly De Minimis Rice Subsidy:</span> <strong>₱2,000.00</strong>
             </div>
-            <p className="herring-note" style={{ fontSize: '0.8rem', color: '#94a3b8', marginTop: '10px', fontStyle: 'italic' }}>
-              ⭐ Note: PhilHealth premiums are strictly computed against the Monthly Basic Salary, excluding non-taxable allowances such as the De Minimis Rice Subsidy. Filter this out!
-            </p>
           </div>
         </div>
       </div>

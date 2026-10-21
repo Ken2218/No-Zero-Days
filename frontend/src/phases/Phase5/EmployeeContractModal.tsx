@@ -37,9 +37,6 @@ export default function EmployeeContractModal({ isOpen, onClose, basicSalary }: 
             <div className="data-row" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
               <span>Mid-Year Bonus Advance:</span> <strong>₱8,000.00</strong>
             </div>
-            <p className="herring-note" style={{ fontSize: '0.8rem', color: '#94a3b8', marginTop: '10px', fontStyle: 'italic' }}>
-              ⭐ Note: Mid-year bonuses are supplemental payments and do not alter the standard monthly basic salary used to determine SSS statutory bracket shares. Filter this out!
-            </p>
           </div>
         </div>
       </div>

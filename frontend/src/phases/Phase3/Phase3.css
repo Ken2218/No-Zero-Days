@@ -6,36 +6,36 @@
 
 /* --- PHASE 3 OVERTIME ROOM POSITIONS --- */
 .phase3-room .timecard-hotspot {
-  top: 7%;
-  left: 15%;
-  width: 10%;
+  top: 52%;
+  left: 29.5%;
+  width: 9%;
   height: 16%;
 }
 
 .phase3-room .poster-hotspot {
-  top: 7%;
-  left: 38%;
-  width: 15%;
-  height: 18%;
+  top: 11.5%;
+  left: 40.5%;
+  width: 8.8%;
+  height: 16.5%;
 }
 
 .phase3-room .handbook-hotspot {
-  top: 7%;
-  left: 26%;
-  width: 11%;
-  height: 16%;
+  top: 25%;
+  left: 85.5%;
+  width: 13.5%;
+  height: 29%;
 }
 
 .phase3-room .door-hotspot {
-  top: 7%;
-  left: 48%;
-  width: 9%;
-  height: 28%;
+  top: 13%;
+  left: 50.5%;
+  width: 9.3%;
+  height: 26%;
 }
 
 .phase3-room .clipboard-hotspot {
-  top: 8%;
-  left: 84%;
-  width: 14%;
-  height: 22%;
+  top: 74%;
+  left: 35.5%;
+  width: 6.5%;
+  height: 11.5%;
 }

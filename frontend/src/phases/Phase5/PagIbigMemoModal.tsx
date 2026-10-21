@@ -40,9 +40,6 @@ export default function PagIbigMemoModal({ isOpen, onClose }: PagIbigMemoModalPr
             <div className="data-row" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
               <span>Pag-Ibig Employer (ER) Share:</span> <strong>₱200.00</strong>
             </div>
-            <p className="herring-note" style={{ fontSize: '0.8rem', color: '#94a3b8', marginTop: '10px', fontStyle: 'italic' }}>
-              ⭐ Note: Your employer matches this amount exactly, contributing another ₱200 for a total monthly savings of ₱400.
-            </p>
           </div>
         </div>
       </div>
