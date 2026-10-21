@@ -133,7 +133,12 @@ body {
   background-color: #000;
   overflow: hidden;
   position: relative;
-  container-type: size;
+  /*
+   * Use inline-size only so the container query only tracks width.
+   * 'size' requires a resolved height which collapses to 0 on mobile
+   * when the parent is height:auto, causing the image to disappear.
+   */
+  container-type: inline-size;
   padding: clamp(0.25rem, 0.8vw, 0.75rem);
   box-sizing: border-box;
 }
@@ -846,7 +851,32 @@ body.light-mode table tbody tr td {
   .left-panel {
     flex: none;            /* Stop flex-shrink fighting */
     width: 100%;
-    min-height: 280px;     /* Enough to show the room image */
+    /*
+     * Do NOT set a fixed min-height here. Instead, let .room-content
+     * drive the panel height via its own aspect-ratio (see below).
+     * A hard min-height + container-type:inline-size is enough.
+     */
+    min-height: 0;
+  }
+
+  /*
+   * KEY FIX: On mobile, .room-content's parent (.left-panel) is height:auto,
+   * so flex:1 1 0 collapses to 0 — making the image invisible against the
+   * black background. We give .room-content a concrete width + aspect-ratio
+   * so it sizes itself correctly from width alone (no height dependency).
+   */
+  .room-content {
+    flex: none;
+    width: 100%;
+    /*
+     * Match the default room aspect ratio (596:476 ≈ 1.252:1).
+     * Each phase overrides this via --room-aspect-ratio on .room-container,
+     * but the wrapper just needs to be tall enough to show the image.
+     * Using a slightly generous ratio keeps all phases visible.
+     */
+    aspect-ratio: 596 / 476;
+    min-height: 220px;     /* Safety floor for very narrow or old browsers */
+    padding: 6px;
   }
 
   /* Right panel: full width, no height limit, natural scroll */

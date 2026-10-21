@@ -410,7 +410,9 @@ public class RoomController {
         room.setStartedAt(LocalDateTime.now());
         roomRepository.save(room);
 
-        // Ensure all registered participants have an active GameSession initialized
+        // Ensure all registered participants have an active GameSession initialized.
+        // startTime is intentionally left null here — it will be stamped on the
+        // student's very first Phase 1 attempt, not at room activation.
         List<RoomParticipant> participants = roomParticipantRepository.findByRoomOrderByJoinedAtAsc(room);
         for (RoomParticipant p : participants) {
             StudentProfile profile = p.getStudentProfile();
@@ -420,7 +422,7 @@ public class RoomController {
                 newSession.setCurrentModule("M1_MATH");
                 newSession.setCurrentPhase(1);
                 newSession.setStatus("ACTIVE");
-                newSession.setStartTime(room.getStartedAt());
+                // startTime stays null — set only when student begins Phase 1
                 gameSessionRepository.save(newSession);
             }
         }
@@ -470,16 +472,16 @@ public class RoomController {
             roomParticipantRepository.save(participant);
         }
 
-        // Initialize active game session if none exists
+        // Initialize active game session if none exists.
+        // startTime is left null — it gets stamped on the student's first Phase 1 submission.
         List<GameSession> activeSessions = gameSessionRepository.findByStudentProfileAndStatus(profile, "ACTIVE");
         if (activeSessions.isEmpty()) {
             GameSession newSession = new GameSession(profile);
             newSession.setCurrentModule("M1_MATH");
             newSession.setCurrentPhase(1);
             newSession.setStatus("ACTIVE");
-            if (room.getStartedAt() != null) {
-                newSession.setStartTime(room.getStartedAt());
-            }
+            // Do NOT copy room.getStartedAt() — that would start every student's
+            // timer at the same instant (room activation), not their individual start.
             gameSessionRepository.save(newSession);
         }
 
@@ -631,16 +633,16 @@ public class RoomController {
         participant.setJoinedAt(LocalDateTime.now());
         roomParticipantRepository.save(participant);
 
-        // Ensure active game session exists
+        // Ensure active game session exists for the accepting student.
+        // startTime is intentionally left null — set only on Phase 1 first attempt.
         List<GameSession> activeSessions = gameSessionRepository.findByStudentProfileAndStatus(student, "ACTIVE");
         if (activeSessions.isEmpty()) {
             GameSession newSession = new GameSession(student);
             newSession.setCurrentModule("M1_MATH");
             newSession.setCurrentPhase(1);
             newSession.setStatus("ACTIVE");
-            if (room.getStartedAt() != null) {
-                newSession.setStartTime(room.getStartedAt());
-            }
+            // Do NOT copy room.getStartedAt() here — each student's clock must
+            // start independently when they open Phase 1, not when they accept.
             gameSessionRepository.save(newSession);
         }
 
@@ -780,7 +782,14 @@ public class RoomController {
             }
 
             List<Map<String, Object>> studentPhases = new ArrayList<>();
-            LocalDateTime previousPhaseCompletedTime = roomStartedAt;
+            // Use each student's own first attempt as their personal start reference.
+            // Falling back to roomStartedAt caused ALL students (even those with 0 attempts)
+            // to show the same shared elapsed time since the room was activated.
+            LocalDateTime firstEverAttempt = allAttempts.isEmpty() ? null : allAttempts.get(0).getAttemptTime();
+            LocalDateTime sessionStart = (session != null && session.getStartTime() != null)
+                    ? session.getStartTime()
+                    : firstEverAttempt; // null if student has never attempted anything
+            LocalDateTime previousPhaseCompletedTime = sessionStart;
             int studentCompletedPhases = 0;
             long studentTotalSeconds = 0;
             int studentTotalAttempts = 0;
@@ -834,26 +843,34 @@ public class RoomController {
                 // Calculate time spent in this phase
                 long phaseSeconds = 0;
                 if (isCompleted) {
-                    LocalDateTime startRef = (firstAttemptTime != null && firstAttemptTime.isBefore(previousPhaseCompletedTime))
-                            ? firstAttemptTime : previousPhaseCompletedTime;
-                    LocalDateTime endRef = lastSuccessfulTime != null ? lastSuccessfulTime : (lastAttemptTime != null ? lastAttemptTime : startRef);
+                    // previousPhaseCompletedTime is null only if the student has never attempted
+                    // anything (sessionStart was null). Guard against NPE.
+                    if (previousPhaseCompletedTime != null) {
+                        LocalDateTime startRef = (firstAttemptTime != null && firstAttemptTime.isBefore(previousPhaseCompletedTime))
+                                ? firstAttemptTime : previousPhaseCompletedTime;
+                        LocalDateTime endRef = lastSuccessfulTime != null ? lastSuccessfulTime : (lastAttemptTime != null ? lastAttemptTime : startRef);
 
-                    long diff = ChronoUnit.SECONDS.between(startRef, endRef);
-                    if (diff <= 0) {
-                        diff = Math.max(attemptsCount * 45L, 30L);
+                        long diff = ChronoUnit.SECONDS.between(startRef, endRef);
+                        if (diff <= 0) {
+                            diff = Math.max(attemptsCount * 45L, 30L);
+                        }
+                        phaseSeconds = diff;
+                        previousPhaseCompletedTime = endRef;
                     }
-                    phaseSeconds = diff;
-                    previousPhaseCompletedTime = endRef;
                     studentTotalSeconds += phaseSeconds;
 
                     classPhaseTotalSeconds[i] += phaseSeconds;
                     classPhaseTimeContributors[i]++;
                 } else if ("ACTIVE".equals(status)) {
-                    LocalDateTime startRef = (firstAttemptTime != null && firstAttemptTime.isBefore(previousPhaseCompletedTime))
-                            ? firstAttemptTime : previousPhaseCompletedTime;
-                    long diff = ChronoUnit.SECONDS.between(startRef, LocalDateTime.now());
-                    phaseSeconds = Math.max(diff, 0L);
-                    studentTotalSeconds += phaseSeconds;
+                    // If previousPhaseCompletedTime is null, the student hasn't made any
+                    // attempt yet — their timer hasn't started, so show 0 / "--".
+                    if (previousPhaseCompletedTime != null) {
+                        LocalDateTime startRef = (firstAttemptTime != null && firstAttemptTime.isBefore(previousPhaseCompletedTime))
+                                ? firstAttemptTime : previousPhaseCompletedTime;
+                        long diff = ChronoUnit.SECONDS.between(startRef, LocalDateTime.now());
+                        phaseSeconds = Math.max(diff, 0L);
+                        studentTotalSeconds += phaseSeconds;
+                    }
                 }
 
                 int bestScore = 0;

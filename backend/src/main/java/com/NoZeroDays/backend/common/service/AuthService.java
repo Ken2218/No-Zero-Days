@@ -50,15 +50,11 @@ public class AuthService {
             }
         }
 
-        // Ensure active game session exists
-        List<GameSession> activeSessions = gameSessionRepository.findByStudentProfileAndStatus(profile, "ACTIVE");
-        if (activeSessions.isEmpty()) {
-            GameSession newSession = new GameSession(profile);
-            newSession.setCurrentModule("M1_MATH");
-            newSession.setCurrentPhase(1);
-            newSession.setStatus("ACTIVE");
-            gameSessionRepository.save(newSession);
-        }
+        // NOTE: Do NOT create a GameSession here.
+        // Session creation and startTime stamping happen later, when the student
+        // joins a room and then explicitly begins Phase 1 (first attempt submission).
+        // Creating a session at login would start every student's timer simultaneously
+        // regardless of when they actually open Phase 1.
 
         return profile;
     }

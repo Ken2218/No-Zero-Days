@@ -8,14 +8,13 @@
    */
   aspect-ratio: var(--room-aspect-ratio, 596 / 476);
   /*
-   * Container query scaling: When inside .room-content (which sets container-type: size),
-   * width dynamically scales to the smaller of:
-   * 1. 100cqw (full available container width)
-   * 2. 100cqh * aspect-ratio (max width allowable before height would overflow)
-   * This guarantees strict containment in BOTH dimensions with zero letterbox distortion.
+   * Width: fill the available container inline space.
+   * container-type is inline-size (not size), so cqh is unavailable.
+   * The image is naturally constrained by this element's own aspect-ratio
+   * and the parent .room-content's overflow:hidden.
    */
   width: 100%;
-  width: min(100cqw, calc(100cqh * (var(--room-aspect-ratio, 596 / 476))));
+  width: 100cqw;
   max-width: 100%;
   max-height: 100%;
   margin: auto;

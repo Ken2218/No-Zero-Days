@@ -87,7 +87,44 @@ public class ValidationController {
                     false, false);
         }
 
+        // Stamp this student's Phase 1 start time on their first submission (isolated per student).
+        stampStartTimeIfNeeded(request);
         return ResponseEntity.ok(response);
+    }
+
+    /**
+     * After routing and getting a response, stamp startTime on the student's active
+     * GameSession if this is their first-ever Phase 1 attempt (startTime still null).
+     * This is the single authoritative event that starts the per-student clock.
+     */
+    private void stampStartTimeIfNeeded(ValidationRequest request) {
+        if (request.getStudentNumber() == null || request.getStudentNumber().trim().isEmpty()) return;
+        String module  = request.getModule()  != null ? request.getModule()  : "M1_MATH";
+        Integer phase  = request.getPhase()   != null ? request.getPhase()   : 1;
+        // Only stamp on the very first phase (M1_MATH phase 1)
+        if (!"M1_MATH".equalsIgnoreCase(module) || phase != 1) return;
+
+        Optional<StudentProfile> studentOpt = studentRepository.findByStudentNumber(request.getStudentNumber().trim());
+        if (studentOpt.isEmpty()) return;
+        StudentProfile student = studentOpt.get();
+
+        List<GameSession> sessions = gameSessionRepository.findByStudentProfileAndStatus(student, "ACTIVE");
+        if (sessions.isEmpty()) {
+            // Create session on demand if one doesn't exist yet
+            GameSession newSession = new GameSession(student);
+            newSession.setCurrentModule("M1_MATH");
+            newSession.setCurrentPhase(1);
+            newSession.setStatus("ACTIVE");
+            newSession.setStartTime(java.time.LocalDateTime.now());
+            gameSessionRepository.save(newSession);
+        } else {
+            GameSession session = sessions.get(0);
+            if (session.getStartTime() == null) {
+                // First time this specific student submits Phase 1 — start their clock NOW
+                session.setStartTime(java.time.LocalDateTime.now());
+                gameSessionRepository.save(session);
+            }
+        }
     }
 
     // 2. Student Profile Registration & Login
@@ -112,15 +149,11 @@ public class ValidationController {
             profile = studentRepository.save(new StudentProfile(studentNumber, fullName, section));
         }
 
-        // Ensure student has an active game session
-        List<GameSession> activeSessions = gameSessionRepository.findByStudentProfileAndStatus(profile, "ACTIVE");
-        if (activeSessions.isEmpty()) {
-            GameSession newSession = new GameSession(profile);
-            newSession.setCurrentModule("M1_MATH");
-            newSession.setCurrentPhase(1);
-            newSession.setStatus("ACTIVE");
-            gameSessionRepository.save(newSession);
-        }
+        // NOTE: Do NOT create a GameSession here.
+        // Session creation with a null startTime happens lazily when the student
+        // joins a room. The startTime is stamped only on their first Phase 1 submission.
+        // Creating a session with startTime=now() at registration would start
+        // all timers at the same moment before any student has opened the game.
 
         return ResponseEntity.ok(profile);
     }

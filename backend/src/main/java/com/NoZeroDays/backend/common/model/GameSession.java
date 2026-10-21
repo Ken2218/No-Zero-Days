@@ -15,7 +15,12 @@ public class GameSession {
     @JoinColumn(name = "student_profile_id", nullable = false)
     private StudentProfile studentProfile;
 
-    private LocalDateTime startTime = LocalDateTime.now();
+    /*
+     * startTime MUST remain null until the student explicitly starts Phase 1.
+     * Do NOT default to LocalDateTime.now() here — that would auto-stamp
+     * the clock at object creation (login / room-join), not at Phase 1 start.
+     */
+    private LocalDateTime startTime = null;
     private LocalDateTime endTime;
 
     private String currentModule = "M1_MATH";
