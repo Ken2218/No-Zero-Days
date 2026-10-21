@@ -37,7 +37,6 @@ export default function PagIbigMemoModal({ isOpen, onClose }: PagIbigMemoModalPr
 
           {/* Red Herring Decoy */}
           <div className="data-box herring-data" style={{ padding: '15px', marginTop: '15px', border: '1px solid #ef4444', borderRadius: '6px' }}>
-            <span className="warning-label" style={{ color: '#f87171', fontWeight: 'bold', display: 'block', marginBottom: '8px' }}>⚠️ RED HERRING AUDIT NOISE (DO NOT EXTRACT)</span>
             <div className="data-row" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
               <span>Pag-Ibig Employer (ER) Share:</span> <strong>₱200.00</strong>
             </div>

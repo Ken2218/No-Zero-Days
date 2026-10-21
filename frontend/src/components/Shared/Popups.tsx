@@ -194,7 +194,6 @@ export default function Popups({
 
             {/* Red Herring Rule */}
             <div className="data-box herring-data" style={{ padding: '15px', marginTop: '15px', background: '#1e293b', border: '1px solid #ef4444', borderRadius: '6px' }}>
-              <span className="warning-label" style={{ color: '#f87171', fontWeight: 'bold', display: 'block', marginBottom: '8px' }}>⚠️ RED HERRING AUDIT NOISE (DO NOT EXTRACT)</span>
               <div className="data-row" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}><span>Rice Subsidy:</span> <strong>₱1,200.00 / Month</strong></div>
               <div className="data-row" style={{ display: 'flex', justifyContent: 'space-between' }}><span>Uniform Allowance:</span> <strong>₱1,500.00 / Semester</strong></div>
               <p className="herring-note" style={{ fontSize: '0.8rem', color: '#94a3b8', marginTop: '10px', fontStyle: 'italic' }}>
@@ -325,7 +324,6 @@ export default function Popups({
 
             {/* Red Herring Allowance */}
             <div className="data-box herring-data" style={{ padding: '15px', marginTop: '15px', border: '1px solid #ef4444', borderRadius: '6px' }}>
-              <span className="warning-label" style={{ color: '#f87171', fontWeight: 'bold', display: 'block', marginBottom: '8px' }}>⚠️ RED HERRING AUDIT NOISE (DO NOT EXTRACT)</span>
               <div className="data-row" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
                 <span>Monthly Rice Allowance:</span> <strong>₱1,500.00</strong>
               </div>
@@ -401,7 +399,6 @@ export default function Popups({
 
             {/* Red Herring Allowance */}
             <div className="data-box herring-data" style={{ padding: '15px', marginTop: '15px', border: '1px solid #ef4444', borderRadius: '6px' }}>
-              <span className="warning-label" style={{ color: '#f87171', fontWeight: 'bold', display: 'block', marginBottom: '8px' }}>⚠️ RED HERRING AUDIT NOISE (DO NOT EXTRACT)</span>
               <div className="data-row" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
                 <span>Hazard Pay:</span> <strong>₱2,000.00 / Month</strong>
               </div>
@@ -559,7 +556,6 @@ export default function Popups({
 
             {/* Red Herring Allowance */}
             <div className="data-box herring-data" style={{ padding: '15px', marginTop: '15px', border: '1px solid #ef4444', borderRadius: '6px' }}>
-              <span className="warning-label" style={{ color: '#f87171', fontWeight: 'bold', display: 'block', marginBottom: '8px' }}>⚠️ RED HERRING AUDIT NOISE (DO NOT EXTRACT)</span>
               <div className="data-row" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
                 <span>Transportation Allowance:</span> <strong>₱100.00 / Day</strong>
               </div>
