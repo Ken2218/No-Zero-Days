@@ -11,6 +11,9 @@ import com.NoZeroDays.backend.common.repository.RoomParticipantRepository;
 import com.NoZeroDays.backend.common.repository.RoomRepository;
 import com.NoZeroDays.backend.common.repository.StudentProfileRepository;
 
+import com.NoZeroDays.backend.common.model.Teacher;
+import com.NoZeroDays.backend.common.repository.TeacherRepository;
+
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -36,6 +39,9 @@ public class RoomController {
     private RoomRepository roomRepository;
 
     @Autowired
+    private TeacherRepository teacherRepository;
+
+    @Autowired
     private RoomParticipantRepository roomParticipantRepository;
 
     @Autowired
@@ -49,6 +55,9 @@ public class RoomController {
 
     @Autowired
     private com.NoZeroDays.backend.common.service.EmailReportService emailReportService;
+
+    @Autowired
+    private com.NoZeroDays.backend.common.service.AuthService authService;
 
     private static final String CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
     private static final SecureRandom RANDOM = new SecureRandom();
@@ -71,6 +80,90 @@ public class RoomController {
     };
 
     // -------------------------------------------------------------------------
+    // -------------------------------------------------------------------------
+    // 0A. TEACHER REGISTRATION (Master Account Creation)
+    // -------------------------------------------------------------------------
+    @PostMapping(value = {"/teachers/register", "/teachers/register/"})
+    public ResponseEntity<?> registerTeacher(@RequestBody Map<String, String> body) {
+        String email = body.getOrDefault("email", body.getOrDefault("teacherEmail", "")).trim();
+        String fullName = body.getOrDefault("fullName", body.getOrDefault("teacherName", "")).trim();
+
+        if (email.isEmpty()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Email is required."));
+        }
+        if (!email.toLowerCase().endsWith("@gmail.com")) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Email must be a valid @gmail.com address."));
+        }
+        if (fullName.isEmpty()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Full name is required."));
+        }
+
+        Teacher teacher = teacherRepository.findByEmailIgnoreCase(email)
+                .orElseGet(() -> new Teacher(email, fullName));
+        teacher.setFullName(fullName);
+        teacher = teacherRepository.save(teacher);
+
+        Map<String, Object> resp = new HashMap<>();
+        resp.put("id", teacher.getId());
+        resp.put("email", teacher.getEmail());
+        resp.put("fullName", teacher.getFullName());
+        resp.put("teacherName", teacher.getFullName());
+        resp.put("teacherEmail", teacher.getEmail());
+        return ResponseEntity.ok(resp);
+    }
+
+    // -------------------------------------------------------------------------
+    // 0B. TEACHER LOGIN (Master Account Verification)
+    // -------------------------------------------------------------------------
+    @PostMapping(value = {"/teachers/login", "/teachers/login/"})
+    public ResponseEntity<?> loginTeacher(@RequestBody Map<String, String> body) {
+        String email = body.getOrDefault("email", body.getOrDefault("teacherEmail", "")).trim();
+        String fullName = body.getOrDefault("fullName", body.getOrDefault("teacherName", "")).trim();
+
+        if (email.isEmpty()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Email is required."));
+        }
+        if (!email.toLowerCase().endsWith("@gmail.com")) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Email must be a valid @gmail.com address."));
+        }
+
+        Optional<Teacher> opt = teacherRepository.findByEmailIgnoreCase(email);
+        Teacher teacher;
+        if (opt.isPresent()) {
+            teacher = opt.get();
+            if (!fullName.isEmpty()) {
+                teacher.setFullName(fullName);
+                teacher = teacherRepository.save(teacher);
+            }
+        } else {
+            // Check if any rooms exist with this teacher email to auto-sync
+            List<Room> existingRooms = roomRepository.findByTeacherEmailIgnoreCaseOrderByCreatedAtDesc(email);
+            if (!existingRooms.isEmpty()) {
+                String existingName = !fullName.isEmpty() ? fullName : existingRooms.get(0).getTeacherName();
+                teacher = teacherRepository.save(new Teacher(email, existingName));
+                for (Room r : existingRooms) {
+                    if (r.getTeacher() == null) {
+                        r.setTeacher(teacher);
+                        roomRepository.save(r);
+                    }
+                }
+            } else if (!fullName.isEmpty()) {
+                teacher = teacherRepository.save(new Teacher(email, fullName));
+            } else {
+                return ResponseEntity.status(404).body(Map.of("error", "Teacher account not found for '" + email + "'. Please sign up first."));
+            }
+        }
+
+        Map<String, Object> resp = new HashMap<>();
+        resp.put("id", teacher.getId());
+        resp.put("email", teacher.getEmail());
+        resp.put("fullName", teacher.getFullName());
+        resp.put("teacherName", teacher.getFullName());
+        resp.put("teacherEmail", teacher.getEmail());
+        return ResponseEntity.ok(resp);
+    }
+
+    // -------------------------------------------------------------------------
     // 1. CREATE ROOM
     // -------------------------------------------------------------------------
     @PostMapping("/rooms/create")
@@ -87,6 +180,15 @@ public class RoomController {
             roomCode = generateUniqueRoomCode();
         }
 
+        // Find or create Teacher entity for master association
+        Teacher teacher = null;
+        if (!teacherEmail.isBlank()) {
+            teacher = teacherRepository.findByEmailIgnoreCase(teacherEmail.trim())
+                    .orElseGet(() -> teacherRepository.save(new Teacher(teacherEmail.trim(), teacherName)));
+        } else if (!teacherName.isBlank()) {
+            teacher = teacherRepository.findByFullNameIgnoreCase(teacherName.trim()).orElse(null);
+        }
+
         // Check if room code already exists
         Optional<Room> existing = roomRepository.findByRoomCodeIgnoreCase(roomCode);
         Room room;
@@ -97,11 +199,17 @@ public class RoomController {
             if (!teacherEmail.isBlank()) {
                 room.setTeacherEmail(teacherEmail.trim());
             }
+            if (teacher != null) {
+                room.setTeacher(teacher);
+            }
             room.setStatus("WAITING");
             room.setCreatedAt(LocalDateTime.now());
             room.setStartedAt(null);
         } else {
             room = new Room(roomCode, teacherName, section, teacherEmail.trim());
+            if (teacher != null) {
+                room.setTeacher(teacher);
+            }
         }
         room = roomRepository.save(room);
 
@@ -112,6 +220,120 @@ public class RoomController {
         resp.put("section", room.getSection());
         resp.put("status", room.getStatus());
         resp.put("createdAt", room.getCreatedAt());
+        if (teacher != null) {
+            resp.put("teacherId", teacher.getId());
+        }
+
+        return ResponseEntity.ok(resp);
+    }
+
+    // -------------------------------------------------------------------------
+    // 1B. GET TEACHER ROOMS (List all rooms/sections for persistent teacher)
+    // -------------------------------------------------------------------------
+    @GetMapping("/teachers/rooms")
+    public ResponseEntity<?> getTeacherRooms(
+            @RequestParam(required = false) String email,
+            @RequestParam(required = false) String teacherEmail,
+            @RequestParam(required = false) String teacherName,
+            @RequestParam(required = false) Long teacherId) {
+        String effectiveEmail = (email != null && !email.isBlank()) ? email.trim() :
+                                (teacherEmail != null && !teacherEmail.isBlank()) ? teacherEmail.trim() : null;
+
+        List<Room> rooms = Collections.emptyList();
+        if (teacherId != null) {
+            rooms = roomRepository.findByTeacherIdOrderByCreatedAtDesc(teacherId);
+        }
+        if (rooms.isEmpty() && effectiveEmail != null) {
+            Optional<Teacher> t = teacherRepository.findByEmailIgnoreCase(effectiveEmail);
+            if (t.isPresent()) {
+                rooms = roomRepository.findByTeacherOrderByCreatedAtDesc(t.get());
+            }
+            if (rooms.isEmpty()) {
+                rooms = roomRepository.findByTeacherEmailIgnoreCaseOrderByCreatedAtDesc(effectiveEmail);
+            }
+        }
+        if (rooms.isEmpty() && teacherName != null && !teacherName.isBlank()) {
+            Optional<Teacher> t = teacherRepository.findByFullNameIgnoreCase(teacherName.trim());
+            if (t.isPresent()) {
+                rooms = roomRepository.findByTeacherOrderByCreatedAtDesc(t.get());
+            }
+            if (rooms.isEmpty()) {
+                rooms = roomRepository.findByTeacherNameIgnoreCaseOrderByCreatedAtDesc(teacherName.trim());
+            }
+        }
+
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (Room r : rooms) {
+            Map<String, Object> map = new HashMap<>();
+            map.put("roomCode", r.getRoomCode());
+            map.put("section", r.getSection() != null ? r.getSection() : "Default Section");
+            map.put("teacherName", r.getTeacherName());
+            map.put("teacherEmail", r.getTeacherEmail());
+            map.put("status", r.getStatus());
+            map.put("createdAt", r.getCreatedAt());
+            map.put("startedAt", r.getStartedAt());
+            map.put("participantCount", roomParticipantRepository.countByRoom(r));
+            result.add(map);
+        }
+
+        return ResponseEntity.ok(result);
+    }
+
+    // -------------------------------------------------------------------------
+    // 1C. FIND ROOM BY TEACHER (Session recovery & section lookup)
+    // -------------------------------------------------------------------------
+    @GetMapping("/rooms/find-by-teacher")
+    public ResponseEntity<?> findByTeacher(
+            @RequestParam(required = false) String teacherEmail,
+            @RequestParam(required = false) String email,
+            @RequestParam(required = false) String teacherName,
+            @RequestParam(required = false) String section) {
+        String effectiveEmail = (teacherEmail != null && !teacherEmail.isBlank()) ? teacherEmail.trim() :
+                                (email != null && !email.isBlank()) ? email.trim() : null;
+
+        List<Room> rooms = Collections.emptyList();
+        if (effectiveEmail != null) {
+            rooms = roomRepository.findByTeacherEmailIgnoreCaseOrderByCreatedAtDesc(effectiveEmail);
+        }
+        if (rooms.isEmpty() && teacherName != null && !teacherName.isBlank()) {
+            rooms = roomRepository.findByTeacherNameIgnoreCaseOrderByCreatedAtDesc(teacherName.trim());
+        }
+
+        if (rooms.isEmpty()) {
+            return ResponseEntity.ok(Map.of("found", false));
+        }
+
+        Room matched = rooms.get(0);
+        if (section != null && !section.isBlank()) {
+            for (Room r : rooms) {
+                if (section.trim().equalsIgnoreCase(r.getSection())) {
+                    matched = r;
+                    break;
+                }
+            }
+        }
+
+        List<Map<String, Object>> roomList = new ArrayList<>();
+        for (Room r : rooms) {
+            Map<String, Object> map = new HashMap<>();
+            map.put("roomCode", r.getRoomCode());
+            map.put("section", r.getSection());
+            map.put("teacherName", r.getTeacherName());
+            map.put("teacherEmail", r.getTeacherEmail());
+            map.put("status", r.getStatus());
+            map.put("createdAt", r.getCreatedAt());
+            map.put("participantCount", roomParticipantRepository.countByRoom(r));
+            roomList.add(map);
+        }
+
+        Map<String, Object> resp = new HashMap<>();
+        resp.put("found", true);
+        resp.put("roomCode", matched.getRoomCode());
+        resp.put("section", matched.getSection());
+        resp.put("teacherName", matched.getTeacherName());
+        resp.put("teacherEmail", matched.getTeacherEmail());
+        resp.put("status", matched.getStatus());
+        resp.put("rooms", roomList);
 
         return ResponseEntity.ok(resp);
     }
@@ -304,8 +526,8 @@ public class RoomController {
 
         StudentProfile profile = studentOpt.get();
 
-        // 2. Validation: student name must match registered record
-        if (profile.getFullName() == null || !profile.getFullName().trim().equalsIgnoreCase(trimmedName)) {
+        // 2. Validation: student name must flexibly match registered record
+        if (profile.getFullName() == null || !authService.isFlexibleNameMatch(profile.getFullName(), trimmedName)) {
             return ResponseEntity.badRequest().body(Map.of(
                 "error", "Student name '" + trimmedName + "' does not match registered record for ID '" + trimmedNumber + "'. (Expected: " + profile.getFullName() + ")"
             ));
@@ -492,7 +714,7 @@ public class RoomController {
     // -------------------------------------------------------------------------
     // 8. DELETE STUDENT PROFILE (Global)
     // -------------------------------------------------------------------------
-    @DeleteMapping("/students/{studentNumber}")
+    @DeleteMapping("/students/{studentNumber:^(?!login$|register$).+$}")
     @Transactional
     public ResponseEntity<?> deleteStudentEntirely(@PathVariable String studentNumber) {
         Optional<StudentProfile> studentOpt = studentRepository.findByStudentNumber(studentNumber);

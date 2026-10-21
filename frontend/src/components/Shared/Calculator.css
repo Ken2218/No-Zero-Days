@@ -61,12 +61,12 @@
 /* ── Calculator Slide-in Panel ── */
 .calc-panel {
   position: fixed;
-  left: -360px; /* hidden off-screen (adjusted for wider panel) */
+  left: -320px; /* hidden off-screen */
   top: 50%;
   transform: translateY(-50%);
   z-index: 7999;
 
-  width: 330px; /* slightly wider for 5 columns */
+  width: 280px; /* clean basic 4-column calculator */
   max-height: 95vh;
   overflow-y: auto;
 
@@ -89,7 +89,7 @@
 
 /* Pushes the toggle button to the right of the panel when visible */
 .calc-panel-visible + .calc-toggle-btn {
-  left: 330px;
+  left: 280px;
 }
 
 /* Scrollbar styling */

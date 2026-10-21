@@ -1,7 +1,7 @@
 /* --- PHASE 7: EXECUTIVE BOARDROOM POSITIONS --- */
 .phase7-room {
-  aspect-ratio: 2528 / 1684;
-  max-width: 714px;
+  --room-aspect-ratio: 1024 / 1024;
+  aspect-ratio: 1 / 1;
 }
 
 .phase7-room .folder-hotspot {

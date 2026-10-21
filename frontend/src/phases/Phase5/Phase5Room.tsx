@@ -23,8 +23,7 @@ export default function Phase5Room({ setActivePopup, scenario }: Phase5RoomProps
       <img 
         src={pclabImage} 
         alt="PC Lab / Bureaucracy Department" 
-        className="background-image pixelated"
-        style={{ imageRendering: 'pixelated', width: '100%' }}
+        className="background-image"
       />
       {/* Hotspot 1: Notice Board Corkboard Memos */}
       <button 

@@ -67,20 +67,28 @@ body {
 }
 
 .app-background {
-  min-height: 100vh;
-  padding: 20px;
+  height: 100vh;
+  padding: clamp(0.5rem, 1.2vw, 1rem);
   box-sizing: border-box;
   background-color: var(--bg-app);
   transition: background-color 0.25s ease;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
-/* 70/30 SPLIT LAYOUT */
+/* 70/30 SPLIT LAYOUT — FLUID & ZOOM-RESILIENT */
 .app-container {
   display: flex;
-  gap: 20px;
-  max-width: 1600px;
+  gap: clamp(0.75rem, 1.2vw, 1.25rem);
+  width: 100%;
+  max-width: clamp(960px, 96vw, 105rem);
   margin: 0 auto;
-  height: 90vh;
+  height: 100%;
+  flex: 1 1 0;
+  min-height: 520px;
+  box-sizing: border-box;
 }
 
 /* LEFT PANEL (THE ROOM) */
@@ -92,39 +100,51 @@ body {
   border: 2px solid #1e293b;
   border-radius: 8px;
   overflow: hidden;
+  min-height: 0;
+  min-width: 0;
 }
 
 .panel-header {
-  padding: 15px 20px;
+  padding: clamp(0.5rem, 1vw, 0.9rem) clamp(0.75rem, 1.5vw, 1.25rem);
   background-color: #1e293b;
   border-bottom: 2px solid #334155;
+  flex-shrink: 0;
 }
 
 .room-title {
   margin: 0;
   color: #facc15; /* Yellow Title */
-  font-size: 1.5rem;
+  font-size: clamp(1rem, 1.5vw, 1.4rem);
+  line-height: 1.25;
 }
 
 .room-subtitle {
-  margin: 5px 0 0 0;
-  font-size: 0.9rem;
+  margin: 4px 0 0 0;
+  font-size: clamp(0.75rem, 0.9vw, 0.88rem);
 }
 
 .room-content {
-  flex-grow: 1;
+  flex: 1 1 0;
+  min-height: 0;
+  min-width: 0;
   display: flex;
   align-items: center;
   justify-content: center;
   background-color: #000;
   overflow: hidden;
+  position: relative;
+  container-type: size;
+  padding: clamp(0.25rem, 0.8vw, 0.75rem);
+  box-sizing: border-box;
 }
 
 .panel-footer {
-  padding: 15px 20px;
+  padding: clamp(0.5rem, 1vw, 0.85rem) clamp(0.75rem, 1.5vw, 1.25rem);
   background-color: #1e293b;
   border-top: 2px solid #334155;
   color: #e2e8f0;
+  font-size: clamp(0.75rem, 0.9vw, 0.88rem);
+  flex-shrink: 0;
 }
 
 .intel-icon {
@@ -139,9 +159,11 @@ body {
   background-color: #0f172a;
   border: 2px solid #1e293b;
   border-radius: 8px;
-  padding: 20px;
+  padding: clamp(0.75rem, 1.5vw, 1.25rem);
   overflow-y: auto;
   min-width: 0; /* Prevent flex children from overflowing */
+  min-height: 0;
+  box-sizing: border-box;
 }
 
 .mission-header {
@@ -806,14 +828,17 @@ body.light-mode table tbody tr td {
 /* ========================================================== */
 @media (max-width: 768px) {
   .app-background {
+    height: auto;
+    min-height: 100vh;
     padding: 10px;
+    overflow-y: auto;
   }
 
   /* Stack left and right panels vertically on mobile */
   .app-container {
     flex-direction: column;
-    height: auto;          /* Remove fixed 90vh — let content breathe */
-    min-height: 100vh;
+    height: auto;
+    min-height: auto;
     gap: 12px;
   }
 

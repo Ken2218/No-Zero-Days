@@ -2,11 +2,11 @@ import React, { useState, useCallback, useEffect } from 'react';
 import './Calculator.css';
 
 // ==========================================
-// EXPRESSION PARSER & EVALUATOR
+// BASIC ARITHMETIC EXPRESSION EVALUATOR
 // ==========================================
 
-const tokenize = (str) => {
-  const rawTokens = [];
+const tokenize = (str: string) => {
+  const rawTokens: any[] = [];
   let i = 0;
   while (i < str.length) {
     const char = str[i];
@@ -23,60 +23,23 @@ const tokenize = (str) => {
       rawTokens.push({ type: 'NUMBER', value: parseFloat(numStr) });
       continue;
     }
-    if (/[a-zA-Z]/.test(char)) {
-      let word = '';
-      while (i < str.length && /[a-zA-Z0-9]/.test(str[i])) {
-        word += str[i];
-        i++;
-      }
-      rawTokens.push({ type: 'WORD', value: word });
-      continue;
-    }
-    if (char === 'π') {
-      rawTokens.push({ type: 'CONSTANT', value: Math.PI });
-      i++;
-      continue;
-    }
-    if (char === '√') {
-      rawTokens.push({ type: 'WORD', value: 'sqrt' });
-      i++;
-      continue;
-    }
-    if ('+-*/^()'.includes(char)) {
+    if ('+-*/%()'.includes(char)) {
       rawTokens.push({ type: 'OPERATOR', value: char });
       i++;
       continue;
     }
-    // Ignore unrecognized characters
     i++;
   }
-
-  // Insert implicit multiplications (e.g. 2π -> 2 * π, 2(3+4) -> 2 * (3+4))
-  const tokens = [];
-  for (let k = 0; k < rawTokens.length; k++) {
-    const current = rawTokens[k];
-    tokens.push(current);
-    if (k < rawTokens.length - 1) {
-      const next = rawTokens[k + 1];
-      const isCurrentValue = current.type === 'NUMBER' || current.type === 'CONSTANT' || (current.type === 'WORD' && current.value.toLowerCase() === 'e') || (current.type === 'OPERATOR' && current.value === ')');
-      const isNextValue = next.type === 'NUMBER' || next.type === 'CONSTANT' || next.type === 'WORD' || (next.type === 'OPERATOR' && next.value === '(');
-      if (isCurrentValue && isNextValue) {
-        tokens.push({ type: 'OPERATOR', value: '*' });
-      }
-    }
-  }
-  return tokens;
+  return rawTokens;
 };
 
-class Parser {
+class BasicParser {
   tokens: any[];
   index: number;
-  isDegree: boolean;
 
-  constructor(tokens: any[], isDegree: boolean = true) {
+  constructor(tokens: any[]) {
     this.tokens = tokens;
     this.index = 0;
-    this.isDegree = isDegree;
   }
 
   peek() {
@@ -90,13 +53,10 @@ class Parser {
   parse() {
     if (this.tokens.length === 0) return 0;
     const val = this.expression();
-    if (this.peek() !== null) {
-      throw new Error(`Unexpected symbol: ${this.peek().value || JSON.stringify(this.peek())}`);
-    }
     return val;
   }
 
-  expression() {
+  expression(): number {
     let val = this.term();
     while (true) {
       const next = this.peek();
@@ -112,17 +72,20 @@ class Parser {
     return val;
   }
 
-  term() {
-    let val = this.factor();
+  term(): number {
+    let val = this.unary();
     while (true) {
       const next = this.peek();
-      if (next && next.type === 'OPERATOR' && (next.value === '*' || next.value === '/')) {
+      if (next && next.type === 'OPERATOR' && (next.value === '*' || next.value === '/' || next.value === '%')) {
         this.consume();
-        const rhs = this.factor();
-        if (next.value === '*') val *= rhs;
-        else {
+        const rhs = this.unary();
+        if (next.value === '*') {
+          val *= rhs;
+        } else if (next.value === '/') {
           if (rhs === 0) throw new Error('Division by zero');
           val /= rhs;
+        } else if (next.value === '%') {
+          val = val % rhs;
         }
       } else {
         break;
@@ -131,18 +94,7 @@ class Parser {
     return val;
   }
 
-  factor() {
-    let val = this.unary();
-    const next = this.peek();
-    if (next && next.type === 'OPERATOR' && next.value === '^') {
-      this.consume();
-      const rhs = this.factor();
-      val = Math.pow(val, rhs);
-    }
-    return val;
-  }
-
-  unary() {
+  unary(): number {
     const next = this.peek();
     if (next && next.type === 'OPERATOR' && next.value === '+') {
       this.consume();
@@ -155,94 +107,54 @@ class Parser {
     return this.primary();
   }
 
-  primary() {
+  primary(): number {
     const token = this.peek();
-    if (!token) throw new Error('Unexpected end of expression');
+    if (!token) throw new Error('Incomplete expression');
 
     if (token.type === 'NUMBER') {
       this.consume();
       return token.value;
     }
 
-    if (token.type === 'CONSTANT') {
-      this.consume();
-      return token.value;
-    }
-
-    if (token.type === 'WORD') {
-      const word = token.value.toLowerCase();
-      if (word === 'e') {
-        this.consume();
-        return Math.E;
-      }
-      if (word === 'pi') {
-        this.consume();
-        return Math.PI;
-      }
-      
-      // Function execution
-      this.consume(); // Consume function name
-      const openParen = this.peek();
-      if (!openParen || openParen.type !== 'OPERATOR' || openParen.value !== '(') {
-        throw new Error(`Expected "(" after "${word}"`);
-      }
-      this.consume(); // Consume '('
-      const arg = this.expression();
-      const closeParen = this.consume();
-      if (!closeParen || closeParen.type !== 'OPERATOR' || closeParen.value !== ')') {
-        throw new Error(`Unmatched parenthesis in "${word}"`);
-      }
-
-      switch (word) {
-        case 'sin':
-          return this.isDegree ? Math.sin(arg * Math.PI / 180) : Math.sin(arg);
-        case 'cos':
-          return this.isDegree ? Math.cos(arg * Math.PI / 180) : Math.cos(arg);
-        case 'tan':
-          return this.isDegree ? Math.tan(arg * Math.PI / 180) : Math.tan(arg);
-        case 'log':
-          if (arg <= 0) throw new Error('Log domain error');
-          return Math.log10(arg);
-        case 'ln':
-          if (arg <= 0) throw new Error('Ln domain error');
-          return Math.log(arg);
-        case 'sqrt':
-          if (arg < 0) throw new Error('Square root domain error');
-          return Math.sqrt(arg);
-        default:
-          throw new Error(`Unknown function: "${word}"`);
-      }
-    }
-
     if (token.type === 'OPERATOR' && token.value === '(') {
       this.consume();
       const val = this.expression();
-      const closeParen = this.consume();
-      if (!closeParen || closeParen.type !== 'OPERATOR' || closeParen.value !== ')') {
-        throw new Error('Unmatched parenthesis');
+      const close = this.peek();
+      if (close && close.type === 'OPERATOR' && close.value === ')') {
+        this.consume();
       }
       return val;
     }
 
-    throw new Error(`Unexpected token: "${token.value || token.type}"`);
+    throw new Error('Invalid syntax');
   }
 }
 
-const parseAndEvaluate = (expr, isDegree = true) => {
-  // Normalize formula syntax
-  const cleanExpr = expr
+export const evaluateExpression = (expr: string): number => {
+  // Normalize visually styled operators to standard arithmetic chars
+  let cleaned = expr
     .replace(/×/g, '*')
     .replace(/÷/g, '/')
     .replace(/−/g, '-')
-    .replace(/π/g, 'π');
-  
-  const tokens = tokenize(cleanExpr);
-  const parser = new Parser(tokens, isDegree);
-  return parser.parse();
+    .trim();
+
+  // Handle percentages, e.g. 50% -> (50 / 100)
+  cleaned = cleaned.replace(/(\d+(?:\.\d+)?)%/g, '($1/100)');
+
+  const tokens = tokenize(cleaned);
+  const parser = new BasicParser(tokens);
+  const result = parser.parse();
+
+  if (isNaN(result) || !isFinite(result)) {
+    throw new Error('Math error');
+  }
+
+  // Round floating point quirks cleanly
+  return Math.round(result * 1e9) / 1e9;
 };
 
 // ==========================================
-// CALCULATOR REACT COMPONENT
+// CALCULATOR COMPONENT
 // ==========================================
 
 interface CalculatorProps {
@@ -253,94 +165,74 @@ interface CalculatorProps {
 export default function Calculator({ isVisible, onToggle }: CalculatorProps) {
   const [display, setDisplay] = useState('0');
   const [expression, setExpression] = useState('');
-  const [isDegree, setIsDegree] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [isEvaluated, setIsEvaluated] = useState(false);
   const [history, setHistory] = useState<string[]>([]);
+  const [error, setError] = useState('');
 
-  const copyToClipboard = (val: string) => {
-    if (val === 'Error' || !val) return;
-    navigator.clipboard.writeText(val).catch(() => {});
+  const copyToClipboard = (text: string) => {
+    if (text === 'Error' || !text) return;
+    navigator.clipboard.writeText(text);
   };
 
   const handleKeyPress = useCallback((value: string) => {
-    setError(null);
-    
+    setError('');
+
+    // Clear All (C)
     if (value === 'C') {
       setDisplay('0');
       setExpression('');
       setIsEvaluated(false);
       return;
     }
-    
+
+    // Clear Entry (CE)
     if (value === 'CE') {
       setDisplay('0');
+      setIsEvaluated(false);
       return;
     }
-    
+
+    // Backspace (⌫)
     if (value === '⌫') {
       if (isEvaluated || display === 'Error') {
         setDisplay('0');
         setExpression('');
         setIsEvaluated(false);
-      } else {
-        setDisplay(prev => {
-          if (prev.length <= 1 || prev === 'Error') return '0';
-          
-          // Check if it ends with a function pattern
-          const funcMatch = prev.match(/(sin\(|cos\(|tan\(|log\(|ln\(|√\()$/);
-          if (funcMatch) {
-            const newPrev = prev.slice(0, -funcMatch[0].length);
-            return newPrev === '' ? '0' : newPrev;
-          }
-
-          if (prev.endsWith(' ')) {
-            return prev.trimEnd().slice(0, -1).trimEnd();
-          }
-          return prev.slice(0, -1);
-        });
+        return;
       }
+      setDisplay(prev => {
+        if (prev.length <= 1) return '0';
+        // If ends with whitespace from operator, trim cleanly
+        if (prev.endsWith(' ')) {
+          return prev.trimEnd().slice(0, -1).trimEnd();
+        }
+        return prev.slice(0, -1);
+      });
       return;
     }
-    
+
+    // Calculate Equals (=)
     if (value === '=') {
+      if (display === 'Error') return;
       try {
-        if (display === '0' || display === 'Error' || !display) return;
-        const result = parseAndEvaluate(display, isDegree);
-        
-        // Handle NaN/Infinity
-        if (isNaN(result) || !isFinite(result)) {
-          throw new Error('Mathematical error');
-        }
-        
-        // Precision rounding (6 decimal places)
-        const rounded = Math.round(result * 1000000) / 1000000;
-        const displayVal = String(rounded);
-        
-        setExpression(display + ' =');
-        
-        const entry = `${display} = ${displayVal}`;
-        setHistory(prev => [entry, ...prev].slice(0, 8));
-        
-        setDisplay(displayVal);
+        const fullExpr = display;
+        const result = evaluateExpression(fullExpr);
+        const resultStr = String(result);
+
+        setExpression(fullExpr + ' =');
+        setDisplay(resultStr);
         setIsEvaluated(true);
-      } catch (err) {
-        setError(err.message || 'Error');
-        setExpression(display + ' =');
+
+        setHistory(prev => [fullExpr + ' = ' + resultStr, ...prev.slice(0, 9)]);
+      } catch (err: any) {
+        setError(err.message || 'Math error');
         setDisplay('Error');
         setIsEvaluated(true);
       }
       return;
     }
-    
-    if (value === 'DEG' || value === 'RAD') {
-      setIsDegree(prev => !prev);
-      return;
-    }
 
-    // Input validations before standard appends/toggles
-    
-    // 1. Decimal Point Validation
+    // Decimal Point (.)
     if (value === '.') {
       if (display === 'Error' || isEvaluated) {
         setDisplay('0.');
@@ -348,13 +240,18 @@ export default function Calculator({ isVisible, onToggle }: CalculatorProps) {
         setIsEvaluated(false);
         return;
       }
-      if (/\.\d*$/.test(display)) {
-        return; // Ignore duplicate decimal point in current number
+      // Check if current number chunk already has a decimal
+      const parts = display.split(/[ +−×÷%]/);
+      const currentPart = parts[parts.length - 1];
+      if (currentPart.includes('.')) {
+        return;
       }
+      setDisplay(prev => prev + '.');
+      return;
     }
 
-    // 2. Operators Validation (+, −, ×, ÷, ^)
-    if (['+', '−', '×', '÷', '^'].includes(value)) {
+    // Arithmetic Operators (+, −, ×, ÷)
+    if (['+', '−', '×', '÷'].includes(value)) {
       if (display === 'Error') {
         setDisplay('0 ' + value + ' ');
         setExpression('');
@@ -367,26 +264,18 @@ export default function Calculator({ isVisible, onToggle }: CalculatorProps) {
         setIsEvaluated(false);
         return;
       }
-      
-      // Prevent operators directly after opening parenthesis '('
-      if (display.trim().endsWith('(')) {
-        return; // Ignore operator right after '('
-      }
 
       setDisplay(prev => {
-        // If it already ends with an operator, replace it
-        if (/\s*[+−×÷^]\s*$/.test(prev)) {
-          return prev.replace(/\s*[+−×÷^]\s*$/, ' ' + value + ' ');
-        }
-        if (prev === '0') {
-          return '0 ' + value + ' ';
+        // If already ends with an operator, replace it
+        if (/\s*[+−×÷]\s*$/.test(prev)) {
+          return prev.replace(/\s*[+−×÷]\s*$/, ' ' + value + ' ');
         }
         return prev + ' ' + value + ' ';
       });
       return;
     }
 
-    // 3. Percentage Validation
+    // Percentage (%)
     if (value === '%') {
       if (display === 'Error' || isEvaluated) {
         setDisplay('0%');
@@ -394,86 +283,30 @@ export default function Calculator({ isVisible, onToggle }: CalculatorProps) {
         setIsEvaluated(false);
         return;
       }
-      if (display.endsWith('%')) {
-        return; // Prevent duplicate percentage
+      if (display.endsWith('%') || /\s*[+−×÷]\s*$/.test(display)) {
+        return;
       }
-      if (/\s*[+−×÷^]\s*$/.test(display)) {
-        return; // Prevent percentage immediately after an operator
-      }
-      setDisplay(prev => prev === '0' ? '0%' : prev + '%');
+      setDisplay(prev => (prev === '0' ? '0%' : prev + '%'));
       return;
     }
 
-    // 4. Closing Parenthesis Validation
-    if (value === ')') {
+    // Numbers (0-9)
+    if (/[0-9]/.test(value)) {
       if (display === 'Error' || isEvaluated) {
-        return; // Can't start a closing parenthesis on new/error state
-      }
-      if (display.trim().endsWith('(')) {
-        return; // Prevent empty parentheses "()"
-      }
-      const openCount = (display.match(/\(/g) || []).length;
-      const closeCount = (display.match(/\)/g) || []).length;
-      if (closeCount >= openCount) {
-        return; // Prevent unmatched closing parenthesis
-      }
-    }
-
-    // 5. Sign Toggle (±)
-    if (value === '±') {
-      if (display === 'Error') {
-        setDisplay('-');
-        setExpression('');
-        setIsEvaluated(false);
-        return;
-      }
-      if (isEvaluated) {
-        if (display.startsWith('-')) {
-          setDisplay(display.slice(1));
-        } else {
-          setDisplay('-' + display);
-        }
+        setDisplay(value);
         setExpression('');
         setIsEvaluated(false);
       } else {
-        setDisplay(prev => {
-          if (prev.startsWith('-(') && prev.endsWith(')')) {
-            return prev.slice(2, -1);
-          } else if (prev.startsWith('-') && !prev.includes(' ')) {
-            return prev.slice(1);
-          } else if (prev === '0') {
-            return '-';
-          } else {
-            return prev.includes(' ') ? `-(${prev})` : `-${prev}`;
-          }
-        });
+        setDisplay(prev => (prev === '0' ? value : prev + value));
       }
-      return;
     }
-
-    // Standard appends for functions, constants, digits, opening parenthesis
-    let appendValue = value;
-    if (['sin', 'cos', 'tan', 'log', 'ln'].includes(value)) {
-      appendValue = value + '(';
-    } else if (value === '√') {
-      appendValue = '√(';
-    }
-
-    if (display === 'Error' || isEvaluated) {
-      setDisplay(appendValue);
-      setExpression('');
-      setIsEvaluated(false);
-    } else {
-      setDisplay(prev => prev === '0' ? appendValue : prev + appendValue);
-    }
-  }, [display, isDegree, isEvaluated]);
+  }, [display, isEvaluated]);
 
   // Keyboard Event Listener
   useEffect(() => {
     if (!isVisible) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Prevent taking inputs when focusing on text inputs, textareas, selects or content editable elements (avoid collision)
       const activeEl = document.activeElement as HTMLElement;
       if (activeEl && (
         activeEl.tagName === 'INPUT' || 
@@ -484,10 +317,7 @@ export default function Calculator({ isVisible, onToggle }: CalculatorProps) {
         return;
       }
 
-      // Ignore key combinations with Ctrl, Alt, or Meta keys (avoids browser hotkey conflicts like Ctrl+C, Ctrl+V, etc.)
-      if (e.ctrlKey || e.altKey || e.metaKey) {
-        return;
-      }
+      if (e.ctrlKey || e.altKey || e.metaKey) return;
 
       const key = e.key;
 
@@ -509,12 +339,6 @@ export default function Calculator({ isVisible, onToggle }: CalculatorProps) {
       } else if (key === '%') {
         e.preventDefault();
         handleKeyPress('%');
-      } else if (key === '^') {
-        e.preventDefault();
-        handleKeyPress('^');
-      } else if (key === '(' || key === ')') {
-        e.preventDefault();
-        handleKeyPress(key);
       } else if (key === 'Enter') {
         e.preventDefault();
         handleKeyPress('=');
@@ -524,36 +348,6 @@ export default function Calculator({ isVisible, onToggle }: CalculatorProps) {
       } else if (key === 'Escape' || key === 'Delete') {
         e.preventDefault();
         handleKeyPress('C');
-      } else if (key === '_') {
-        e.preventDefault();
-        handleKeyPress('±');
-      } else if (key.toLowerCase() === 'p') {
-        e.preventDefault();
-        handleKeyPress('π');
-      } else if (key.toLowerCase() === 'e') {
-        e.preventDefault();
-        handleKeyPress('e');
-      } else if (key.toLowerCase() === 's') {
-        e.preventDefault();
-        handleKeyPress('sin');
-      } else if (key.toLowerCase() === 'c') {
-        e.preventDefault();
-        handleKeyPress('cos');
-      } else if (key.toLowerCase() === 't') {
-        e.preventDefault();
-        handleKeyPress('tan');
-      } else if (key.toLowerCase() === 'l') {
-        e.preventDefault();
-        handleKeyPress('log');
-      } else if (key.toLowerCase() === 'n') {
-        e.preventDefault();
-        handleKeyPress('ln');
-      } else if (key.toLowerCase() === 'r') {
-        e.preventDefault();
-        handleKeyPress('√');
-      } else if (key.toLowerCase() === 'd') {
-        e.preventDefault();
-        handleKeyPress('DEG');
       }
     };
 
@@ -563,47 +357,32 @@ export default function Calculator({ isVisible, onToggle }: CalculatorProps) {
     };
   }, [isVisible, handleKeyPress]);
 
-
+  // Clean 4-column Basic Calculator button pad
   const BUTTONS = [
-    { label: 'sin', action: () => handleKeyPress('sin'), style: 'btn-sci' },
-    { label: 'cos', action: () => handleKeyPress('cos'), style: 'btn-sci' },
-    { label: 'tan', action: () => handleKeyPress('tan'), style: 'btn-sci' },
-    { label: '^',   action: () => handleKeyPress('^'),   style: 'btn-sci' },
-    { label: '√',   action: () => handleKeyPress('√'),   style: 'btn-sci' },
-
-    { label: 'log', action: () => handleKeyPress('log'), style: 'btn-sci' },
-    { label: 'ln',  action: () => handleKeyPress('ln'),  style: 'btn-sci' },
-    { label: '(',   action: () => handleKeyPress('('),   style: 'btn-sci' },
-    { label: ')',   action: () => handleKeyPress(')'),   style: 'btn-sci' },
-    { label: isDegree ? 'DEG' : 'RAD', action: () => handleKeyPress(isDegree ? 'DEG' : 'RAD'), style: 'btn-mode' },
-
-    { label: 'π',   action: () => handleKeyPress('π'),   style: 'btn-const' },
-    { label: 'e',   action: () => handleKeyPress('e'),   style: 'btn-const' },
     { label: 'C',   action: () => handleKeyPress('C'),   style: 'btn-clear' },
     { label: 'CE',  action: () => handleKeyPress('CE'),  style: 'btn-clear' },
     { label: '⌫',   action: () => handleKeyPress('⌫'),   style: 'btn-clear' },
+    { label: '÷',   action: () => handleKeyPress('÷'),   style: 'btn-op' },
 
     { label: '7',   action: () => handleKeyPress('7'),   style: 'btn-num' },
     { label: '8',   action: () => handleKeyPress('8'),   style: 'btn-num' },
     { label: '9',   action: () => handleKeyPress('9'),   style: 'btn-num' },
-    { label: '÷',   action: () => handleKeyPress('÷'),   style: 'btn-op' },
     { label: '×',   action: () => handleKeyPress('×'),   style: 'btn-op' },
 
     { label: '4',   action: () => handleKeyPress('4'),   style: 'btn-num' },
     { label: '5',   action: () => handleKeyPress('5'),   style: 'btn-num' },
     { label: '6',   action: () => handleKeyPress('6'),   style: 'btn-num' },
     { label: '−',   action: () => handleKeyPress('−'),   style: 'btn-op' },
-    { label: '+',   action: () => handleKeyPress('+'),   style: 'btn-op' },
 
     { label: '1',   action: () => handleKeyPress('1'),   style: 'btn-num' },
     { label: '2',   action: () => handleKeyPress('2'),   style: 'btn-num' },
     { label: '3',   action: () => handleKeyPress('3'),   style: 'btn-num' },
-    { label: '±',   action: () => handleKeyPress('±'),   style: 'btn-sci' },
-    { label: '=',   action: () => handleKeyPress('='),   style: 'btn-equals' },
+    { label: '+',   action: () => handleKeyPress('+'),   style: 'btn-op' },
 
-    { label: '0',   action: () => handleKeyPress('0'),   style: 'btn-num-double' },
+    { label: '%',   action: () => handleKeyPress('%'),   style: 'btn-sci' },
+    { label: '0',   action: () => handleKeyPress('0'),   style: 'btn-num' },
     { label: '.',   action: () => handleKeyPress('.'),   style: 'btn-num' },
-    { label: '%',   action: () => handleKeyPress('%'),   style: 'btn-sci' }
+    { label: '=',   action: () => handleKeyPress('='),   style: 'btn-equals' }
   ];
 
   return (
@@ -612,7 +391,7 @@ export default function Calculator({ isVisible, onToggle }: CalculatorProps) {
       <div className={`calc-panel ${isVisible ? 'calc-panel-visible' : ''}`}>
         {/* Header */}
         <div className="calc-header">
-          <span className="calc-title">🔬 SCIENTIFIC CALCULATOR</span>
+          <span className="calc-title">🧮 CALCULATOR</span>
           <button className="calc-close-btn" onClick={onToggle}>✕</button>
         </div>
 
@@ -633,7 +412,7 @@ export default function Calculator({ isVisible, onToggle }: CalculatorProps) {
           )}
         </div>
 
-        {/* Button Grid */}
+        {/* 4-Column Basic Calculator Button Grid */}
         <div className="calc-grid">
           {BUTTONS.map((btn, i) => (
             <button
@@ -674,7 +453,7 @@ export default function Calculator({ isVisible, onToggle }: CalculatorProps) {
           </div>
         )}
 
-        {/* Quick Help */}
+        {/* QUICK FORMULAS Reference Section — strictly preserved */}
         <div className="calc-payroll-hint">
           <span style={{ color: '#60a5fa', fontSize: '0.7rem', display: 'block', marginBottom: '4px' }}>💡 QUICK FORMULAS:</span>
           <code style={{ color: '#94a3b8', fontSize: '0.68rem', display: 'block', lineHeight: '1.6' }}>

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import API_BASE_URL from '../config';
 import './TeacherLobby.css';
 import './TeacherDashboard.css';
@@ -52,21 +52,41 @@ interface DashboardSummary {
 interface TeacherDashboardProps {
   roomCode: string;
   teacherName: string;
+  teacherEmail?: string;
+  section?: string;
   onBack: () => void;
   onExit?: () => void;
+  onSwitchRoom?: (newRoomCode: string, newSection?: string) => void;
 }
 
-export default function TeacherDashboard({ roomCode, teacherName, onBack, onExit }: TeacherDashboardProps) {
+export default function TeacherDashboard({
+  roomCode: initialRoomCode,
+  teacherName,
+  teacherEmail: initialTeacherEmail,
+  section: initialSection,
+  onBack,
+  onExit,
+  onSwitchRoom
+}: TeacherDashboardProps) {
+  const [activeRoomCode, setActiveRoomCode] = useState(initialRoomCode || '');
   const [students, setStudents] = useState<StudentProgress[]>([]);
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
-  const [roomSection, setRoomSection] = useState('');
-  const [teacherEmail, setTeacherEmail] = useState('');
+  const [roomSection, setRoomSection] = useState(initialSection || '');
+  const [teacherEmail, setTeacherEmail] = useState(initialTeacherEmail || '');
+  const [teacherRooms, setTeacherRooms] = useState<any[]>([]);
   const [sendingEmailReport, setSendingEmailReport] = useState(false);
   const [emailReportToast, setEmailReportToast] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [copied, setCopied] = useState(false);
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  // New section room creation modal
+  const [showNewSectionModal, setShowNewSectionModal] = useState(false);
+  const [newSectionName, setNewSectionName] = useState('');
+  const [newCustomCode, setNewCustomCode] = useState('');
+  const [isCreatingSection, setIsCreatingSection] = useState(false);
+  const [createSectionError, setCreateSectionError] = useState('');
 
   // UI state
   const [activeChartTab, setActiveChartTab] = useState<'funnel' | 'time' | 'attempts' | 'status'>('funnel');
@@ -87,9 +107,63 @@ export default function TeacherDashboard({ roomCode, teacherName, onBack, onExit
   const [studentToDelete, setStudentToDelete] = useState<{ number: string; name: string } | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
 
-  const fetchDashboardStats = async () => {
+  // Sync if prop roomCode changes
+  useEffect(() => {
+    if (initialRoomCode && initialRoomCode !== activeRoomCode) {
+      setActiveRoomCode(initialRoomCode);
+    }
+  }, [initialRoomCode]);
+
+  // Fetch all rooms created by this teacher
+  const fetchTeacherRooms = useCallback(async () => {
     try {
-      const res = await fetch(`${API_BASE_URL}/api/rooms/${roomCode}/dashboard`);
+      const emailQuery = (teacherEmail || initialTeacherEmail || '').trim();
+      const nameQuery = (teacherName || '').trim();
+      const params = new URLSearchParams();
+      if (emailQuery) params.append('email', emailQuery);
+      if (nameQuery) params.append('teacherName', nameQuery);
+
+      const res = await fetch(`${API_BASE_URL}/api/teachers/rooms?${params.toString()}`);
+      if (res.ok) {
+        const data = await res.json();
+        setTeacherRooms(data);
+        if (data.length > 0 && !activeRoomCode) {
+          const first = data[0];
+          setActiveRoomCode(first.roomCode);
+          if (first.section) setRoomSection(first.section);
+          onSwitchRoom?.(first.roomCode, first.section);
+        }
+      }
+    } catch (err) {
+      console.warn('[TeacherDashboard] Failed to fetch teacher rooms:', err);
+    }
+  }, [teacherEmail, initialTeacherEmail, teacherName, activeRoomCode, onSwitchRoom]);
+
+  // Ensure activeRoomCode is always represented in teacherRooms
+  useEffect(() => {
+    if (activeRoomCode) {
+      setTeacherRooms(prev => {
+        if (prev.some(r => r.roomCode === activeRoomCode)) return prev;
+        return [{
+          roomCode: activeRoomCode,
+          section: roomSection || 'Section 1',
+          teacherName: teacherName,
+          teacherEmail: teacherEmail || initialTeacherEmail || '',
+          participantCount: 0,
+          status: 'WAITING'
+        }, ...prev];
+      });
+    }
+  }, [activeRoomCode, roomSection, teacherName, teacherEmail, initialTeacherEmail]);
+
+  useEffect(() => {
+    fetchTeacherRooms();
+  }, [fetchTeacherRooms]);
+
+  const fetchDashboardStats = useCallback(async (targetCode = activeRoomCode) => {
+    if (!targetCode) return;
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/rooms/${targetCode}/dashboard`);
       if (res.ok) {
         const data = await res.json();
         setStudents(data.students || []);
@@ -107,17 +181,102 @@ export default function TeacherDashboard({ roomCode, teacherName, onBack, onExit
     } finally {
       setLoading(false);
     }
+  }, [activeRoomCode]);
+
+  // Section Switcher handler
+  const handleSelectSection = (targetCode: string, targetSection?: string) => {
+    if (!targetCode || targetCode === activeRoomCode) return;
+    setActiveRoomCode(targetCode);
+    if (targetSection) setRoomSection(targetSection);
+    setStudents([]);
+    setSummary(null);
+    setLoading(true);
+    onSwitchRoom?.(targetCode, targetSection);
+  };
+
+  // Create New Section Room handler
+  const handleCreateSectionSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newSectionName.trim()) {
+      setCreateSectionError('Section name is required (e.g., Grade 12 - ABM B).');
+      return;
+    }
+    const emailToUse = (teacherEmail || initialTeacherEmail || '').trim();
+    if (emailToUse && !/^[^\s@]+@gmail\.com$/i.test(emailToUse)) {
+      setCreateSectionError('Teacher email must be a valid Gmail address ending in @gmail.com.');
+      return;
+    }
+
+    setIsCreatingSection(true);
+    setCreateSectionError('');
+
+    try {
+      const payload: Record<string, string> = {
+        teacherName: teacherName,
+        teacherEmail: emailToUse,
+        section: newSectionName.trim()
+      };
+      if (newCustomCode.trim()) {
+        payload.roomCode = newCustomCode.trim().toUpperCase();
+      }
+
+      const res = await fetch(`${API_BASE_URL}/api/rooms/create`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      if (res.ok) {
+        const created = await res.json();
+        setShowNewSectionModal(false);
+        setNewSectionName('');
+        setNewCustomCode('');
+        setTeacherRooms(prev => {
+          const exists = prev.some(r => r.roomCode === created.roomCode);
+          if (exists) return prev;
+          return [{
+            roomCode: created.roomCode,
+            section: created.section || newSectionName.trim(),
+            teacherName: created.teacherName || teacherName,
+            teacherEmail: created.teacherEmail || emailToUse,
+            participantCount: 0,
+            status: created.status || 'WAITING'
+          }, ...prev];
+        });
+        await fetchTeacherRooms();
+        handleSelectSection(created.roomCode, created.section);
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        setCreateSectionError(errData.error || 'Failed to create section room.');
+      }
+    } catch (err: any) {
+      setCreateSectionError(err.message || 'Error creating section.');
+    } finally {
+      setIsCreatingSection(false);
+    }
+  };
+
+  const generateRandomCode = () => {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    let code = '';
+    for (let i = 0; i < 6; i++) {
+      code += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    setNewCustomCode(code);
   };
 
   const handleSendReportEmail = async () => {
-    if (!roomCode) return;
-    const targetEmail = (teacherEmail || '').trim();
-    if (!targetEmail) {
-      const emailInput = prompt('Enter teacher email to receive classroom report:');
+    if (!activeRoomCode) return;
+    let targetEmail = (teacherEmail || initialTeacherEmail || '').trim();
+    if (!targetEmail || !/^[^\s@]+@gmail\.com$/i.test(targetEmail)) {
+      const emailInput = prompt('Enter your Gmail address (@gmail.com) to receive classroom report:', targetEmail);
       if (!emailInput || !emailInput.trim()) return;
-      setTeacherEmail(emailInput.trim());
-      sendDashboardEmailTo(emailInput.trim());
-      return;
+      if (!/^[^\s@]+@gmail\.com$/i.test(emailInput.trim())) {
+        alert('Please enter a valid Gmail address ending in @gmail.com');
+        return;
+      }
+      targetEmail = emailInput.trim();
+      setTeacherEmail(targetEmail);
     }
     sendDashboardEmailTo(targetEmail);
   };
@@ -126,14 +285,14 @@ export default function TeacherDashboard({ roomCode, teacherName, onBack, onExit
     setSendingEmailReport(true);
     setEmailReportToast('');
     try {
-      const res = await fetch(`${API_BASE_URL}/api/rooms/${roomCode}/send-report`, {
+      const res = await fetch(`${API_BASE_URL}/api/rooms/${activeRoomCode}/send-report`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ teacherEmail: email })
       });
       const data = await res.json();
       if (res.ok) {
-        setEmailReportToast(`✓ Classroom report sent to ${email}!`);
+        setEmailReportToast(`✓ Section report sent to ${email}!`);
         setTimeout(() => setEmailReportToast(''), 5000);
       } else {
         setEmailReportToast(`✕ ${data.error || 'Failed to send report.'}`);
@@ -148,18 +307,18 @@ export default function TeacherDashboard({ roomCode, teacherName, onBack, onExit
   };
 
   useEffect(() => {
-    if (roomCode) {
-      fetchDashboardStats();
-      pollIntervalRef.current = setInterval(fetchDashboardStats, 5000);
+    if (activeRoomCode) {
+      fetchDashboardStats(activeRoomCode);
+      pollIntervalRef.current = setInterval(() => fetchDashboardStats(activeRoomCode), 5000);
     }
     return () => {
       if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [roomCode]);
+  }, [activeRoomCode, fetchDashboardStats]);
 
   const handleCopyCode = () => {
-    navigator.clipboard.writeText(roomCode).then(() => {
+    if (!activeRoomCode) return;
+    navigator.clipboard.writeText(activeRoomCode).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
     });
@@ -175,7 +334,7 @@ export default function TeacherDashboard({ roomCode, teacherName, onBack, onExit
     setIsAddingStudent(true);
     setAddError('');
     try {
-      const res = await fetch(`${API_BASE_URL}/api/rooms/${roomCode}/students`, {
+      const res = await fetch(`${API_BASE_URL}/api/rooms/${activeRoomCode}/students`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -189,7 +348,7 @@ export default function TeacherDashboard({ roomCode, teacherName, onBack, onExit
         setAddStudentName('');
         setAddStudentSection('');
         setShowAddModal(false);
-        fetchDashboardStats();
+        fetchDashboardStats(activeRoomCode);
       } else {
         const data = await res.json().catch(() => ({}));
         setAddError(data.error || 'Failed to add student.');
@@ -206,12 +365,12 @@ export default function TeacherDashboard({ roomCode, teacherName, onBack, onExit
     if (!studentToDelete) return;
     setIsDeleting(true);
     try {
-      const res = await fetch(`${API_BASE_URL}/api/rooms/${roomCode}/students/${studentToDelete.number}`, {
+      const res = await fetch(`${API_BASE_URL}/api/rooms/${activeRoomCode}/students/${studentToDelete.number}`, {
         method: 'DELETE'
       });
       if (res.ok) {
         setStudentToDelete(null);
-        fetchDashboardStats();
+        fetchDashboardStats(activeRoomCode);
       } else {
         const data = await res.json().catch(() => ({}));
         alert(data.error || 'Failed to delete student.');
@@ -482,19 +641,22 @@ export default function TeacherDashboard({ roomCode, teacherName, onBack, onExit
         <header className="dash-header">
           <div className="dash-title-group">
             <h1>
-              <span>⚡ COMMAND NEXUS</span>
-              <span className="dash-badge dash-badge-pulse">LIVE MONITOR</span>
+              <span>No Zero Days: Payroll Simulator</span>
+              <span className="dash-badge dash-badge-pulse">TEACHER NEXUS</span>
             </h1>
             <div className="dash-meta-info">
               <span>
                 Room:{' '}
                 <span className="room-code-tag" onClick={handleCopyCode} title="Click to copy room code">
-                  {roomCode} 📋
+                  {activeRoomCode} 📋
                 </span>
                 {copied && <span style={{ color: '#10b981', marginLeft: '6px', fontSize: '0.8rem' }}>COPIED!</span>}
               </span>
               <span>Supervisor: <strong style={{ color: '#fff' }}>{teacherName}</strong></span>
               <span>Section: <strong style={{ color: '#60a5fa' }}>{roomSection || 'General'}</strong></span>
+              {teacherEmail && (
+                <span>Email: <strong style={{ color: '#38bdf8' }}>{teacherEmail}</strong></span>
+              )}
             </div>
           </div>
 
@@ -521,11 +683,11 @@ export default function TeacherDashboard({ roomCode, teacherName, onBack, onExit
               style={{ color: '#38bdf8', borderColor: '#0284c7', background: 'rgba(56, 189, 248, 0.1)' }}
               onClick={handleSendReportEmail}
               disabled={sendingEmailReport}
-              title={teacherEmail ? `Email classroom report to ${teacherEmail}` : 'Send classroom report to email'}
+              title={teacherEmail ? `Email section report to ${teacherEmail}` : 'Send section report to email'}
             >
               <span>✉️</span> {sendingEmailReport ? 'SENDING...' : 'EMAIL REPORT'}
             </button>
-            <button className="dash-btn dash-btn-outline" onClick={fetchDashboardStats} title="Refresh Live Data">
+            <button className="dash-btn dash-btn-outline" onClick={() => fetchDashboardStats(activeRoomCode)} title="Refresh Live Data">
               <span>⟳</span> REFRESH
             </button>
             <button
@@ -533,10 +695,108 @@ export default function TeacherDashboard({ roomCode, teacherName, onBack, onExit
               onClick={onExit || onBack}
               title="Exit room and log out safely back to login screen"
             >
-              [ EXIT ROOM ]
+              [ LOGOUT ]
             </button>
           </div>
         </header>
+
+        {/* SECTION MANAGER & ROOM TABS */}
+        <section className="section-manager-container">
+          <div className="section-manager-header">
+            <div className="section-manager-title">
+              <span className="section-manager-icon">🏫</span>
+              <div>
+                <h3>SECTION &amp; CLASSROOM MANAGER</h3>
+                <span className="section-manager-subtitle">Manage all class sections, student rosters &amp; performance reports</span>
+              </div>
+            </div>
+            <button
+              type="button"
+              className="create-section-btn"
+              onClick={() => {
+                setCreateSectionError('');
+                setShowNewSectionModal(true);
+              }}
+              title="Generate a new room code and section for another class"
+            >
+              <span>➕</span> GENERATE NEW CLASSROOM
+            </button>
+          </div>
+
+          {teacherRooms.length > 0 && (
+            <div className="section-tabs-container">
+              <div className="section-tabs-scroll">
+                {teacherRooms.map((r) => {
+                  const isActive = r.roomCode === activeRoomCode;
+                  return (
+                    <div
+                      key={r.roomCode}
+                      className={`section-tab-card ${isActive ? 'active' : ''}`}
+                      onClick={() => handleSelectSection(r.roomCode, r.section)}
+                      title={`Switch to ${r.section || 'General'} (${r.roomCode})`}
+                    >
+                      <div className="section-tab-top">
+                        <span className="section-tab-name" title={r.section || 'General'}>
+                          {r.section || 'General'}
+                        </span>
+                        {isActive && <span className="active-indicator-badge">ACTIVE</span>}
+                      </div>
+                      <div className="section-tab-bottom">
+                        <span className="section-tab-code">{r.roomCode}</span>
+                        <span className="section-tab-count">👥 {r.participantCount ?? 0}</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {activeRoomCode && (
+                <div className="active-section-toolbar">
+                  <div className="active-section-meta">
+                    <span className="meta-label">CURRENT SECTION:</span>
+                    <span className="meta-value">{roomSection || 'General'}</span>
+                    <span className="meta-divider">|</span>
+                    <span className="meta-label">ROOM CODE:</span>
+                    <span
+                      className="meta-code"
+                      title="Click to copy room code"
+                      onClick={() => {
+                        navigator.clipboard.writeText(activeRoomCode);
+                        setEmailReportToast('📋 Room code copied to clipboard!');
+                        setTimeout(() => setEmailReportToast(''), 3000);
+                      }}
+                    >
+                      {activeRoomCode} 📋
+                    </span>
+                    <span className="meta-divider">|</span>
+                    <span className="meta-label">STUDENTS:</span>
+                    <span className="meta-value">{students.length}</span>
+                  </div>
+
+                  <div className="active-section-actions">
+                    <button
+                      type="button"
+                      className="section-action-btn email"
+                      onClick={handleSendReportEmail}
+                      disabled={sendingEmailReport || !activeRoomCode}
+                      title={`Email full audit report of ${roomSection || activeRoomCode} to ${teacherEmail}`}
+                    >
+                      <span>📧</span> {sendingEmailReport ? 'SENDING REPORT...' : 'EMAIL SECTION REPORT'}
+                    </button>
+                    <a
+                      href={`${API_BASE_URL}/api/rooms/${activeRoomCode}/report/excel`}
+                      download
+                      className="section-action-btn excel"
+                      title="Download Excel spreadsheet of this section's performance"
+                    >
+                      <span>📊</span> DOWNLOAD EXCEL
+                    </a>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </section>
 
         {emailReportToast && (
           <div style={{
@@ -569,6 +829,28 @@ export default function TeacherDashboard({ roomCode, teacherName, onBack, onExit
           </div>
         )}
 
+        {!activeRoomCode && teacherRooms.length === 0 ? (
+          <div className="empty-teacher-state">
+            <div className="empty-state-icon">🏫</div>
+            <h2>NO CLASSROOMS CREATED YET</h2>
+            <p>Welcome to your All-In-One Teacher Command Center!</p>
+            <p className="empty-state-sub">
+              As an O&amp;M Instructor, you can manage all your class sections and student cohorts under this single master account.
+              Generate your first classroom section code to get started.
+            </p>
+            <button
+              type="button"
+              className="create-section-btn large"
+              onClick={() => {
+                setCreateSectionError('');
+                setShowNewSectionModal(true);
+              }}
+            >
+              <span>➕</span> GENERATE YOUR FIRST SECTION
+            </button>
+          </div>
+        ) : (
+          <>
         {/* TOP KPI CARDS */}
         <section className="kpi-grid">
           <div className="kpi-card blue">
@@ -720,7 +1002,7 @@ export default function TeacherDashboard({ roomCode, teacherName, onBack, onExit
             <div style={{ fontSize: '2.5rem', marginBottom: '12px' }}>📡</div>
             <p style={{ margin: 0, fontSize: '1.1rem', color: '#94a3b8' }}>No students found in this room.</p>
             <p style={{ fontSize: '0.85rem', marginTop: '6px' }}>
-              Share room code <strong style={{ color: '#fbbf24' }}>{roomCode}</strong> with your students or click "ENROLL STUDENT" above.
+              Share room code <strong style={{ color: '#fbbf24' }}>{activeRoomCode}</strong> with your students or click "ENROLL STUDENT" above.
             </p>
           </div>
         )}
@@ -953,6 +1235,8 @@ export default function TeacherDashboard({ roomCode, teacherName, onBack, onExit
             </table>
           </div>
         )}
+          </>
+        )}
       </div>
 
       {/* ADD STUDENT MODAL */}
@@ -960,7 +1244,7 @@ export default function TeacherDashboard({ roomCode, teacherName, onBack, onExit
         <div className="modal-backdrop">
           <div className="modal-dialog">
             <div className="modal-header">
-              <h3>➕ ENROLL STUDENT IN ROOM {roomCode}</h3>
+              <h3>➕ ENROLL STUDENT IN ROOM {activeRoomCode}</h3>
               <button className="modal-close-btn" onClick={() => setShowAddModal(false)}>✕</button>
             </div>
 
@@ -1048,7 +1332,7 @@ export default function TeacherDashboard({ roomCode, teacherName, onBack, onExit
               Are you sure you want to remove student{' '}
               <strong style={{ color: '#fff' }}>{studentToDelete.name}</strong>{' '}
               (<span style={{ color: '#60a5fa' }}>{studentToDelete.number}</span>) from Room{' '}
-              <strong style={{ color: '#fbbf24' }}>{roomCode}</strong>?
+              <strong style={{ color: '#fbbf24' }}>{activeRoomCode}</strong>?
             </p>
             <p style={{ color: '#94a3b8', fontSize: '0.8rem' }}>
               They will no longer appear in this room session.
@@ -1071,6 +1355,87 @@ export default function TeacherDashboard({ roomCode, teacherName, onBack, onExit
                 {isDeleting ? 'REMOVING...' : 'YES, REMOVE STUDENT'}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* CREATE NEW SECTION MODAL */}
+      {showNewSectionModal && (
+        <div className="modal-backdrop" onClick={() => setShowNewSectionModal(false)}>
+          <div className="modal-dialog" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>➕ CREATE NEW CLASS SECTION</h3>
+              <button className="modal-close-btn" onClick={() => setShowNewSectionModal(false)}>✕</button>
+            </div>
+
+            {createSectionError && (
+              <div className="modal-error" style={{ color: '#fca5a5', background: 'rgba(239, 68, 68, 0.15)', padding: '10px', borderRadius: '4px', marginBottom: '12px' }}>
+                {createSectionError}
+              </div>
+            )}
+
+            <form onSubmit={handleCreateSectionSubmit}>
+              <div className="form-group" style={{ marginBottom: '14px' }}>
+                <label style={{ display: 'block', color: '#60a5fa', marginBottom: '6px', fontSize: '0.85rem' }}>SECTION NAME</label>
+                <input
+                  type="text"
+                  className="form-control"
+                  placeholder="e.g., Grade 12 - ABM B"
+                  value={newSectionName}
+                  onChange={(e) => setNewSectionName(e.target.value)}
+                  style={{ width: '100%', boxSizing: 'border-box', padding: '10px', background: '#0b1120', border: '1px solid #334155', color: '#fff', borderRadius: '4px' }}
+                  autoFocus
+                  required
+                />
+              </div>
+
+              <div className="form-group" style={{ marginBottom: '18px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                  <label style={{ color: '#60a5fa', fontSize: '0.85rem' }}>CUSTOM ROOM CODE (Optional)</label>
+                  <button
+                    type="button"
+                    onClick={generateRandomCode}
+                    style={{
+                      background: '#1e293b',
+                      border: '1px solid #475569',
+                      color: '#fbbf24',
+                      fontSize: '0.75rem',
+                      padding: '3px 8px',
+                      borderRadius: '4px',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    🎲 RANDOM CODE
+                  </button>
+                </div>
+                <input
+                  type="text"
+                  className="form-control"
+                  placeholder="Leave empty or click Random"
+                  value={newCustomCode}
+                  onChange={(e) => setNewCustomCode(e.target.value.toUpperCase())}
+                  maxLength={10}
+                  style={{ width: '100%', boxSizing: 'border-box', padding: '10px', background: '#0b1120', border: '1px solid #334155', color: '#fff', borderRadius: '4px', textTransform: 'uppercase', letterSpacing: '2px' }}
+                />
+              </div>
+
+              <div className="modal-actions" style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+                <button
+                  type="button"
+                  className="dash-btn dash-btn-outline"
+                  onClick={() => setShowNewSectionModal(false)}
+                >
+                  CANCEL
+                </button>
+                <button
+                  type="submit"
+                  disabled={isCreatingSection}
+                  className="dash-btn dash-btn-primary"
+                >
+                  {isCreatingSection ? 'CREATING...' : 'CREATE & SWITCH TO SECTION'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

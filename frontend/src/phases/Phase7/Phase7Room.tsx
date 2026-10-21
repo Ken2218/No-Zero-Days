@@ -17,8 +17,7 @@ export default function Phase7Room({ setActivePopup }: Phase7RoomProps) {
       <img 
         src={boardroomImage} 
         alt="Executive Boardroom" 
-        className="background-image pixelated"
-        style={{ imageRendering: 'pixelated', width: '100%' }}
+        className="background-image"
       />
       {/* Hotspot 1: Executive Audit Folder */}
       <button 

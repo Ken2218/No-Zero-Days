@@ -205,16 +205,16 @@ export default function Dashboard({ student: propStudent, onSelectPhase, onStude
   };
 
   return (
-    <div className="auth-container" style={{ padding: '20px', boxSizing: 'border-box', overflowY: 'auto' }}>
+    <div className="auth-container" style={{ padding: 'clamp(0.75rem, 2vw, 1.5rem)', boxSizing: 'border-box', overflowY: 'auto' }}>
       <div className="glow-overlay"></div>
       <div className="scanlines"></div>
 
-      <div className="dashboard-card" style={{ width: '95%', maxWidth: '1100px' }}>
+      <div className="dashboard-card">
         <div className="terminal-header">
           <span className="dot red"></span>
           <span className="dot yellow"></span>
           <span className="dot green"></span>
-          <span className="terminal-title">NO_ZERO_DAYS_ROADMAP.EXE</span>
+          <span className="terminal-title">No Zero Days: Payroll Simulator</span>
 
           {toggleTheme && (
             <div 
@@ -247,12 +247,12 @@ export default function Dashboard({ student: propStudent, onSelectPhase, onStude
         </div>
 
         <div className="dashboard-body">
-          <div className="logo-section" style={{ marginBottom: '20px' }}>
-            <h1 className="title-glow" style={{ fontSize: '2rem' }}>AUDIT ROADMAP COMMAND CENTER</h1>
-            <p className="subtitle" style={{ fontSize: '0.9rem' }}>Navigate and master each payroll accounting phase</p>
+          <div className="logo-section" style={{ marginBottom: 'clamp(0.75rem, 1.5vh, 1.25rem)' }}>
+            <h1 className="title-glow" style={{ fontSize: 'clamp(1.25rem, 2.5vw, 2rem)', lineHeight: 1.2 }}>No Zero Days: Payroll Simulator</h1>
+            <p className="subtitle" style={{ fontSize: 'clamp(0.8rem, 1vw, 0.9rem)', margin: '4px 0 0' }}>Payroll Audit &amp; Accounting Roadmap</p>
           </div>
 
-          <div className="student-info-bar" style={{ padding: '10px 20px', marginBottom: '20px', display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '15px' }}>
+          <div className="student-info-bar">
             <div className="info-item">
               <span>STUDENT:</span> <strong>{student.fullName}</strong>
             </div>
@@ -289,8 +289,8 @@ export default function Dashboard({ student: propStudent, onSelectPhase, onStude
           </div>
 
           {/* Progress Bar */}
-          <div className="progress-bar-container" style={{ marginBottom: '25px', background: 'rgba(30, 41, 59, 0.4)', padding: '15px 20px', borderRadius: '8px', border: '1px solid #334155' }}>
-            <div className="dashboard-progress-stats" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', fontSize: '0.85rem', letterSpacing: '1px' }}>
+          <div className="progress-bar-container" style={{ marginBottom: 'clamp(1rem, 2vh, 1.5rem)', background: 'rgba(30, 41, 59, 0.4)', padding: 'clamp(0.6rem, 1.2vw, 1rem) clamp(0.75rem, 1.5vw, 1.25rem)', borderRadius: '8px', border: '1px solid #334155' }}>
+            <div className="dashboard-progress-stats" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', fontSize: 'clamp(0.75rem, 1vw, 0.85rem)', letterSpacing: '1px' }}>
               <span style={{ color: '#60a5fa' }}>OVERALL AUDITING ROADMAP COMPLETION:</span>
               <strong style={{ color: '#10b981' }}>{completionPercent}% COMPLETE ({completedCount} / 7 PHASES)</strong>
             </div>
@@ -304,7 +304,7 @@ export default function Dashboard({ student: propStudent, onSelectPhase, onStude
               🚀 LOADING SIMULATOR ROADMAP FROM LEDGER DATABASE...
             </div>
           ) : (
-            <div className="dashboard-grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4" style={{ display: 'grid', gap: '20px' }}>
+            <div className="dashboard-grid">
               {activeRoadmap.map((p) => {
                 const originalProgress = rawRoadmap.find(r => r.phaseId === p.phaseId);
                 const isCompleted = originalProgress && originalProgress.status === 'COMPLETED';
@@ -371,10 +371,6 @@ export default function Dashboard({ student: propStudent, onSelectPhase, onStude
               })}
             </div>
           )}
-        </div>
-
-        <div className="dashboard-footer">
-          <span>Simulation command line registry active // CIT-U Payroll Lab</span>
         </div>
       </div>
 

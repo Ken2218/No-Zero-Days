@@ -19,9 +19,10 @@ interface TeacherLobbyProps {
   onBack: () => void;
   onRoomCreated: (code: string) => void;
   onViewDashboard?: () => void;
+  onSwitchRoom?: (newCode: string, newSec?: string) => void;
 }
 
-export default function TeacherLobby({ roomCode, teacherName, teacherEmail, section, onInitiateSession, onBack, onRoomCreated, onViewDashboard }: TeacherLobbyProps) {
+export default function TeacherLobby({ roomCode, teacherName, teacherEmail, section, onInitiateSession, onBack, onRoomCreated, onViewDashboard, onSwitchRoom }: TeacherLobbyProps) {
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [participantCount, setParticipantCount] = useState(0);
   const [copied, setCopied] = useState(false);
@@ -29,6 +30,8 @@ export default function TeacherLobby({ roomCode, teacherName, teacherEmail, sect
   const [sessionActive, setSessionActive] = useState(true);
   const [error, setError] = useState('');
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  const [teacherRooms, setTeacherRooms] = useState<any[]>([]);
 
   const [isCreatingRoom, setIsCreatingRoom] = useState(false);
   const [customRoomCode, setCustomRoomCode] = useState('');
@@ -106,9 +109,35 @@ export default function TeacherLobby({ roomCode, teacherName, teacherEmail, sect
     };
   }, [fetchParticipants, checkRoomStatus, roomCode]);
 
+  useEffect(() => {
+    const fetchRooms = async () => {
+      const email = currentTeacherEmail || teacherEmail;
+      if (!email) return;
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/teachers/rooms?email=${encodeURIComponent(email)}`);
+        if (res.ok) {
+          const rooms = await res.json();
+          setTeacherRooms(rooms || []);
+        }
+      } catch (err) {
+        console.error('Failed to fetch teacher rooms in lobby:', err);
+      }
+    };
+    fetchRooms();
+  }, [currentTeacherEmail, teacherEmail, roomCode]);
+
   const handleCreateRoom = async () => {
     setIsCreatingRoom(true);
     setError('');
+
+    if (currentTeacherEmail.trim()) {
+      const gmailRegex = /^[^\s@]+@gmail\.com$/i;
+      if (!gmailRegex.test(currentTeacherEmail.trim())) {
+        setError('Teacher email must be a valid Gmail address (e.g., teacher@gmail.com).');
+        setIsCreatingRoom(false);
+        return;
+      }
+    }
 
     try {
       const payload: Record<string, string> = {
@@ -304,7 +333,7 @@ export default function TeacherLobby({ roomCode, teacherName, teacherEmail, sect
           <span className="dot red"></span>
           <span className="dot yellow"></span>
           <span className="dot green"></span>
-          <span className="terminal-title">NO_ZERO_DAYS_ROOM.EXE</span>
+          <span className="terminal-title">No Zero Days: Payroll Simulator</span>
         </div>
 
         <div className="lobby-body">
@@ -333,7 +362,7 @@ export default function TeacherLobby({ roomCode, teacherName, teacherEmail, sect
                 </label>
                 <input 
                   type="email" 
-                  placeholder="e.g., teacher@school.edu"
+                  placeholder="e.g., teacher@gmail.com"
                   value={currentTeacherEmail}
                   onChange={(e) => setCurrentTeacherEmail(e.target.value)}
                   disabled={isCreatingRoom}
@@ -395,6 +424,62 @@ export default function TeacherLobby({ roomCode, teacherName, teacherEmail, sect
             </div>
           ) : (
             <>
+              {/* Sections Switcher Bar if teacher has rooms */}
+              {teacherRooms.length > 0 && (
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  background: 'rgba(15, 23, 42, 0.85)',
+                  padding: '10px 14px',
+                  borderRadius: '6px',
+                  border: '1px solid #334155',
+                  marginBottom: '15px',
+                  flexWrap: 'wrap'
+                }}>
+                  <span style={{ color: '#facc15', fontSize: '0.8rem', fontWeight: 'bold' }}>🏫 SECTIONS:</span>
+                  {teacherRooms.map((r: any) => (
+                    <button
+                      key={r.roomCode}
+                      type="button"
+                      onClick={() => onSwitchRoom && onSwitchRoom(r.roomCode, r.section)}
+                      style={{
+                        background: r.roomCode === roomCode ? '#2563eb' : '#1e293b',
+                        color: r.roomCode === roomCode ? '#fff' : '#cbd5e1',
+                        border: r.roomCode === roomCode ? '1px solid #60a5fa' : '1px solid #475569',
+                        padding: '5px 12px',
+                        borderRadius: '4px',
+                        fontSize: '0.8rem',
+                        cursor: 'pointer',
+                        fontWeight: r.roomCode === roomCode ? 'bold' : 'normal'
+                      }}
+                    >
+                      {r.section || r.roomCode} ({r.roomCode})
+                    </button>
+                  ))}
+                  {onViewDashboard && (
+                    <button
+                      type="button"
+                      onClick={onViewDashboard}
+                      style={{
+                        marginLeft: 'auto',
+                        background: '#059669',
+                        color: '#fff',
+                        border: '1px solid #10b981',
+                        padding: '5px 12px',
+                        borderRadius: '4px',
+                        fontSize: '0.8rem',
+                        cursor: 'pointer',
+                        fontWeight: 'bold',
+                        letterSpacing: '0.5px'
+                      }}
+                    >
+                      📊 MASTER DASHBOARD &gt;
+                    </button>
+                  )}
+                </div>
+              )}
+
               {/* Room Code Display */}
               <div className="room-code-display" onClick={handleCopyCode} title="Click to copy code">
                 <span className="room-code-label">SHARE THIS ROOM CODE WITH YOUR STUDENTS</span>

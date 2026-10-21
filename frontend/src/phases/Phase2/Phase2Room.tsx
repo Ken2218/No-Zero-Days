@@ -17,8 +17,7 @@ export default function Phase2Room({ setActivePopup }: Phase2RoomProps) {
       <img 
         src={factoryImage} 
         alt="Factory Floor Biometrics Station" 
-        className="background-image pixelated"
-        style={{ imageRendering: 'pixelated', width: '100%' }}
+        className="background-image"
       />
 
       {/* --- Phase 2: Factory Floor / Security Hotspots --- */}

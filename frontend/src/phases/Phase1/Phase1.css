@@ -1,3 +1,9 @@
+/* --- ROOM VIEWPORT & ASPECT RATIO --- */
+.lobby-floor {
+  --room-aspect-ratio: 596 / 476;
+  aspect-ratio: 596 / 476;
+}
+
 /* --- HOTSPOT POSITIONS --- */
 
 .desk-hotspot {

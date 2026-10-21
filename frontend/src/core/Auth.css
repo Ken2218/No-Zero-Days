@@ -46,8 +46,10 @@
 }
 
 .dashboard-card {
-  max-width: 900px;
-  margin: 40px auto;
+  width: min(96%, 76rem);
+  max-width: clamp(320px, 94vw, 76rem);
+  margin: clamp(0.75rem, 2.5vh, 2rem) auto;
+  box-sizing: border-box;
 }
 
 .terminal-header {
@@ -96,6 +98,65 @@
   color: #94a3b8;
   font-size: 0.95rem;
   margin: 5px 0 0 0;
+}
+
+/* Auth Mode Tabs */
+.auth-tabs {
+  display: flex;
+  margin-bottom: 24px;
+  background-color: #0b1120;
+  border: 1px solid #334155;
+  border-radius: 6px;
+  padding: 4px;
+  gap: 4px;
+}
+
+.auth-tab-btn {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: #94a3b8;
+  padding: 10px 14px;
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 0.95rem;
+  font-weight: bold;
+  letter-spacing: 1px;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: all 0.2s ease;
+}
+
+.auth-tab-btn:hover {
+  color: #facc15;
+}
+
+.auth-tab-btn.active {
+  background: #1e293b;
+  color: #facc15;
+  border: 1px solid rgba(250, 204, 21, 0.4);
+  box-shadow: 0 0 10px rgba(250, 204, 21, 0.15);
+}
+
+.auth-switch-prompt {
+  text-align: center;
+  margin-top: 16px;
+  font-size: 0.85rem;
+  color: #94a3b8;
+}
+
+.auth-switch-link {
+  background: none;
+  border: none;
+  color: #60a5fa;
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 0.85rem;
+  cursor: pointer;
+  text-decoration: underline;
+  padding: 0 4px;
+}
+
+.auth-switch-link:hover {
+  color: #93c5fd;
 }
 
 /* INPUT FORM */
@@ -183,25 +244,32 @@
 
 /* --- DASHBOARD STYLES --- */
 .dashboard-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: 20px;
-  margin-top: 25px;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: stretch;
+  gap: clamp(1rem, 1.8vw, 1.25rem);
+  margin-top: clamp(1rem, 2vh, 1.5rem);
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .student-info-bar {
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
   align-items: center;
   background-color: #1e293b;
-  padding: 15px 20px;
+  padding: clamp(0.6rem, 1.2vw, 0.9rem) clamp(0.75rem, 1.5vw, 1.25rem);
   border-radius: 6px;
   border: 1px solid #334155;
-  margin-bottom: 25px;
+  margin-bottom: clamp(1rem, 2vh, 1.5rem);
+  gap: clamp(0.5rem, 1vw, 1rem);
+  box-sizing: border-box;
 }
 
 .info-item {
-  font-size: 0.95rem;
+  font-size: clamp(0.8rem, 1vw, 0.95rem);
 }
 
 .info-item span {
@@ -221,15 +289,19 @@
 }
 
 .module-card {
+  flex: 1 1 230px;
+  max-width: 260px;
+  min-width: 220px;
+  box-sizing: border-box;
   background-color: rgba(30, 41, 59, 0.4);
   border: 1px solid #334155;
-  border-radius: 6px;
-  padding: 20px;
+  border-radius: 8px;
+  padding: clamp(1rem, 1.4vw, 1.25rem);
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  min-height: 220px;
-  transition: transform 0.2s, border-color 0.2s;
+  min-height: clamp(210px, 24vh, 250px);
+  transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
 .module-card:hover {
@@ -308,22 +380,7 @@
   background-color: rgba(239, 68, 68, 0.1);
 }
 
-/* Tailwind grid fallback classes for reliability */
-@media (min-width: 0px) {
-  .grid-cols-1 {
-    grid-template-columns: repeat(1, minmax(0, 1fr)) !important;
-  }
-}
-@media (min-width: 768px) {
-  .md\:grid-cols-2 {
-    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
-  }
-}
-@media (min-width: 1024px) {
-  .lg\:grid-cols-4 {
-    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
-  }
-}
+/* Responsive layout handles columns automatically via flexbox */
 
 /* Progress Roadmap Cards Glow Effects */
 .module-card.completed {
@@ -824,15 +881,16 @@ body.light-mode .report-card-modal .run-btn:hover {
     line-height: 1.4;
   }
 
-  /* ── 8. Phase grid: single column ── */
+  /* ── 8. Phase grid: stacked / fluid cards ── */
   .dashboard-grid {
-    grid-template-columns: 1fr !important;
     gap: 14px !important;
     margin-top: 16px !important;
   }
 
-  /* ── 9. Module cards: comfy touch padding ── */
+  /* ── 9. Module cards: full width on mobile ── */
   .module-card {
+    max-width: 100% !important;
+    width: 100% !important;
     padding: 16px !important;
     min-height: auto !important;
   }

@@ -178,7 +178,7 @@ function App() {
         if (parsedTeacher.roomCode) {
           setRoomCode(parsedTeacher.roomCode);
         }
-        setCurrentView('TEACHER_LOBBY');
+        setCurrentView('TEACHER_DASHBOARD');
       } catch (_) {
         // Corrupted data — clear it and show Login
         localStorage.removeItem('teacher');
@@ -1565,12 +1565,8 @@ function App() {
         if (code) {
           localStorage.setItem('teacherRoomStatus', 'ACTIVE');
         }
-        // Always route to TEACHER_LOBBY:
-        // When code is present, TeacherLobby displays the active classroom
-        // (Room code banner, enrolled students roster, SEND REPORT button,
-        // and the VIEW LIVE ANALYTICS DASHBOARD button). The room generator is hidden!
-        // When code is empty, TeacherLobby displays the room generator ("GENERATE A CLASSROOM").
-        setCurrentView('TEACHER_LOBBY');
+        // Master Teacher Account: Directly route to centralized Teacher Dashboard
+        setCurrentView('TEACHER_DASHBOARD');
       }}
       onStudentJoinRoom={(code, stu) => {
         setRoomCode(code);
@@ -1593,6 +1589,21 @@ function App() {
       onViewDashboard={() => {
         setCurrentView('TEACHER_DASHBOARD');
       }}
+      onSwitchRoom={(newCode, newSec) => {
+        setRoomCode(newCode);
+        if (newSec) setTeacherSection(newSec);
+        const storedTeacher = localStorage.getItem('teacher');
+        if (storedTeacher) {
+          try {
+            const parsed = JSON.parse(storedTeacher);
+            parsed.roomCode = newCode;
+            if (newSec) parsed.section = newSec;
+            localStorage.setItem('teacher', JSON.stringify(parsed));
+          } catch (e) {
+            console.error('Error updating teacher localStorage:', e);
+          }
+        }
+      }}
       onBack={() => {
         localStorage.removeItem('teacher');
         localStorage.removeItem('teacherRoomStatus');
@@ -1613,6 +1624,23 @@ function App() {
     return <TeacherDashboard
       roomCode={roomCode}
       teacherName={teacherName}
+      teacherEmail={teacherEmail}
+      section={teacherSection}
+      onSwitchRoom={(newCode, newSec) => {
+        setRoomCode(newCode);
+        if (newSec) setTeacherSection(newSec);
+        const storedTeacher = localStorage.getItem('teacher');
+        if (storedTeacher) {
+          try {
+            const parsed = JSON.parse(storedTeacher);
+            parsed.roomCode = newCode;
+            if (newSec) parsed.section = newSec;
+            localStorage.setItem('teacher', JSON.stringify(parsed));
+          } catch (e) {
+            console.error('Error updating teacher localStorage:', e);
+          }
+        }
+      }}
       onBack={() => {
         // Return to teacher lobby
         setCurrentView('TEACHER_LOBBY');

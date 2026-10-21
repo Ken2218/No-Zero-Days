@@ -1,5 +1,6 @@
 package com.NoZeroDays.backend.common.controller;
 
+import com.NoZeroDays.backend.common.dto.LoginRequest;
 import com.NoZeroDays.backend.common.dto.ValidationRequest;
 import com.NoZeroDays.backend.common.dto.ValidationResponse;
 import com.NoZeroDays.backend.common.model.StudentProfile;
@@ -25,9 +26,12 @@ import java.util.Optional;
 import java.util.List;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.Map;
+import java.util.HashMap;
 
 @RestController
 @RequestMapping("/api")
+@CrossOrigin(origins = "*")
 public class ValidationController {
 
     @Autowired
@@ -41,6 +45,9 @@ public class ValidationController {
 
     @Autowired
     private AttemptLogRepository attemptLogRepository;
+
+    @Autowired
+    private com.NoZeroDays.backend.common.service.AuthService authService;
 
     // Phase-specific validation services
     @Autowired private Phase1ValidationService phase1ValidationService;
@@ -84,21 +91,25 @@ public class ValidationController {
     }
 
     // 2. Student Profile Registration & Login
-    @PostMapping("/students/register")
-    public ResponseEntity<?> registerStudent(@RequestBody StudentProfile student) {
-        if (student.getStudentNumber() == null || student.getStudentNumber().trim().isEmpty()) {
-            return ResponseEntity.badRequest().body("Student number cannot be empty.");
+    @PostMapping(value = {"/students/register", "/students/register/"})
+    public ResponseEntity<?> registerStudent(@RequestBody LoginRequest request) {
+        String studentNumber = request.getEffectiveStudentNumber();
+        String fullName = request.getEffectiveName();
+        String section = request.getSection() != null ? request.getSection().trim() : "";
+
+        if (studentNumber.isEmpty()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Student number cannot be empty."));
         }
-        if (student.getFullName() == null || student.getFullName().trim().isEmpty()) {
-            return ResponseEntity.badRequest().body("Full name cannot be empty.");
+        if (fullName.isEmpty()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Full name cannot be empty."));
         }
 
-        Optional<StudentProfile> existing = studentRepository.findByStudentNumber(student.getStudentNumber());
+        Optional<StudentProfile> existing = studentRepository.findByStudentNumber(studentNumber);
         StudentProfile profile;
         if (existing.isPresent()) {
             profile = existing.get();
         } else {
-            profile = studentRepository.save(student);
+            profile = studentRepository.save(new StudentProfile(studentNumber, fullName, section));
         }
 
         // Ensure student has an active game session
@@ -112,6 +123,25 @@ public class ValidationController {
         }
 
         return ResponseEntity.ok(profile);
+    }
+
+    // 2B. Student Login (Flexible validation for existing accounts)
+    @PostMapping(value = {"/students/login", "/students/login/"})
+    public ResponseEntity<?> loginStudent(@RequestBody LoginRequest request) {
+        String studentNumber = request.getEffectiveStudentNumber();
+        String fullName = request.getEffectiveName();
+
+        if (studentNumber.isEmpty()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Student number cannot be empty."));
+        }
+
+        try {
+            StudentProfile profile = authService.authenticateStudent(studentNumber, fullName);
+            return ResponseEntity.ok(profile);
+        } catch (IllegalArgumentException e) {
+            int status = e.getMessage().contains("not found") ? 404 : 400;
+            return ResponseEntity.status(status).body(Map.of("error", e.getMessage()));
+        }
     }
 
     @GetMapping("/progress/status")

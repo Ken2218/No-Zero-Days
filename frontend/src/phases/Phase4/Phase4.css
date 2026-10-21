@@ -1,8 +1,7 @@
 /* --- PHASE 4 BREAKROOM POSITIONS --- */
 .phase4-room {
-  /* Natural aspect ratio */
+  --room-aspect-ratio: 2528 / 1684;
   aspect-ratio: 2528 / 1684;
-  max-width: 714px;
 }
 
 .phase4-room .corkboard-hotspot {

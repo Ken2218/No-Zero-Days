@@ -1,7 +1,7 @@
 /* --- PHASE 6: PHILHEALTH PC LAB POSITIONS --- */
 .phase6-room {
+  --room-aspect-ratio: 2528 / 1684;
   aspect-ratio: 2528 / 1684;
-  max-width: 714px;
 }
 
 .phase6-room .corkboard-hotspot {

@@ -1,3 +1,9 @@
+/* --- ROOM VIEWPORT & ASPECT RATIO --- */
+.factory-floor {
+  --room-aspect-ratio: 596 / 476;
+  aspect-ratio: 596 / 476;
+}
+
 /* --- PHASE 2: RED HOTSPOT OVERRIDES --- */
 /* The shared .hotspot base uses yellow (#facc15), which is not visible
    against the Phase 2 security room background. Override to red. */

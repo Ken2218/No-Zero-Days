@@ -1,7 +1,7 @@
 /* --- PHASE 5: SSS PC LAB POSITIONS --- */
 .phase5-room {
+  --room-aspect-ratio: 2528 / 1684;
   aspect-ratio: 2528 / 1684;
-  max-width: 714px;
 }
 
 .phase5-room .corkboard-hotspot {

@@ -17,8 +17,7 @@ export default function Phase4Room({ setActivePopup }: Phase4RoomProps) {
       <img 
         src={breakroomImage} 
         alt="Employee Notice Board & Breakroom" 
-        className="background-image pixelated"
-        style={{ imageRendering: 'pixelated', width: '100%' }}
+        className="background-image"
       />
 
       {/* --- Phase 4: Breakroom & Notice Board Hotspots --- */}

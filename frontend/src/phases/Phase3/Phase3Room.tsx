@@ -17,8 +17,7 @@ export default function Phase3Room({ setActivePopup }: Phase3RoomProps) {
       <img
         src={overtimeImage}
         alt="Supervisor Office & Assembly Line"
-        className="background-image pixelated"
-        style={{ imageRendering: 'pixelated', width: '100%' }}
+        className="background-image"
       />
 
       {/* --- Phase 3: Factory Floor / Overtime Hotspots --- */}

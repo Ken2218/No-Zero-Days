@@ -9,13 +9,13 @@
   position: relative;
   overflow: hidden;
   font-family: 'Share Tech Mono', monospace;
-  padding: 20px;
+  padding: clamp(0.75rem, 2vw, 1.5rem);
   box-sizing: border-box;
 }
 
 .lobby-card {
-  width: 95%;
-  max-width: 800px;
+  width: min(96%, 52rem);
+  max-width: clamp(320px, 94vw, 52rem);
   background-color: rgba(15, 23, 42, 0.95);
   border: 2px solid #334155;
   border-radius: 8px;
@@ -23,10 +23,13 @@
   position: relative;
   z-index: 10;
   overflow: hidden;
+  margin: clamp(0.75rem, 2.5vh, 2rem) auto;
+  box-sizing: border-box;
 }
 
 .lobby-body {
-  padding: 30px;
+  padding: clamp(1rem, 2.5vw, 2rem);
+  box-sizing: border-box;
 }
 
 /* Room Code Display */

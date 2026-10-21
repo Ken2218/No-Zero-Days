@@ -1,3 +1,9 @@
+/* --- ROOM VIEWPORT & ASPECT RATIO --- */
+.phase3-room {
+  --room-aspect-ratio: 2816 / 1536;
+  aspect-ratio: 2816 / 1536;
+}
+
 /* --- PHASE 3 OVERTIME ROOM POSITIONS --- */
 .phase3-room .timecard-hotspot {
   top: 11%;

@@ -21,6 +21,10 @@ public class Room {
 
     private String teacherEmail;
 
+    @ManyToOne(fetch = FetchType.EAGER)
+    @JoinColumn(name = "teacher_id")
+    private Teacher teacher;
+
     @Column(nullable = false)
     private String status = "WAITING"; // WAITING, ACTIVE, COMPLETED
 
@@ -57,6 +61,9 @@ public class Room {
 
     public String getTeacherEmail() { return teacherEmail; }
     public void setTeacherEmail(String teacherEmail) { this.teacherEmail = teacherEmail; }
+
+    public Teacher getTeacher() { return teacher; }
+    public void setTeacher(Teacher teacher) { this.teacher = teacher; }
 
     public String getSection() { return section; }
     public void setSection(String section) { this.section = section; }
