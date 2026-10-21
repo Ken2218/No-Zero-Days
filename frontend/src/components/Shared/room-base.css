@@ -8,13 +8,20 @@
    */
   aspect-ratio: var(--room-aspect-ratio, 596 / 476);
   /*
-   * Width: fill the available container inline space.
-   * container-type is inline-size (not size), so cqh is unavailable.
-   * The image is naturally constrained by this element's own aspect-ratio
-   * and the parent .room-content's overflow:hidden.
+   * Container query scaling: width is the SMALLER of:
+   *   1. 100cqw  — full available container width
+   *   2. 100cqh * aspect-ratio — max width before height would overflow
+   *
+   * This is critical for hotspot alignment. Without the cqh bound,
+   * .room-container fills the full panel width on desktop even when the
+   * image is height-constrained and rendered narrower — causing absolutely-
+   * positioned hotspots to calculate against empty space outside the image.
+   *
+   * On mobile, .room-content has an explicit aspect-ratio so 100cqh is
+   * resolvable even though the parent height is auto.
    */
   width: 100%;
-  width: 100cqw;
+  width: min(100cqw, calc(100cqh * (var(--room-aspect-ratio, 596 / 476))));
   max-width: 100%;
   max-height: 100%;
   margin: auto;

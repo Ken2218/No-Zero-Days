@@ -134,11 +134,14 @@ body {
   overflow: hidden;
   position: relative;
   /*
-   * Use inline-size only so the container query only tracks width.
-   * 'size' requires a resolved height which collapses to 0 on mobile
-   * when the parent is height:auto, causing the image to disappear.
+   * MUST be 'size' (not 'inline-size') so that 100cqh is available.
+   * room-container uses min(100cqw, 100cqh * ratio) to cap its width at
+   * whichever dimension is the bottleneck — this is what keeps hotspots
+   * aligned with the visible image area on both wide and tall viewports.
+   * On mobile we give .room-content an explicit aspect-ratio (see @media below)
+   * so cqh is resolvable there as well.
    */
-  container-type: inline-size;
+  container-type: size;
   padding: clamp(0.25rem, 0.8vw, 0.75rem);
   box-sizing: border-box;
 }
