@@ -43,10 +43,9 @@ public class AuthService {
         if (rawName != null && !rawName.trim().isEmpty()) {
             String enteredName = rawName.trim();
             if (!isFlexibleNameMatch(profile.getFullName(), enteredName)) {
-                // Flexible presentation tolerance: log for auditing, but allow login by valid student ID
-                System.out.println("[AuthService] Flexible Capstone Login: Student ID '" + studentNumber 
-                    + "' logged in with entered name '" + enteredName 
-                    + "' (registered record: '" + profile.getFullName() + "').");
+                throw new IllegalArgumentException("Entered name '" + enteredName 
+                    + "' does not match registered record for Student ID '" + studentNumber 
+                    + "'. Please check your credentials or sign up first.");
             }
         }
 

@@ -56,20 +56,12 @@ export default function Login({ onLoginSuccess, onTeacherCreateRoom }: LoginProp
         payload.fullName = trimmedName;
       }
 
-      // Primary endpoint /api/auth/login with fallback to /api/students/login
+      // Primary endpoint /api/auth/login
       let response = await fetch(`${API_BASE_URL}/api/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
-
-      if (response.status === 404 || response.status === 405) {
-        response = await fetch(`${API_BASE_URL}/api/students/login`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
-        });
-      }
 
       if (!response.ok) {
         let errMessage = 'Login failed.';
@@ -119,14 +111,6 @@ export default function Login({ onLoginSuccess, onTeacherCreateRoom }: LoginProp
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
-
-      if (response.status === 404 || response.status === 405) {
-        response = await fetch(`${API_BASE_URL}/api/students/register`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
-        });
-      }
 
       if (!response.ok) {
         let errMessage = 'Sign up failed.';
@@ -185,6 +169,11 @@ export default function Login({ onLoginSuccess, onTeacherCreateRoom }: LoginProp
         });
 
         if (loginRes.status === 404 || loginRes.status === 405) {
+          const cloneRes = loginRes.clone();
+          const errData = await cloneRes.json().catch(() => null);
+          if (errData && errData.error && errData.error.toLowerCase().includes('teacher account not found')) {
+            throw new Error(errData.error);
+          }
           loginRes = await fetch(`${API_BASE_URL}/api/teachers/login`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -192,44 +181,14 @@ export default function Login({ onLoginSuccess, onTeacherCreateRoom }: LoginProp
           });
         }
 
-        if (loginRes.ok) {
-          teacherData = await loginRes.json();
-        } else if (loginRes.status === 404) {
-          // If master account not found and name provided, try registering
-          if (fullName.trim()) {
-            let regRes = await fetch(`${API_BASE_URL}/api/auth/register`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(payload)
-            });
-            if (regRes.status === 404 || regRes.status === 405) {
-              regRes = await fetch(`${API_BASE_URL}/api/teachers/register`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-              });
-            }
-            if (regRes.ok) {
-              teacherData = await regRes.json();
-            }
-          }
-          if (!teacherData) {
-            const errJson = await loginRes.json().catch(() => ({}));
-            throw new Error(errJson.error || `No account found for ${teacherEmail.trim()}. Please switch to Sign Up.`);
-          }
-        } else {
+        if (!loginRes.ok) {
           const errJson = await loginRes.json().catch(() => ({}));
-          throw new Error(errJson.error || 'Teacher login failed.');
+          throw new Error(errJson.error || `Teacher account not found for ${teacherEmail.trim()}. Please switch to Sign Up.`);
         }
+
+        teacherData = await loginRes.json();
       } catch (authFetchErr: any) {
-        if (authFetchErr.message && !authFetchErr.message.includes('fetch')) {
-          throw authFetchErr;
-        }
-        // Fallback for offline/legacy server response
-        teacherData = {
-          email: teacherEmail.trim(),
-          fullName: fullName.trim() || 'O&M Teacher'
-        };
+        throw authFetchErr;
       }
 
       const effectiveName = teacherData?.fullName || fullName.trim() || 'O&M Teacher';
@@ -337,13 +296,7 @@ export default function Login({ onLoginSuccess, onTeacherCreateRoom }: LoginProp
           throw new Error(errJson.error || 'Failed to register teacher account.');
         }
       } catch (regErr: any) {
-        if (regErr.message && !regErr.message.includes('fetch')) {
-          throw regErr;
-        }
-        teacherData = {
-          email: teacherEmail.trim(),
-          fullName: fullName.trim()
-        };
+        throw regErr;
       }
 
       const effectiveName = teacherData?.fullName || fullName.trim();
@@ -529,7 +482,9 @@ export default function Login({ onLoginSuccess, onTeacherCreateRoom }: LoginProp
             <div className="input-group">
               <label>
                 {isTeacher
-                  ? 'TEACHER FULL NAME'
+                  ? authMode === 'LOGIN'
+                    ? 'TEACHER FULL NAME (OPTIONAL)'
+                    : 'TEACHER FULL NAME'
                   : authMode === 'LOGIN'
                   ? 'STUDENT FULL NAME (OPTIONAL)'
                   : 'STUDENT FULL NAME'}
@@ -538,7 +493,9 @@ export default function Login({ onLoginSuccess, onTeacherCreateRoom }: LoginProp
                 type="text"
                 placeholder={
                   isTeacher
-                    ? 'e.g., Maria Santos'
+                    ? authMode === 'LOGIN'
+                      ? 'Optional during login (e.g., Maria Santos)'
+                      : 'e.g., Maria Santos'
                     : authMode === 'LOGIN'
                     ? 'Optional during login (e.g., Juan Dela Cruz)'
                     : 'e.g., Juan Dela Cruz'
@@ -547,7 +504,7 @@ export default function Login({ onLoginSuccess, onTeacherCreateRoom }: LoginProp
                 onChange={(e) => setFullName(e.target.value)}
                 disabled={loading}
                 className="retro-input"
-                required={authMode === 'SIGNUP' || isTeacher}
+                required={authMode === 'SIGNUP'}
               />
             </div>
 

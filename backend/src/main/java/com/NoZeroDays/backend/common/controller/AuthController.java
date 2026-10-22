@@ -147,11 +147,9 @@ public class AuthController {
                         roomRepository.save(r);
                     }
                 }
-            } else if (!fullName.isEmpty()) {
-                teacher = teacherRepository.save(new Teacher(email, fullName));
             } else {
                 return ResponseEntity.status(404).body(Map.of("error", 
-                    "Teacher account not found for '" + email + "'. Please sign up first."));
+                    "Teacher account not found for '" + email + "'. Please switch to Sign Up."));
             }
         }
 
