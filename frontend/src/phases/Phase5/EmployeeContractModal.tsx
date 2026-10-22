@@ -30,11 +30,7 @@ export default function EmployeeContractModal({ isOpen, onClose, basicSalary }: 
             <div className="data-row" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
               <span>Monthly Basic Salary:</span> <strong className="highlight-green">₱{basicSalary.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
             </div>
-          </div>
-
-          {/* Red Herring */}
-          <div className="data-box herring-data" style={{ padding: '15px', marginTop: '15px', border: '1px solid #ef4444', borderRadius: '6px' }}>
-            <div className="data-row" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+            <div className="data-row" style={{ display: 'flex', justifyContent: 'space-between' }}>
               <span>Mid-Year Bonus Advance:</span> <strong>₱8,000.00</strong>
             </div>
           </div>

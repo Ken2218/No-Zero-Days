@@ -30,16 +30,13 @@ export default function PagIbigMemoModal({ isOpen, onClose }: PagIbigMemoModalPr
               Pag-Ibig Contribution Cap = ₱200.00
             </div>
 
+            <div className="data-row" style={{ display: 'flex', justifyContent: 'space-between', margin: '8px 0' }}>
+              <span>Pag-Ibig Employer (ER) Share:</span> <strong>₱200.00</strong>
+            </div>
+
             <p style={{ color: '#94a3b8', fontSize: '0.8rem', fontStyle: 'italic', marginTop: '8px' }}>
               * For basic monthly salaries of ₱10,000 and above, the maximum employee deduction is capped strictly at ₱200.00.
             </p>
-          </div>
-
-          {/* Red Herring Decoy */}
-          <div className="data-box herring-data" style={{ padding: '15px', marginTop: '15px', border: '1px solid #ef4444', borderRadius: '6px' }}>
-            <div className="data-row" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
-              <span>Pag-Ibig Employer (ER) Share:</span> <strong>₱200.00</strong>
-            </div>
           </div>
         </div>
       </div>

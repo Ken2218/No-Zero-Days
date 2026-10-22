@@ -189,11 +189,7 @@ export default function Popups({
             <div className="data-box authentic-data" style={{ padding: '15px', lineHeight: '1.5' }}>
               <div className="data-row" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}><span>Employee Name:</span> <strong>{scenario.employeeName}</strong></div>
               <div className="data-row" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}><span>Position Grade:</span> <strong>ABM Core Level 12</strong></div>
-              <div className="data-row" style={{ display: 'flex', justifyContent: 'space-between' }}><span>Contract Daily Rate:</span> <strong className="highlight-green" style={{ color: '#10b981' }}>₱{scenario.dailyRate.toFixed(2)} / Day</strong></div>
-            </div>
-
-            {/* Red Herring Rule */}
-            <div className="data-box herring-data" style={{ padding: '15px', marginTop: '15px', background: '#1e293b', border: '1px solid #ef4444', borderRadius: '6px' }}>
+              <div className="data-row" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}><span>Contract Daily Rate:</span> <strong className="highlight-green" style={{ color: '#10b981' }}>₱{scenario.dailyRate.toFixed(2)} / Day</strong></div>
               <div className="data-row" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}><span>Rice Subsidy:</span> <strong>₱1,200.00 / Month</strong></div>
               <div className="data-row" style={{ display: 'flex', justifyContent: 'space-between' }}><span>Uniform Allowance:</span> <strong>₱1,500.00 / Semester</strong></div>
             </div>
@@ -314,13 +310,9 @@ export default function Popups({
               <div className="data-row" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
                 <span>Contracted Hourly Rate:</span> <strong className="highlight-green">₱{scenario.hourlyRate.toFixed(2)} / Hour</strong>
               </div>
-              <div className="data-row" style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <div className="data-row" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
                 <span>Days Worked (Present):</span> <strong>{scenario.daysPresent} Days</strong>
               </div>
-            </div>
-
-            {/* Red Herring Allowance */}
-            <div className="data-box herring-data" style={{ padding: '15px', marginTop: '15px', border: '1px solid #ef4444', borderRadius: '6px' }}>
               <div className="data-row" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
                 <span>Monthly Rice Allowance:</span> <strong>₱1,500.00</strong>
               </div>
@@ -386,13 +378,9 @@ export default function Popups({
               <div className="data-row" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
                 <span>Contracted Hourly Rate:</span> <strong className="highlight-green">₱{scenario.hourlyRate.toFixed(2)} / Hour</strong>
               </div>
-              <div className="data-row" style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <div className="data-row" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
                 <span>Days Worked (Present):</span> <strong>{scenario.daysPresent} Days</strong>
               </div>
-            </div>
-
-            {/* Red Herring Allowance */}
-            <div className="data-box herring-data" style={{ padding: '15px', marginTop: '15px', border: '1px solid #ef4444', borderRadius: '6px' }}>
               <div className="data-row" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
                 <span>Hazard Pay:</span> <strong>₱2,000.00 / Month</strong>
               </div>
@@ -540,13 +528,9 @@ export default function Popups({
               <div className="data-row" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
                 <span>Standard Daily Rate:</span> <strong className="highlight-green">₱{scenario.dailyRate.toFixed(2)} / Day</strong>
               </div>
-              <div className="data-row" style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <div className="data-row" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
                 <span>Shifts Worked (Days Present):</span> <strong>{scenario.daysPresent} Days</strong>
               </div>
-            </div>
-
-            {/* Red Herring Allowance */}
-            <div className="data-box herring-data" style={{ padding: '15px', marginTop: '15px', border: '1px solid #ef4444', borderRadius: '6px' }}>
               <div className="data-row" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
                 <span>Transportation Allowance:</span> <strong>₱100.00 / Day</strong>
               </div>
