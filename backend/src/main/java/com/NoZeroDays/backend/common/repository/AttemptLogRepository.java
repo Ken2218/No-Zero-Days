@@ -3,9 +3,11 @@ package com.NoZeroDays.backend.common.repository;
 import com.NoZeroDays.backend.common.model.AttemptLog;
 import com.NoZeroDays.backend.common.model.StudentProfile;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
+import org.springframework.transaction.annotation.Transactional;
 import java.util.List;
 
 @Repository
@@ -51,5 +53,14 @@ public interface AttemptLogRepository extends JpaRepository<AttemptLog, Long> {
     List<AttemptLog> findByStudentProfileOrderByAttemptTimeAsc(StudentProfile studentProfile);
 
     void deleteByStudentProfile(StudentProfile studentProfile);
+
+    @Modifying
+    @Transactional
+    @Query("DELETE FROM AttemptLog a WHERE a.studentProfile = :student AND a.module = :module AND a.phase = :phase")
+    void deleteByStudentProfileAndModuleAndPhase(
+        @Param("student") StudentProfile student,
+        @Param("module") String module,
+        @Param("phase") int phase
+    );
 }
 

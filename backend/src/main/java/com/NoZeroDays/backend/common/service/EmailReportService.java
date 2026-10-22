@@ -313,8 +313,6 @@ public class EmailReportService {
                 }
             }
 
-            totalSeconds += phaseSec;
-
             PhaseMetric pm = new PhaseMetric();
             pm.phaseId = phaseId;
             pm.title = PHASE_NAMES[i];

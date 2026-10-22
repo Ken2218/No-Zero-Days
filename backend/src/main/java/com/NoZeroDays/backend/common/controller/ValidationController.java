@@ -87,22 +87,20 @@ public class ValidationController {
                     false, false);
         }
 
-        // Stamp this student's Phase 1 start time on their first submission (isolated per student).
-        stampStartTimeIfNeeded(request);
+        // Ensure phase timer is running and stamp Phase 1 start time on student submission.
+        ensurePhaseTimingOnSubmission(request);
         return ResponseEntity.ok(response);
     }
 
     /**
-     * After routing and getting a response, stamp startTime on the student's active
-     * GameSession if this is their first-ever Phase 1 attempt (startTime still null).
-     * This is the single authoritative event that starts the per-student clock.
+     * Stamping method triggered on student answer submission:
+     * - If phaseEnteredAt is null (e.g. after returning to dashboard), starts the phase timer NOW.
+     * - If first-ever Phase 1 attempt, stamps session.startTime.
      */
-    private void stampStartTimeIfNeeded(ValidationRequest request) {
+    private void ensurePhaseTimingOnSubmission(ValidationRequest request) {
         if (request.getStudentNumber() == null || request.getStudentNumber().trim().isEmpty()) return;
         String module  = request.getModule()  != null ? request.getModule()  : "M1_MATH";
         Integer phase  = request.getPhase()   != null ? request.getPhase()   : 1;
-        // Only stamp on the very first phase (M1_MATH phase 1)
-        if (!"M1_MATH".equalsIgnoreCase(module) || phase != 1) return;
 
         Optional<StudentProfile> studentOpt = studentRepository.findByStudentNumber(request.getStudentNumber().trim());
         if (studentOpt.isEmpty()) return;
@@ -110,18 +108,29 @@ public class ValidationController {
 
         List<GameSession> sessions = gameSessionRepository.findByStudentProfileAndStatus(student, "ACTIVE");
         if (sessions.isEmpty()) {
-            // Create session on demand if one doesn't exist yet
             GameSession newSession = new GameSession(student);
-            newSession.setCurrentModule("M1_MATH");
-            newSession.setCurrentPhase(1);
+            newSession.setCurrentModule(module);
+            newSession.setCurrentPhase(phase);
             newSession.setStatus("ACTIVE");
-            newSession.setStartTime(java.time.LocalDateTime.now());
+            newSession.setPhaseEnteredAt(java.time.LocalDateTime.now());
+            if ("M1_MATH".equalsIgnoreCase(module) && phase == 1) {
+                newSession.setStartTime(java.time.LocalDateTime.now());
+            }
             gameSessionRepository.save(newSession);
         } else {
             GameSession session = sessions.get(0);
-            if (session.getStartTime() == null) {
-                // First time this specific student submits Phase 1 — start their clock NOW
+            boolean dirty = false;
+            if ("M1_MATH".equalsIgnoreCase(module) && phase == 1 && session.getStartTime() == null) {
                 session.setStartTime(java.time.LocalDateTime.now());
+                dirty = true;
+            }
+            if (session.getPhaseEnteredAt() == null) {
+                session.setPhaseEnteredAt(java.time.LocalDateTime.now());
+                session.setPhaseExitedAt(null);
+                session.setAccumulatedPauseSeconds(0L);
+                dirty = true;
+            }
+            if (dirty) {
                 gameSessionRepository.save(session);
             }
         }

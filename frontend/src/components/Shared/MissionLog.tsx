@@ -92,6 +92,7 @@ interface MissionLogProps {
   setTribunalNet: (val: string) => void;
   handleValidateTribunal: () => Promise<void>;
   tribunalStatus: 'ACTIVE' | 'SUCCESS' | 'ERROR';
+  onReturnToDashboard?: () => void;
 }
 
 export default function MissionLog({
@@ -102,6 +103,7 @@ export default function MissionLog({
   setActivePopup,
   handleRerollScenario,
   setCurrentView,
+  onReturnToDashboard,
   student,
 
   extractedA,
@@ -392,7 +394,7 @@ export default function MissionLog({
           </button>
           <button 
             className="escalate-btn" 
-            onClick={() => setCurrentView('DASHBOARD')}
+            onClick={onReturnToDashboard || (() => setCurrentView('DASHBOARD'))}
             style={{ flex: 1, margin: 0, padding: '12px' }}
           >
             [ RETURN TO DASHBOARD ]
@@ -1498,7 +1500,7 @@ export default function MissionLog({
         </button>
         <button 
           className="escalate-btn" 
-          onClick={() => setCurrentView('DASHBOARD')}
+          onClick={onReturnToDashboard || (() => setCurrentView('DASHBOARD'))}
           style={{ flex: 1, margin: 0, padding: '12px' }}
         >
           [ RETURN TO DASHBOARD ]

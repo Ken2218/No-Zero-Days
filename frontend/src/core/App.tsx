@@ -245,11 +245,17 @@ function App() {
       await fetch(`${API_BASE_URL}/api/rooms/${currentRoom}/phase-exit`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ studentNumber: studentNum })
+        body: JSON.stringify({ studentNumber: studentNum, phase: activePhaseIndex })
       });
     } catch (err) {
       console.error('[Timer] Failed to notify phase exit:', err);
     }
+  };
+
+  const handleReturnToDashboard = () => {
+    notifyPhaseExit();
+    handleRerollScenario(false, activePhaseIndex);
+    setCurrentView('DASHBOARD');
   };
 
   // 1. Hook into phase transition / component unmount lifecycle:
@@ -1903,6 +1909,7 @@ function App() {
           setActivePopup={setActivePopup}
           handleRerollScenario={handleRerollScenario}
           setCurrentView={setCurrentView}
+          onReturnToDashboard={handleReturnToDashboard}
           student={student}
           extractedA={extractedA}
           setExtractedA={setExtractedA}

@@ -772,23 +772,18 @@ public class RoomController {
         GameSession session = sessions.get(0);
         LocalDateTime now = LocalDateTime.now();
 
-        // If student previously exited without completing, bank the pause gap
-        if (session.getPhaseExitedAt() != null) {
-            long pauseGap = ChronoUnit.SECONDS.between(session.getPhaseExitedAt(), now);
-            session.setAccumulatedPauseSeconds(
-                    session.getAccumulatedPauseSeconds() + Math.max(pauseGap, 0));
-            session.setPhaseExitedAt(null); // clear exit marker — student is back
-        }
+        // Clear exit marker and pause accumulation
+        session.setPhaseExitedAt(null);
+        session.setAccumulatedPauseSeconds(0L);
 
-        // Only set phaseEnteredAt if not already in an active window
+        // Start active window for this phase if it was reset
         if (session.getPhaseEnteredAt() == null) {
             session.setPhaseEnteredAt(now);
         }
         gameSessionRepository.save(session);
 
         System.out.println("[PHASE-ENTER] student=" + studentNumber
-                + " enteredAt=" + session.getPhaseEnteredAt()
-                + " accPause=" + session.getAccumulatedPauseSeconds() + "s");
+                + " enteredAt=" + session.getPhaseEnteredAt());
 
         return ResponseEntity.ok(Map.of("ok", true, "enteredAt", session.getPhaseEnteredAt().toString()));
     }
@@ -798,10 +793,12 @@ public class RoomController {
      *
      * Fired by the frontend when the student leaves a phase room without
      * completing it (e.g., clicks "Return to Dashboard" or navigates away).
-     * - Sets phaseExitedAt = now() to freeze the active timer.
-     * - phaseEnteredAt is preserved so the RoomController can still compute
-     *   how long this active window lasted.
+     * - Resets the incomplete phase presence timer to 0 (phaseEnteredAt = null,
+     *   phaseExitedAt = null, accumulatedPauseSeconds = 0).
+     * - Clears uncompleted attempts for this abandoned phase so timer and step
+     *   progress cleanly start from 0 when the student enters and answers again.
      */
+    @Transactional
     @PostMapping("/rooms/{roomCode}/phase-exit")
     public ResponseEntity<?> notifyPhaseExit(
             @PathVariable String roomCode,
@@ -820,13 +817,34 @@ public class RoomController {
         if (sessions.isEmpty()) return ResponseEntity.ok(Map.of("ok", true));
 
         GameSession session = sessions.get(0);
-        LocalDateTime now = LocalDateTime.now();
-        session.setPhaseExitedAt(now);
+        int currentPhaseIndex = session.getCurrentPhase();
+
+        // Reset phase timing fields to 0 for incomplete phase
+        session.setPhaseEnteredAt(null);
+        session.setPhaseExitedAt(null);
+        session.setAccumulatedPauseSeconds(0L);
+
+        // If the student abandons Phase 1 before ever completing it, reset session startTime as well
+        if (currentPhaseIndex == 1) {
+            session.setStartTime(null);
+        }
         gameSessionRepository.save(session);
 
-        System.out.println("[PHASE-EXIT] student=" + studentNumber + " exitedAt=" + now);
+        // Delete uncompleted attempt logs for the current active phase so they do not taint
+        // the timer or step completion percentage when the student re-enters and answers again
+        if (currentPhaseIndex >= 1 && currentPhaseIndex <= 7) {
+            String currentModule = MODULES[currentPhaseIndex - 1];
+            int currentPhaseNum = PHASES[currentPhaseIndex - 1];
+            try {
+                attemptLogRepository.deleteByStudentProfileAndModuleAndPhase(student, currentModule, currentPhaseNum);
+            } catch (Exception ex) {
+                System.err.println("[PHASE-EXIT] Warning: failed to delete uncompleted attempts: " + ex.getMessage());
+            }
+        }
 
-        return ResponseEntity.ok(Map.of("ok", true, "exitedAt", now.toString()));
+        System.out.println("[PHASE-EXIT] student=" + studentNumber + " returned to dashboard. Timer reset to 0 for phase=" + currentPhaseIndex);
+
+        return ResponseEntity.ok(Map.of("ok", true, "timerReset", true));
     }
 
     // -------------------------------------------------------------------------
