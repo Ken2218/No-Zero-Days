@@ -834,7 +834,9 @@ public class RoomController {
     // 9. TEACHER DASHBOARD ANALYTICS WITH PER-PHASE TIME & ATTEMPTS & SUMMARY
     // -------------------------------------------------------------------------
     @GetMapping("/rooms/{roomCode}/dashboard")
-    public ResponseEntity<?> getRoomDashboard(@PathVariable String roomCode) {
+    public ResponseEntity<?> getRoomDashboard(
+            @PathVariable String roomCode,
+            @RequestParam(name = "attemptMode", required = false, defaultValue = "ALL") String attemptMode) {
         Optional<Room> roomOpt = roomRepository.findByRoomCodeIgnoreCase(roomCode);
         if (roomOpt.isEmpty()) {
             return ResponseEntity.status(404).body(Map.of("error", "Room not found: " + roomCode));
@@ -846,15 +848,31 @@ public class RoomController {
 
         List<Map<String, Object>> studentResults = new ArrayList<>();
 
-        // Aggregators for Class Summary & Charts
+        // Aggregators for Class Summary & Charts: Combined
         int[] classPhaseCompletedCounts = new int[7];
         int[] classPhaseActiveCounts = new int[7];
         long[] classPhaseTotalAttempts = new long[7];
         long[] classPhaseTotalSeconds = new long[7];
         int[] classPhaseTimeContributors = new int[7];
 
+        // Aggregators for First Attempt stream
+        int[] classFirstCompletedCounts = new int[7];
+        int[] classFirstActiveCounts = new int[7];
+        long[] classFirstTotalAttempts = new long[7];
+        long[] classFirstTotalSeconds = new long[7];
+        int[] classFirstTimeContributors = new int[7];
+
+        // Aggregators for Re-Audit stream
+        int[] classReAuditCompletedCounts = new int[7];
+        int[] classReAuditActiveCounts = new int[7];
+        long[] classReAuditTotalAttempts = new long[7];
+        long[] classReAuditTotalSeconds = new long[7];
+        int[] classReAuditTimeContributors = new int[7];
+
         int totalRoomAttempts = 0;
         int completedStudentsCount = 0;
+        int firstAttemptCompletedStudentsCount = 0;
+        int reAuditActiveStudentsCount = 0;
 
         for (RoomParticipant p : participants) {
             StudentProfile student = p.getStudentProfile();
@@ -876,17 +894,24 @@ public class RoomController {
             }
 
             List<Map<String, Object>> studentPhases = new ArrayList<>();
-            // Use each student's own first attempt as their personal start reference.
-            // Falling back to roomStartedAt caused ALL students (even those with 0 attempts)
-            // to show the same shared elapsed time since the room was activated.
             LocalDateTime firstEverAttempt = allAttempts.isEmpty() ? null : allAttempts.get(0).getAttemptTime();
             LocalDateTime sessionStart = (session != null && session.getStartTime() != null)
                     ? session.getStartTime()
-                    : firstEverAttempt; // null if student has never attempted anything
+                    : firstEverAttempt;
             LocalDateTime previousPhaseCompletedTime = sessionStart;
+
             int studentCompletedPhases = 0;
             long studentTotalSeconds = 0;
             int studentTotalAttempts = 0;
+
+            int studentFirstCompletedPhases = 0;
+            long studentFirstTotalSeconds = 0;
+            int studentFirstTotalAttempts = 0;
+
+            int studentReAuditCompletedPhases = 0;
+            long studentReAuditTotalSeconds = 0;
+            int studentReAuditTotalAttempts = 0;
+            boolean studentHasReAuditedAny = false;
 
             for (int i = 0; i < 7; i++) {
                 int phaseId = i + 1;
@@ -894,109 +919,214 @@ public class RoomController {
                 int phaseIndex = PHASES[i];
                 String phaseKey = module.toUpperCase() + "_" + phaseIndex;
                 List<AttemptLog> attempts = phaseAttemptsMap.getOrDefault(phaseKey, Collections.emptyList());
+                List<String> requiredSteps = getRequiredStepsForPhase(module, phaseIndex);
 
-                int failedCount = 0;
-                int drillResets = 0;
-                LocalDateTime lastSuccessfulTime = null;
-                LocalDateTime firstAttemptTime = attempts.isEmpty() ? null : attempts.get(0).getAttemptTime();
-                LocalDateTime lastAttemptTime = attempts.isEmpty() ? null : attempts.get(attempts.size() - 1).getAttemptTime();
+                // Partition attempts: First Attempt vs Re-Audit
+                List<AttemptLog> firstAttempts = new ArrayList<>();
+                List<AttemptLog> reAuditAttempts = new ArrayList<>();
+                Set<String> stepsCompletedSoFar = new HashSet<>();
+                boolean firstCompletedFound = false;
 
                 for (AttemptLog log : attempts) {
-                    if ("system=DRILL_RESET".equals(log.getUserInputData())) {
-                        drillResets++;
-                    } else if (!log.isSuccessful()) {
-                        failedCount++;
+                    if ("RE_AUDIT".equalsIgnoreCase(log.getAttemptType())) {
+                        reAuditAttempts.add(log);
+                    } else if ("FIRST_ATTEMPT".equalsIgnoreCase(log.getAttemptType())) {
+                        firstAttempts.add(log);
                     } else {
-                        lastSuccessfulTime = log.getAttemptTime();
+                        // Chronological fallback for historical rows
+                        if (firstCompletedFound) {
+                            reAuditAttempts.add(log);
+                        } else {
+                            firstAttempts.add(log);
+                            if (log.isSuccessful() && log.getStep() != null) {
+                                stepsCompletedSoFar.add(log.getStep().toUpperCase());
+                                if (!requiredSteps.isEmpty() && requiredSteps.stream().allMatch(stepsCompletedSoFar::contains)) {
+                                    firstCompletedFound = true;
+                                }
+                            }
+                        }
                     }
                 }
 
-                // 3 mistakes = 1 attempt; drill resets (e.g. 3 strikes / red-herring) count as 1 attempt
-                int attemptsCount = Math.max(drillResets, failedCount / 3);
-                studentTotalAttempts += attemptsCount;
-                classPhaseTotalAttempts[i] += attemptsCount;
+                // --- 1. Compute First Attempt Metrics ---
+                int firstFailedCount = 0;
+                int firstDrillResets = 0;
+                LocalDateTime firstLastSuccess = null;
+                LocalDateTime firstStart = firstAttempts.isEmpty() ? null : firstAttempts.get(0).getAttemptTime();
+                LocalDateTime firstEnd = firstAttempts.isEmpty() ? null : firstAttempts.get(firstAttempts.size() - 1).getAttemptTime();
 
-                // Check phase completion
-                boolean isCompleted = false;
-                if (isSessionCompleted || phaseId < currentPhaseIndex) {
-                    isCompleted = true;
-                } else if (lastSuccessfulTime != null && isPhaseCompleteBySteps(attempts, module, phaseIndex)) {
-                    isCompleted = true;
+                for (AttemptLog log : firstAttempts) {
+                    if ("system=DRILL_RESET".equals(log.getUserInputData())) {
+                        firstDrillResets++;
+                    } else if (!log.isSuccessful()) {
+                        firstFailedCount++;
+                    } else {
+                        firstLastSuccess = log.getAttemptTime();
+                    }
                 }
 
-                String status = "LOCKED";
-                if (isCompleted) {
-                    status = "COMPLETED";
-                    studentCompletedPhases++;
-                    classPhaseCompletedCounts[i]++;
-                } else if (phaseId == currentPhaseIndex || (phaseId == 1 && studentCompletedPhases == 0)) {
-                    status = "ACTIVE";
-                    classPhaseActiveCounts[i]++;
-                }
+                int firstAttemptsCount = Math.max(firstDrillResets, firstFailedCount / 3);
+                studentFirstTotalAttempts += firstAttemptsCount;
 
-                // Calculate time spent in this phase
-                long phaseSeconds = 0;
-                if (isCompleted) {
-                    if (firstAttemptTime != null) {
-                        LocalDateTime endRef = lastSuccessfulTime != null ? lastSuccessfulTime : (lastAttemptTime != null ? lastAttemptTime : firstAttemptTime);
-                        long diff = ChronoUnit.SECONDS.between(firstAttemptTime, endRef);
+                boolean isFirstCompleted = isSessionCompleted || (phaseId < currentPhaseIndex) || firstCompletedFound
+                        || (firstLastSuccess != null && isPhaseCompleteBySteps(firstAttempts, module, phaseIndex));
+
+                long firstPhaseSeconds = 0;
+                if (isFirstCompleted) {
+                    studentFirstCompletedPhases++;
+                    classFirstCompletedCounts[i]++;
+                    classFirstTotalAttempts[i] += firstAttemptsCount;
+
+                    if (firstStart != null) {
+                        LocalDateTime endRef = firstLastSuccess != null ? firstLastSuccess : (firstEnd != null ? firstEnd : firstStart);
+                        long diff = ChronoUnit.SECONDS.between(firstStart, endRef);
                         long paused = (session != null && phaseId == currentPhaseIndex) ? session.getAccumulatedPauseSeconds() : 0L;
                         diff = Math.max(diff - paused, 0L);
                         if (diff <= 0) {
-                            diff = Math.max(attemptsCount * 45L, 30L);
+                            diff = Math.max(firstAttemptsCount * 45L, 30L);
                         }
-                        phaseSeconds = diff;
-                        previousPhaseCompletedTime = endRef;
-                    } else if (previousPhaseCompletedTime != null) {
-                        LocalDateTime endRef = lastSuccessfulTime != null ? lastSuccessfulTime : previousPhaseCompletedTime;
-                        long diff = ChronoUnit.SECONDS.between(previousPhaseCompletedTime, endRef);
-                        phaseSeconds = Math.max(diff, 30L);
-                        previousPhaseCompletedTime = endRef;
+                        firstPhaseSeconds = diff;
+                    } else {
+                        firstPhaseSeconds = 30L;
                     }
-                    studentTotalSeconds += phaseSeconds;
-
-                    classPhaseTotalSeconds[i] += phaseSeconds;
-                    classPhaseTimeContributors[i]++;
-                } else if ("ACTIVE".equals(status)) {
-                    // Only compute timer if the student is currently on this phase and has actively entered it
-                    if (phaseId == currentPhaseIndex && session != null && session.getPhaseEnteredAt() != null) {
+                    studentFirstTotalSeconds += firstPhaseSeconds;
+                    classFirstTotalSeconds[i] += firstPhaseSeconds;
+                    classFirstTimeContributors[i]++;
+                } else if (phaseId == currentPhaseIndex || (phaseId == 1 && studentFirstCompletedPhases == 0)) {
+                    classFirstActiveCounts[i]++;
+                    classFirstTotalAttempts[i] += firstAttemptsCount;
+                    if (session != null && session.getPhaseEnteredAt() != null) {
                         LocalDateTime activeStart = session.getPhaseEnteredAt();
                         LocalDateTime activeEnd = (session.getPhaseExitedAt() != null)
                                 ? session.getPhaseExitedAt()
                                 : LocalDateTime.now();
-
                         long diff = ChronoUnit.SECONDS.between(activeStart, activeEnd);
                         long paused = session.getAccumulatedPauseSeconds();
-                        phaseSeconds = Math.max(diff - paused, 0L);
-                        studentTotalSeconds += phaseSeconds;
-                    } else {
-                        // Student has not entered this active phase yet (still on dashboard)
-                        phaseSeconds = 0L;
+                        firstPhaseSeconds = Math.max(diff - paused, 0L);
+                        studentFirstTotalSeconds += firstPhaseSeconds;
                     }
                 }
 
-                int bestScore = 0;
-                if (isCompleted) {
-                    bestScore = Math.max(100 - (failedCount * 10), 50);
+                int firstScore = isFirstCompleted ? Math.max(100 - (firstFailedCount * 10), 50) : 0;
+                String firstStatus = isFirstCompleted ? "COMPLETED" : ((phaseId == currentPhaseIndex) ? "ACTIVE" : "LOCKED");
+
+                // --- 2. Compute Re-Audit Metrics ---
+                int reAuditFailedCount = 0;
+                int reAuditDrillResets = 0;
+                LocalDateTime reAuditLastSuccess = null;
+                LocalDateTime reAuditStart = reAuditAttempts.isEmpty() ? null : reAuditAttempts.get(0).getAttemptTime();
+                LocalDateTime reAuditEnd = reAuditAttempts.isEmpty() ? null : reAuditAttempts.get(reAuditAttempts.size() - 1).getAttemptTime();
+
+                for (AttemptLog log : reAuditAttempts) {
+                    if ("system=DRILL_RESET".equals(log.getUserInputData())) {
+                        reAuditDrillResets++;
+                    } else if (!log.isSuccessful()) {
+                        reAuditFailedCount++;
+                    } else {
+                        reAuditLastSuccess = log.getAttemptTime();
+                    }
                 }
 
+                int reAuditAttemptsCount = Math.max(reAuditDrillResets, reAuditFailedCount / 3);
+                boolean hasReAudited = !reAuditAttempts.isEmpty();
+                boolean isReAuditCompleted = hasReAudited && isPhaseCompleteBySteps(reAuditAttempts, module, phaseIndex);
+
+                long reAuditPhaseSeconds = 0;
+                if (hasReAudited) {
+                    studentHasReAuditedAny = true;
+                    studentReAuditTotalAttempts += reAuditAttemptsCount;
+                    classReAuditTotalAttempts[i] += reAuditAttemptsCount;
+
+                    LocalDateTime endRef = reAuditLastSuccess != null ? reAuditLastSuccess : (reAuditEnd != null ? reAuditEnd : reAuditStart);
+                    long diff = ChronoUnit.SECONDS.between(reAuditStart, endRef);
+                    if (diff <= 0) {
+                        diff = Math.max(reAuditAttemptsCount * 30L, 25L);
+                    }
+                    reAuditPhaseSeconds = Math.max(diff, 20L);
+                    studentReAuditTotalSeconds += reAuditPhaseSeconds;
+
+                    if (isReAuditCompleted) {
+                        studentReAuditCompletedPhases++;
+                        classReAuditCompletedCounts[i]++;
+                        classReAuditTotalSeconds[i] += reAuditPhaseSeconds;
+                        classReAuditTimeContributors[i]++;
+                    } else {
+                        classReAuditActiveCounts[i]++;
+                    }
+                }
+
+                int reAuditScore = isReAuditCompleted ? Math.max(100 - (reAuditFailedCount * 10), 50) : 0;
+                String reAuditStatus = isReAuditCompleted ? "COMPLETED" : (hasReAudited ? "ACTIVE" : "NOT_ATTEMPTED");
+
+                // --- 3. Combined / Legacy Metrics ---
+                int totalAttemptsForPhase = firstAttemptsCount + reAuditAttemptsCount;
+                int totalFailedForPhase = firstFailedCount + reAuditFailedCount;
+                long totalSecondsForPhase = firstPhaseSeconds + reAuditPhaseSeconds;
+                boolean isCombinedCompleted = isFirstCompleted;
+                String combinedStatus = firstStatus;
+                int combinedBestScore = Math.max(firstScore, reAuditScore);
+
+                studentTotalAttempts += totalAttemptsForPhase;
+                classPhaseTotalAttempts[i] += totalAttemptsForPhase;
+
+                if (isCombinedCompleted) {
+                    studentCompletedPhases++;
+                    classPhaseCompletedCounts[i]++;
+                    studentTotalSeconds += totalSecondsForPhase;
+                    classPhaseTotalSeconds[i] += totalSecondsForPhase;
+                    classPhaseTimeContributors[i]++;
+                } else if ("ACTIVE".equals(combinedStatus)) {
+                    classPhaseActiveCounts[i]++;
+                    studentTotalSeconds += totalSecondsForPhase;
+                }
+
+                // Build granular phase object
                 Map<String, Object> phaseObj = new HashMap<>();
                 phaseObj.put("phaseId", phaseId);
                 phaseObj.put("title", PHASE_TITLES[i]);
                 phaseObj.put("module", module);
                 phaseObj.put("phaseIndex", phaseIndex);
-                phaseObj.put("status", status);
-                phaseObj.put("attempts", attemptsCount);
-                phaseObj.put("failedAttempts", failedCount);
-                phaseObj.put("bestScore", bestScore);
-                phaseObj.put("timeSpentSeconds", phaseSeconds);
-                phaseObj.put("timeSpentFormatted", formatDuration(phaseSeconds, status));
+
+                // Combined / Default
+                phaseObj.put("status", combinedStatus);
+                phaseObj.put("attempts", totalAttemptsForPhase);
+                phaseObj.put("failedAttempts", totalFailedForPhase);
+                phaseObj.put("bestScore", combinedBestScore);
+                phaseObj.put("timeSpentSeconds", totalSecondsForPhase);
+                phaseObj.put("timeSpentFormatted", formatDuration(totalSecondsForPhase, combinedStatus));
+
+                // First Attempt Specifics
+                Map<String, Object> firstObj = new HashMap<>();
+                firstObj.put("status", firstStatus);
+                firstObj.put("attempts", firstAttemptsCount);
+                firstObj.put("failedAttempts", firstFailedCount);
+                firstObj.put("bestScore", firstScore);
+                firstObj.put("timeSpentSeconds", firstPhaseSeconds);
+                firstObj.put("timeSpentFormatted", formatDuration(firstPhaseSeconds, firstStatus));
+                phaseObj.put("firstAttempt", firstObj);
+
+                // Re-Audit Specifics
+                Map<String, Object> reAuditObj = new HashMap<>();
+                reAuditObj.put("status", reAuditStatus);
+                reAuditObj.put("hasReAudited", hasReAudited);
+                reAuditObj.put("attempts", reAuditAttemptsCount);
+                reAuditObj.put("failedAttempts", reAuditFailedCount);
+                reAuditObj.put("bestScore", reAuditScore);
+                reAuditObj.put("timeSpentSeconds", reAuditPhaseSeconds);
+                reAuditObj.put("timeSpentFormatted", formatDuration(reAuditPhaseSeconds, reAuditStatus));
+                phaseObj.put("reAudit", reAuditObj);
 
                 studentPhases.add(phaseObj);
             }
 
             if (studentCompletedPhases >= 7) {
                 completedStudentsCount++;
+            }
+            if (studentFirstCompletedPhases >= 7) {
+                firstAttemptCompletedStudentsCount++;
+            }
+            if (studentHasReAuditedAny) {
+                reAuditActiveStudentsCount++;
             }
             totalRoomAttempts += studentTotalAttempts;
 
@@ -1017,33 +1147,92 @@ public class RoomController {
             stuMap.put("totalTimeFormatted", formatDuration(studentTotalSeconds, "ACTIVE"));
             stuMap.put("phases", studentPhases);
 
+            // Student First Attempt Rollup
+            Map<String, Object> stuFirst = new HashMap<>();
+            stuFirst.put("completedPhases", studentFirstCompletedPhases);
+            stuFirst.put("attempts", studentFirstTotalAttempts);
+            stuFirst.put("totalTimeSpentSeconds", studentFirstTotalSeconds);
+            stuFirst.put("totalTimeFormatted", formatDuration(studentFirstTotalSeconds, studentFirstCompletedPhases >= 7 ? "COMPLETED" : "ACTIVE"));
+            stuFirst.put("status", studentFirstCompletedPhases >= 7 ? "COMPLETED" : "ACTIVE");
+            stuMap.put("firstAttempt", stuFirst);
+
+            // Student Re-Audit Rollup
+            Map<String, Object> stuReAudit = new HashMap<>();
+            stuReAudit.put("completedPhases", studentReAuditCompletedPhases);
+            stuReAudit.put("attempts", studentReAuditTotalAttempts);
+            stuReAudit.put("totalTimeSpentSeconds", studentReAuditTotalSeconds);
+            stuReAudit.put("totalTimeFormatted", formatDuration(studentReAuditTotalSeconds, studentReAuditCompletedPhases >= 7 ? "COMPLETED" : (studentHasReAuditedAny ? "ACTIVE" : "NOT_ATTEMPTED")));
+            stuReAudit.put("hasReAudited", studentHasReAuditedAny);
+            stuReAudit.put("status", studentReAuditCompletedPhases >= 7 ? "COMPLETED" : (studentHasReAuditedAny ? "ACTIVE" : "NOT_ATTEMPTED"));
+            stuMap.put("reAudit", stuReAudit);
+
             studentResults.add(stuMap);
         }
 
-        // Build Class Summary and Chart Metrics
-        List<Map<String, Object>> summaryPhases = new ArrayList<>();
         int totalStudents = studentResults.size();
 
+        // Build Combined Class Summary
+        List<Map<String, Object>> summaryPhases = new ArrayList<>();
+        // Build First Attempt Class Summary
+        List<Map<String, Object>> firstAttemptSummaryPhases = new ArrayList<>();
+        // Build Re-Audit Class Summary
+        List<Map<String, Object>> reAuditSummaryPhases = new ArrayList<>();
+
         for (int i = 0; i < 7; i++) {
+            // Combined
             Map<String, Object> sp = new HashMap<>();
             sp.put("phaseId", i + 1);
             sp.put("title", PHASE_TITLES[i]);
             sp.put("completedCount", classPhaseCompletedCounts[i]);
             sp.put("activeCount", classPhaseActiveCounts[i]);
             sp.put("totalAttempts", classPhaseTotalAttempts[i]);
-
             double avgAttempts = totalStudents > 0
                     ? Math.round((double) classPhaseTotalAttempts[i] / totalStudents * 10.0) / 10.0
                     : 0.0;
             sp.put("avgAttempts", avgAttempts);
-
             long avgSeconds = classPhaseTimeContributors[i] > 0
                     ? classPhaseTotalSeconds[i] / classPhaseTimeContributors[i]
                     : 0;
             sp.put("avgTimeSeconds", avgSeconds);
             sp.put("avgTimeFormatted", formatDuration(avgSeconds, "COMPLETED"));
-
             summaryPhases.add(sp);
+
+            // First Attempt
+            Map<String, Object> fsp = new HashMap<>();
+            fsp.put("phaseId", i + 1);
+            fsp.put("title", PHASE_TITLES[i]);
+            fsp.put("completedCount", classFirstCompletedCounts[i]);
+            fsp.put("activeCount", classFirstActiveCounts[i]);
+            fsp.put("totalAttempts", classFirstTotalAttempts[i]);
+            double fAvgAttempts = totalStudents > 0
+                    ? Math.round((double) classFirstTotalAttempts[i] / totalStudents * 10.0) / 10.0
+                    : 0.0;
+            fsp.put("avgAttempts", fAvgAttempts);
+            long fAvgSeconds = classFirstTimeContributors[i] > 0
+                    ? classFirstTotalSeconds[i] / classFirstTimeContributors[i]
+                    : 0;
+            fsp.put("avgTimeSeconds", fAvgSeconds);
+            fsp.put("avgTimeFormatted", formatDuration(fAvgSeconds, "COMPLETED"));
+            firstAttemptSummaryPhases.add(fsp);
+
+            // Re-Audit
+            Map<String, Object> rsp = new HashMap<>();
+            rsp.put("phaseId", i + 1);
+            rsp.put("title", PHASE_TITLES[i]);
+            rsp.put("completedCount", classReAuditCompletedCounts[i]);
+            rsp.put("activeCount", classReAuditActiveCounts[i]);
+            rsp.put("totalAttempts", classReAuditTotalAttempts[i]);
+            int reAuditParticipantsInPhase = Math.max(classReAuditCompletedCounts[i] + classReAuditActiveCounts[i], 1);
+            double rAvgAttempts = classReAuditTotalAttempts[i] > 0
+                    ? Math.round((double) classReAuditTotalAttempts[i] / reAuditParticipantsInPhase * 10.0) / 10.0
+                    : 0.0;
+            rsp.put("avgAttempts", rAvgAttempts);
+            long rAvgSeconds = classReAuditTimeContributors[i] > 0
+                    ? classReAuditTotalSeconds[i] / classReAuditTimeContributors[i]
+                    : 0;
+            rsp.put("avgTimeSeconds", rAvgSeconds);
+            rsp.put("avgTimeFormatted", formatDuration(rAvgSeconds, "COMPLETED"));
+            reAuditSummaryPhases.add(rsp);
         }
 
         Map<String, Object> summary = new HashMap<>();
@@ -1052,6 +1241,10 @@ public class RoomController {
         summary.put("activeStudents", Math.max(0, totalStudents - completedStudentsCount));
         summary.put("totalAttempts", totalRoomAttempts);
         summary.put("phaseStats", summaryPhases);
+        summary.put("firstAttemptPhaseStats", firstAttemptSummaryPhases);
+        summary.put("reAuditPhaseStats", reAuditSummaryPhases);
+        summary.put("firstAttemptCompletedStudents", firstAttemptCompletedStudentsCount);
+        summary.put("reAuditStudentsCount", reAuditActiveStudentsCount);
 
         Map<String, Object> response = new HashMap<>();
         response.put("roomCode", room.getRoomCode());
@@ -1062,7 +1255,7 @@ public class RoomController {
         response.put("startedAt", room.getStartedAt());
         response.put("summary", summary);
         response.put("students", studentResults);
-
+        response.put("attemptMode", attemptMode);
         return ResponseEntity.ok(response);
     }
 

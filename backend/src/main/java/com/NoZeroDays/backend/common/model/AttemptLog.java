@@ -19,6 +19,9 @@ public class AttemptLog {
     private int phase;      // e.g., 1, 2
     private String step;    // e.g., "EXTRACT", "IDENTIFY_RULE", "EXECUTE"
 
+    @Column(name = "attempt_type")
+    private String attemptType = "FIRST_ATTEMPT"; // "FIRST_ATTEMPT" or "RE_AUDIT"
+
     @Column(columnDefinition = "TEXT")
     private String userInputData; // JSON representation of user submissions
 
@@ -67,4 +70,7 @@ public class AttemptLog {
 
     public LocalDateTime getAttemptTime() { return attemptTime; }
     public void setAttemptTime(LocalDateTime attemptTime) { this.attemptTime = attemptTime; }
+
+    public String getAttemptType() { return attemptType; }
+    public void setAttemptType(String attemptType) { this.attemptType = attemptType; }
 }

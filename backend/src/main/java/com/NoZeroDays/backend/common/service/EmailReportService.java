@@ -94,6 +94,19 @@ public class EmailReportService {
         public long avgTimeSeconds;
         public int totalAttempts;
         public List<PhaseMetric> phaseMetrics = new ArrayList<>();
+
+        // First Attempt Rollup
+        public int firstCompletedCount;
+        public int firstTotalAttempts;
+        public long firstTotalSeconds;
+        public long firstAvgSeconds;
+
+        // Re-Audit Rollup
+        public int reAuditCompletedCount;
+        public int reAuditTotalAttempts;
+        public long reAuditTotalSeconds;
+        public long reAuditAvgSeconds;
+        public boolean hasReAudited;
     }
 
     public static class PhaseMetric {
@@ -102,6 +115,17 @@ public class EmailReportService {
         public int tries;
         public long seconds;
         public boolean isCompleted;
+
+        // First Attempt Breakdown
+        public int firstTries;
+        public long firstSeconds;
+        public boolean isFirstCompleted;
+
+        // Re-Audit Breakdown
+        public int reAuditTries;
+        public long reAuditSeconds;
+        public boolean isReAuditCompleted;
+        public boolean hasReAudited;
     }
 
     /**
@@ -249,78 +273,169 @@ public class EmailReportService {
         int totalAttempts = 0;
         int completedCount = 0;
 
+        int firstCompletedCount = 0;
+        int firstTotalAttempts = 0;
+        long firstTotalSeconds = 0;
+
+        int reAuditCompletedCount = 0;
+        int reAuditTotalAttempts = 0;
+        long reAuditTotalSeconds = 0;
+        boolean hasReAuditedAny = false;
+
         for (int i = 0; i < 7; i++) {
             int phaseId = i + 1;
-            String key = MODULES[i] + "_" + PHASES[i];
+            String module = MODULES[i];
+            int phaseIndex = PHASES[i];
+            String key = module + "_" + phaseIndex;
             List<AttemptLog> phaseAttempts = phaseAttemptsMap.getOrDefault(key, Collections.emptyList());
+            List<String> requiredSteps = getRequiredStepsForPhase(module, phaseIndex);
 
-            int tries = 0;
-            int failedCount = 0;
-            LocalDateTime firstAttempt = phaseAttempts.isEmpty() ? null : phaseAttempts.get(0).getAttemptTime();
-            LocalDateTime lastAttempt = null;
-            LocalDateTime lastSuccessful = null;
+            // Partition attempts into First Attempt vs Re-Audit
+            List<AttemptLog> firstAttempts = new ArrayList<>();
+            List<AttemptLog> reAuditAttempts = new ArrayList<>();
+            Set<String> stepsCompletedSoFar = new HashSet<>();
+            boolean firstCompletedFound = false;
+
             for (AttemptLog log : phaseAttempts) {
-                if ("system=DRILL_RESET".equals(log.getUserInputData())) {
-                    tries++;
-                } else if (!log.isSuccessful()) {
-                    failedCount++;
+                if ("RE_AUDIT".equalsIgnoreCase(log.getAttemptType())) {
+                    reAuditAttempts.add(log);
+                } else if ("FIRST_ATTEMPT".equalsIgnoreCase(log.getAttemptType())) {
+                    firstAttempts.add(log);
                 } else {
-                    lastSuccessful = log.getAttemptTime();
+                    if (firstCompletedFound) {
+                        reAuditAttempts.add(log);
+                    } else {
+                        firstAttempts.add(log);
+                        if (log.isSuccessful() && log.getStep() != null) {
+                            stepsCompletedSoFar.add(log.getStep().toUpperCase());
+                            if (!requiredSteps.isEmpty() && requiredSteps.stream().allMatch(stepsCompletedSoFar::contains)) {
+                                firstCompletedFound = true;
+                            }
+                        }
+                    }
                 }
-                lastAttempt = log.getAttemptTime();
             }
 
-            // If no drill reset was triggered, count 1 attempt per 3 failures
-            if (tries == 0 && failedCount > 0) {
-                tries = failedCount / 3;
+            // 1. First Attempt Metrics
+            int firstTries = 0;
+            int firstFailedCount = 0;
+            LocalDateTime firstAttemptTime = firstAttempts.isEmpty() ? null : firstAttempts.get(0).getAttemptTime();
+            LocalDateTime firstLastSuccess = null;
+            LocalDateTime firstLastAttempt = null;
+
+            for (AttemptLog log : firstAttempts) {
+                if ("system=DRILL_RESET".equals(log.getUserInputData())) {
+                    firstTries++;
+                } else if (!log.isSuccessful()) {
+                    firstFailedCount++;
+                } else {
+                    firstLastSuccess = log.getAttemptTime();
+                }
+                firstLastAttempt = log.getAttemptTime();
             }
-            totalAttempts += tries;
+            if (firstTries == 0 && firstFailedCount > 0) {
+                firstTries = firstFailedCount / 3;
+            }
+            firstTotalAttempts += firstTries;
 
-            boolean isPhaseDone = isSessionCompleted || (lastSuccessful != null) || (phaseId < currentPhaseIndex);
-            if (isPhaseDone) completedCount++;
+            boolean isFirstDone = isSessionCompleted || firstCompletedFound || (firstLastSuccess != null) || (phaseId < currentPhaseIndex) || isPhaseCompleteBySteps(firstAttempts, module, phaseIndex);
+            long firstSec = 0;
 
-            long phaseSec = 0;
-            if (isPhaseDone) {
-                if (firstAttempt != null) {
-                    LocalDateTime endRef = lastSuccessful != null ? lastSuccessful : (lastAttempt != null ? lastAttempt : firstAttempt);
-                    long diff = ChronoUnit.SECONDS.between(firstAttempt, endRef);
+            if (isFirstDone) {
+                firstCompletedCount++;
+                if (firstAttemptTime != null) {
+                    LocalDateTime endRef = firstLastSuccess != null ? firstLastSuccess : (firstLastAttempt != null ? firstLastAttempt : firstAttemptTime);
+                    long diff = ChronoUnit.SECONDS.between(firstAttemptTime, endRef);
                     long paused = (session != null && phaseId == currentPhaseIndex) ? session.getAccumulatedPauseSeconds() : 0L;
                     diff = Math.max(diff - paused, 0L);
                     if (diff <= 0) {
-                        diff = Math.max(tries * 45L, 30L);
+                        diff = Math.max(firstTries * 45L, 30L);
                     }
-                    phaseSec = diff;
-                    previousCompletedTime = endRef;
-                } else if (previousCompletedTime != null) {
-                    LocalDateTime endRef = lastSuccessful != null ? lastSuccessful : previousCompletedTime;
-                    long diff = ChronoUnit.SECONDS.between(previousCompletedTime, endRef);
-                    phaseSec = Math.max(diff, 30L);
-                    previousCompletedTime = endRef;
-                }
-                totalSeconds += phaseSec;
-            } else if (phaseId == currentPhaseIndex) {
-                // Synchronize active phase timer with RoomController (pause/exit aware)
-                if (session != null && session.getPhaseEnteredAt() != null) {
-                    LocalDateTime activeStart = session.getPhaseEnteredAt();
-                    LocalDateTime activeEnd = (session.getPhaseExitedAt() != null)
-                            ? session.getPhaseExitedAt()
-                            : LocalDateTime.now();
-
-                    long diff = ChronoUnit.SECONDS.between(activeStart, activeEnd);
-                    long paused = session.getAccumulatedPauseSeconds();
-                    phaseSec = Math.max(diff - paused, 0L);
-                    totalSeconds += phaseSec;
+                    firstSec = diff;
                 } else {
-                    phaseSec = 0L;
+                    firstSec = 30L;
+                }
+                firstTotalSeconds += firstSec;
+            } else if (phaseId == currentPhaseIndex && session != null && session.getPhaseEnteredAt() != null) {
+                LocalDateTime activeStart = session.getPhaseEnteredAt();
+                LocalDateTime activeEnd = (session.getPhaseExitedAt() != null) ? session.getPhaseExitedAt() : LocalDateTime.now();
+                long diff = ChronoUnit.SECONDS.between(activeStart, activeEnd);
+                long paused = session.getAccumulatedPauseSeconds();
+                firstSec = Math.max(diff - paused, 0L);
+                firstTotalSeconds += firstSec;
+            }
+
+            // 2. Re-Audit Metrics
+            int reAuditTries = 0;
+            int reAuditFailedCount = 0;
+            LocalDateTime reAuditStart = reAuditAttempts.isEmpty() ? null : reAuditAttempts.get(0).getAttemptTime();
+            LocalDateTime reAuditLastSuccess = null;
+            LocalDateTime reAuditLastAttempt = null;
+
+            for (AttemptLog log : reAuditAttempts) {
+                if ("system=DRILL_RESET".equals(log.getUserInputData())) {
+                    reAuditTries++;
+                } else if (!log.isSuccessful()) {
+                    reAuditFailedCount++;
+                } else {
+                    reAuditLastSuccess = log.getAttemptTime();
+                }
+                reAuditLastAttempt = log.getAttemptTime();
+            }
+            if (reAuditTries == 0 && reAuditFailedCount > 0) {
+                reAuditTries = reAuditFailedCount / 3;
+            }
+
+            boolean hasReAudited = !reAuditAttempts.isEmpty();
+            boolean isReAuditDone = hasReAudited && isPhaseCompleteBySteps(reAuditAttempts, module, phaseIndex);
+            long reAuditSec = 0;
+
+            if (hasReAudited) {
+                hasReAuditedAny = true;
+                reAuditTotalAttempts += reAuditTries;
+                if (reAuditStart != null) {
+                    LocalDateTime endRef = reAuditLastSuccess != null ? reAuditLastSuccess : (reAuditLastAttempt != null ? reAuditLastAttempt : reAuditStart);
+                    long diff = ChronoUnit.SECONDS.between(reAuditStart, endRef);
+                    if (diff <= 0) {
+                        diff = Math.max(reAuditTries * 30L, 25L);
+                    }
+                    reAuditSec = Math.max(diff, 20L);
+                }
+                reAuditTotalSeconds += reAuditSec;
+                if (isReAuditDone) {
+                    reAuditCompletedCount++;
                 }
             }
+
+            // Combined
+            int combinedTries = firstTries + reAuditTries;
+            long combinedSec = firstSec + reAuditSec;
+            boolean isCombinedDone = isFirstDone;
+
+            if (isCombinedDone) {
+                completedCount++;
+                totalSeconds += combinedSec;
+            } else if (phaseId == currentPhaseIndex) {
+                totalSeconds += combinedSec;
+            }
+            totalAttempts += combinedTries;
 
             PhaseMetric pm = new PhaseMetric();
             pm.phaseId = phaseId;
             pm.title = PHASE_NAMES[i];
-            pm.tries = tries;
-            pm.seconds = phaseSec;
-            pm.isCompleted = isPhaseDone;
+            pm.tries = combinedTries;
+            pm.seconds = combinedSec;
+            pm.isCompleted = isCombinedDone;
+
+            pm.firstTries = firstTries;
+            pm.firstSeconds = firstSec;
+            pm.isFirstCompleted = isFirstDone;
+
+            pm.reAuditTries = reAuditTries;
+            pm.reAuditSeconds = reAuditSec;
+            pm.isReAuditCompleted = isReAuditDone;
+            pm.hasReAudited = hasReAudited;
+
             sm.phaseMetrics.add(pm);
         }
 
@@ -332,7 +447,53 @@ public class EmailReportService {
         sm.currentPhase = currentPhaseIndex;
         sm.currentPhaseTitle = (currentPhaseIndex <= 7) ? PHASE_NAMES[currentPhaseIndex - 1] : "Completed All Phases";
 
+        sm.firstCompletedCount = firstCompletedCount;
+        sm.firstTotalAttempts = firstTotalAttempts;
+        sm.firstTotalSeconds = firstTotalSeconds;
+        sm.firstAvgSeconds = (firstCompletedCount > 0) ? (firstTotalSeconds / firstCompletedCount) : firstTotalSeconds;
+
+        sm.reAuditCompletedCount = reAuditCompletedCount;
+        sm.reAuditTotalAttempts = reAuditTotalAttempts;
+        sm.reAuditTotalSeconds = reAuditTotalSeconds;
+        sm.reAuditAvgSeconds = (reAuditCompletedCount > 0) ? (reAuditTotalSeconds / reAuditCompletedCount) : reAuditTotalSeconds;
+        sm.hasReAudited = hasReAuditedAny;
+
         return sm;
+    }
+
+    private boolean isPhaseCompleteBySteps(List<AttemptLog> attempts, String module, int phase) {
+        List<String> requiredSteps = getRequiredStepsForPhase(module, phase);
+        if (requiredSteps.isEmpty()) return false;
+        Set<String> successfulSteps = new HashSet<>();
+        for (AttemptLog a : attempts) {
+            if (a.isSuccessful() && a.getStep() != null) {
+                successfulSteps.add(a.getStep().toUpperCase());
+            }
+        }
+        return requiredSteps.stream().allMatch(successfulSteps::contains);
+    }
+
+    private List<String> getRequiredStepsForPhase(String module, int phase) {
+        if ("M1_MATH".equalsIgnoreCase(module) && phase == 1) {
+            return Arrays.asList("EXTRACT", "IDENTIFY_RULE", "EXECUTE");
+        } else if ("M1_MATH".equalsIgnoreCase(module) && phase == 2) {
+            return Arrays.asList("EXTRACT", "IDENTIFY_RULE", "EXECUTE", "COMPUTE_GROSS", "NET_PAY_FORMULA", "SYNTHESIS");
+        } else if ("M2_MULTIPLIERS".equalsIgnoreCase(module)) {
+            if (phase == 1) {
+                return Arrays.asList("EXTRACT", "FILTER_LUNCH", "ESTABLISH_PREMIUM", "ESTABLISH_FORMULA", "EXECUTE", "COMPUTE_GROSS", "NET_PAY_FORMULA", "SYNTHESIS");
+            } else {
+                return Arrays.asList("EXTRACT", "ESTABLISH_PREMIUM", "ESTABLISH_FORMULA", "EXECUTE", "COMPUTE_GROSS", "NET_PAY_FORMULA", "SYNTHESIS");
+            }
+        } else if ("M3_BUREAUCRACY".equalsIgnoreCase(module)) {
+            if (phase == 1) {
+                return Arrays.asList("EXTRACT", "PAGIBIG_DEDUCTION", "BASIC_SALARY", "IDENTIFY_RULE", "SYNTHESIS");
+            } else {
+                return Arrays.asList("EXTRACT", "PHILHEALTH_EE", "TAX_BRACKET", "WITHHOLDING_TAX", "SYNTHESIS");
+            }
+        } else if ("M4_TRIBUNAL".equalsIgnoreCase(module)) {
+            return Collections.singletonList("SUBMIT");
+        }
+        return Collections.emptyList();
     }
 
     private String buildClassroomHtml(Room room, List<StudentMetrics> list, StudentProfile triggeringStudent) {
@@ -350,17 +511,20 @@ public class EmailReportService {
         sb.append("</div>");
 
         // Room Meta Box
-        sb.append("<div style='display:flex;gap:15px;background:#1e293b;padding:15px;border-radius:8px;margin-bottom:25px;'>");
-        sb.append("<div style='flex:1;'><div style='font-size:11px;color:#94a3b8;'>ROOM CODE</div><div style='font-size:18px;font-weight:bold;color:#facc15;letter-spacing:2px;'>").append(room.getRoomCode()).append("</div></div>");
-        sb.append("<div style='flex:1;'><div style='font-size:11px;color:#94a3b8;'>TEACHER</div><div style='font-size:15px;font-weight:bold;color:#fff;'>").append(room.getTeacherName()).append("</div></div>");
-        sb.append("<div style='flex:1;'><div style='font-size:11px;color:#94a3b8;'>SECTION</div><div style='font-size:15px;font-weight:bold;color:#fff;'>").append(room.getSection() != null ? room.getSection() : "N/A").append("</div></div>");
-        sb.append("<div style='flex:1;'><div style='font-size:11px;color:#94a3b8;'>COMPLETED</div><div style='font-size:18px;font-weight:bold;color:#4ade80;'>").append(completedCount).append("/").append(totalEnrolled).append("</div></div>");
+        long firstCompletedAllCount = list.stream().filter(m -> m.firstCompletedCount >= 7).count();
+        long reAuditCount = list.stream().filter(m -> m.hasReAudited).count();
+
+        sb.append("<div style='display:flex;gap:12px;background:#1e293b;padding:15px;border-radius:8px;margin-bottom:20px;'>");
+        sb.append("<div style='flex:1;'><div style='font-size:11px;color:#94a3b8;'>ROOM CODE</div><div style='font-size:17px;font-weight:bold;color:#facc15;letter-spacing:1px;'>").append(room.getRoomCode()).append("</div></div>");
+        sb.append("<div style='flex:1;'><div style='font-size:11px;color:#94a3b8;'>TEACHER</div><div style='font-size:14px;font-weight:bold;color:#fff;'>").append(room.getTeacherName()).append("</div></div>");
+        sb.append("<div style='flex:1;'><div style='font-size:11px;color:#94a3b8;'>FIRST ATTEMPT PASSED</div><div style='font-size:16px;font-weight:bold;color:#4ade80;'>").append(firstCompletedAllCount).append("/").append(totalEnrolled).append("</div></div>");
+        sb.append("<div style='flex:1;'><div style='font-size:11px;color:#94a3b8;'>RE-AUDIT PRACTICE</div><div style='font-size:16px;font-weight:bold;color:#38bdf8;'>").append(reAuditCount).append("/").append(totalEnrolled).append("</div></div>");
         sb.append("</div>");
 
         // Excel Attachment Notice
         sb.append("<div style='background:rgba(16, 185, 129, 0.12);border:1px solid #10b981;border-radius:8px;padding:12px 18px;margin-bottom:25px;'>");
         sb.append("<div style='font-size:14px;font-weight:bold;color:#34d399;'>📊 OFFICIAL EXCEL SPREADSHEET ATTACHED (.XLSX)</div>");
-        sb.append("<div style='font-size:12px;color:#cbd5e1;margin-top:4px;'>A detailed multi-sheet audit workbook (<strong>Classroom_Audit_Report_").append(room.getRoomCode()).append(".xlsx</strong>) is attached to this email containing individual student performance metrics, phase timing audits, and attempt statistics.</div>");
+        sb.append("<div style='font-size:12px;color:#cbd5e1;margin-top:4px;'>A detailed multi-sheet audit workbook (<strong>Classroom_Audit_Report_").append(room.getRoomCode()).append(".xlsx</strong>) is attached to this email featuring dedicated sheets for <strong>First Attempt Audit</strong> (Grading Baseline), <strong>Re-Audit Mastery</strong> (Remediation/Practice), and <strong>Classroom Summary</strong>.</div>");
         sb.append("</div>");
 
         // SECTION 1: FINISHED STUDENTS (Detailed Breakdown)
@@ -417,22 +581,37 @@ public class EmailReportService {
         sb.append("</h2>");
 
         sb.append("<table style='width:100%;border-collapse:collapse;font-size:13px;background:#111827;border-radius:6px;overflow:hidden;'>");
-        sb.append("<thead><tr style='background:#1e293b;color:#94a3b8;'><th style='padding:10px;border:1px solid #334155;text-align:left;'>#</th><th style='padding:10px;border:1px solid #334155;text-align:left;'>Student Name</th><th style='padding:10px;border:1px solid #334155;text-align:left;'>ID Number</th><th style='padding:10px;border:1px solid #334155;text-align:center;'>Completed</th><th style='padding:10px;border:1px solid #334155;text-align:center;'>Total Attempts</th><th style='padding:10px;border:1px solid #334155;text-align:center;'>Time Elapsed</th></tr></thead>");
+        sb.append("<thead><tr style='background:#1e293b;color:#94a3b8;'>");
+        sb.append("<th style='padding:10px;border:1px solid #334155;text-align:left;'>#</th>");
+        sb.append("<th style='padding:10px;border:1px solid #334155;text-align:left;'>Student Name</th>");
+        sb.append("<th style='padding:10px;border:1px solid #334155;text-align:left;'>ID Number</th>");
+        sb.append("<th style='padding:10px;border:1px solid #334155;text-align:center;'>First Attempt</th>");
+        sb.append("<th style='padding:10px;border:1px solid #334155;text-align:center;'>First Time</th>");
+        sb.append("<th style='padding:10px;border:1px solid #334155;text-align:center;'>Re-Audit Status</th>");
+        sb.append("<th style='padding:10px;border:1px solid #334155;text-align:center;'>Re-Audit Time</th>");
+        sb.append("</tr></thead>");
         sb.append("<tbody>");
 
         int index = 1;
         for (StudentMetrics sm : list) {
-            String statusBadge = sm.isCompletedAll
-                    ? "<span style='color:#4ade80;font-weight:bold;'>✓ Done (7/7)</span>"
-                    : "<span style='color:#fbbf24;font-weight:bold;'>Phase " + sm.currentPhase + " (" + sm.completedPhasesCount + "/7)</span>";
+            String firstBadge = sm.firstCompletedCount >= 7
+                    ? "<span style='color:#4ade80;font-weight:bold;'>✓ Passed (7/7)</span>"
+                    : "<span style='color:#fbbf24;font-weight:bold;'>" + sm.firstCompletedCount + "/7</span>";
+
+            String reAuditBadge = sm.reAuditCompletedCount >= 7
+                    ? "<span style='color:#34d399;font-weight:bold;'>↻ Mastered (7/7)</span>"
+                    : (sm.hasReAudited
+                        ? "<span style='color:#38bdf8;font-weight:bold;'>↻ Practicing (" + sm.reAuditCompletedCount + "/7)</span>"
+                        : "<span style='color:#64748b;'>--</span>");
 
             sb.append("<tr>");
             sb.append("<td style='padding:8px 10px;border:1px solid #334155;color:#64748b;'>").append(index++).append("</td>");
             sb.append("<td style='padding:8px 10px;border:1px solid #334155;font-weight:bold;color:#fff;'>").append(sm.profile.getFullName()).append("</td>");
             sb.append("<td style='padding:8px 10px;border:1px solid #334155;color:#94a3b8;'>").append(sm.profile.getStudentNumber()).append("</td>");
-            sb.append("<td style='padding:8px 10px;border:1px solid #334155;text-align:center;'>").append(statusBadge).append("</td>");
-            sb.append("<td style='padding:8px 10px;border:1px solid #334155;text-align:center;color:#fbbf24;'>").append(sm.totalAttempts).append("</td>");
-            sb.append("<td style='padding:8px 10px;border:1px solid #334155;text-align:center;color:#38bdf8;'>").append(formatSeconds(sm.totalTimeSeconds)).append("</td>");
+            sb.append("<td style='padding:8px 10px;border:1px solid #334155;text-align:center;'>").append(firstBadge).append("</td>");
+            sb.append("<td style='padding:8px 10px;border:1px solid #334155;text-align:center;color:#38bdf8;'>").append(formatSeconds(sm.firstTotalSeconds)).append("</td>");
+            sb.append("<td style='padding:8px 10px;border:1px solid #334155;text-align:center;'>").append(reAuditBadge).append("</td>");
+            sb.append("<td style='padding:8px 10px;border:1px solid #334155;text-align:center;color:#a855f7;'>").append(sm.reAuditTotalSeconds > 0 ? formatSeconds(sm.reAuditTotalSeconds) : "--").append("</td>");
             sb.append("</tr>");
         }
         sb.append("</tbody></table>");
@@ -475,16 +654,19 @@ public class EmailReportService {
     }
 
     /**
-     * Generates a multi-sheet Microsoft Excel spreadsheet report (.xlsx) with styled summary and student roster.
+     * Generates a multi-sheet Microsoft Excel spreadsheet report (.xlsx) with styled summary, First Attempt grading sheet, Re-Audit mastery sheet, and combined roster.
      */
     public byte[] generateClassroomReportExcel(Room room, List<StudentMetrics> list) throws Exception {
         try (Workbook workbook = new XSSFWorkbook()) {
+            DataFormat textFormat = workbook.createDataFormat();
+
             // Colors & Fonts
             Font headerFont = workbook.createFont();
             headerFont.setBold(true);
             headerFont.setColor(IndexedColors.WHITE.getIndex());
             headerFont.setFontHeightInPoints((short) 11);
 
+            // Style: Primary Royal Blue (First Attempt & Global)
             CellStyle headerStyle = workbook.createCellStyle();
             headerStyle.setFont(headerFont);
             headerStyle.setFillForegroundColor(IndexedColors.ROYAL_BLUE.getIndex());
@@ -495,6 +677,30 @@ public class EmailReportService {
             headerStyle.setBorderBottom(BorderStyle.THIN);
             headerStyle.setBorderLeft(BorderStyle.THIN);
             headerStyle.setBorderRight(BorderStyle.THIN);
+
+            // Style: Emerald Green (Re-Audit Mastery)
+            CellStyle headerReAuditStyle = workbook.createCellStyle();
+            headerReAuditStyle.setFont(headerFont);
+            headerReAuditStyle.setFillForegroundColor(IndexedColors.SEA_GREEN.getIndex());
+            headerReAuditStyle.setFillPattern(FillPatternType.SOLID_FOREGROUND);
+            headerReAuditStyle.setAlignment(HorizontalAlignment.CENTER);
+            headerReAuditStyle.setVerticalAlignment(VerticalAlignment.CENTER);
+            headerReAuditStyle.setBorderTop(BorderStyle.THIN);
+            headerReAuditStyle.setBorderBottom(BorderStyle.THIN);
+            headerReAuditStyle.setBorderLeft(BorderStyle.THIN);
+            headerReAuditStyle.setBorderRight(BorderStyle.THIN);
+
+            // Style: Slate (Combined Sheet)
+            CellStyle headerCombinedStyle = workbook.createCellStyle();
+            headerCombinedStyle.setFont(headerFont);
+            headerCombinedStyle.setFillForegroundColor(IndexedColors.GREY_50_PERCENT.getIndex());
+            headerCombinedStyle.setFillPattern(FillPatternType.SOLID_FOREGROUND);
+            headerCombinedStyle.setAlignment(HorizontalAlignment.CENTER);
+            headerCombinedStyle.setVerticalAlignment(VerticalAlignment.CENTER);
+            headerCombinedStyle.setBorderTop(BorderStyle.THIN);
+            headerCombinedStyle.setBorderBottom(BorderStyle.THIN);
+            headerCombinedStyle.setBorderLeft(BorderStyle.THIN);
+            headerCombinedStyle.setBorderRight(BorderStyle.THIN);
 
             CellStyle titleStyle = workbook.createCellStyle();
             Font titleFont = workbook.createFont();
@@ -508,7 +714,9 @@ public class EmailReportService {
             boldLabelFont.setBold(true);
             boldLabelStyle.setFont(boldLabelFont);
 
+            // Verbatim Text Cell Style (avoids Excel interpreting "3m 02s" as "302m")
             CellStyle cellStyle = workbook.createCellStyle();
+            cellStyle.setDataFormat(textFormat.getFormat("@"));
             cellStyle.setBorderTop(BorderStyle.THIN);
             cellStyle.setBorderBottom(BorderStyle.THIN);
             cellStyle.setBorderLeft(BorderStyle.THIN);
@@ -518,6 +726,7 @@ public class EmailReportService {
             CellStyle cellCenterStyle = workbook.createCellStyle();
             cellCenterStyle.cloneStyleFrom(cellStyle);
             cellCenterStyle.setAlignment(HorizontalAlignment.CENTER);
+            cellCenterStyle.setDataFormat(textFormat.getFormat("@"));
 
             CellStyle completedBadgeStyle = workbook.createCellStyle();
             completedBadgeStyle.cloneStyleFrom(cellCenterStyle);
@@ -546,29 +755,35 @@ public class EmailReportService {
             titleCell.setCellStyle(titleStyle);
 
             Row subRow = summarySheet.createRow(rowIdx++);
-            subRow.createCell(0).setCellValue("Philippine Payroll Simulation Capstone Platform");
+            subRow.createCell(0).setCellValue("Philippine Payroll Simulation Capstone Platform — First Attempt vs Re-Audit Analysis");
 
             rowIdx++; // blank row
 
             int totalEnrolled = list.size();
-            long completedCount = list.stream().filter(m -> m.isCompletedAll).count();
+            long firstCompletedAllCount = list.stream().filter(m -> m.firstCompletedCount >= 7).count();
+            long reAuditParticipantsCount = list.stream().filter(m -> m.hasReAudited).count();
 
             createMetaRow(summarySheet, rowIdx++, "Room Code", room.getRoomCode(), boldLabelStyle);
             createMetaRow(summarySheet, rowIdx++, "Supervisor / Teacher", room.getTeacherName(), boldLabelStyle);
             createMetaRow(summarySheet, rowIdx++, "Section", room.getSection() != null ? room.getSection() : "General", boldLabelStyle);
             createMetaRow(summarySheet, rowIdx++, "Teacher Recipient Email", room.getTeacherEmail() != null ? room.getTeacherEmail() : "Not set", boldLabelStyle);
             createMetaRow(summarySheet, rowIdx++, "Enrolled Students", String.valueOf(totalEnrolled), boldLabelStyle);
-            createMetaRow(summarySheet, rowIdx++, "Completed All Phases (7/7)", completedCount + " / " + totalEnrolled, boldLabelStyle);
+            createMetaRow(summarySheet, rowIdx++, "First Attempt Passed (7/7)", firstCompletedAllCount + " / " + totalEnrolled, boldLabelStyle);
+            createMetaRow(summarySheet, rowIdx++, "Engaged in Re-Audit Practice", reAuditParticipantsCount + " / " + totalEnrolled, boldLabelStyle);
             createMetaRow(summarySheet, rowIdx++, "Report Generated At", LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")), boldLabelStyle);
 
             rowIdx++; // blank row
 
             Row tableTitle = summarySheet.createRow(rowIdx++);
             Cell ttCell = tableTitle.createCell(0);
-            ttCell.setCellValue("PHASE-BY-PHASE MASTERY OVERVIEW");
+            ttCell.setCellValue("PHASE-BY-PHASE MASTERY OVERVIEW (FIRST ATTEMPT VS RE-AUDIT)");
             ttCell.setCellStyle(boldLabelStyle);
 
-            String[] summaryHeaders = {"Phase #", "Module & Phase Title", "Passed Students", "Class Completion Rate", "Avg Time Spent", "Total Attempts"};
+            String[] summaryHeaders = {
+                "Phase #", "Module & Phase Title",
+                "First Attempt Passed", "First Attempt Rate", "First Attempt Avg Time", "First Attempt Tries",
+                "Re-Audit Passed", "Re-Audit Avg Time", "Re-Audit Tries"
+            };
             Row summaryHeaderRow = summarySheet.createRow(rowIdx++);
             summaryHeaderRow.setHeightInPoints(24);
             for (int col = 0; col < summaryHeaders.length; col++) {
@@ -579,44 +794,192 @@ public class EmailReportService {
 
             for (int i = 0; i < 7; i++) {
                 int phaseId = i + 1;
-                int passedInPhase = 0;
-                long totalPhaseSec = 0;
-                int timeCount = 0;
-                int phaseAttemptsSum = 0;
+                int firstPassed = 0;
+                long firstSecSum = 0;
+                int firstTimeCount = 0;
+                int firstTriesSum = 0;
+
+                int reAuditPassed = 0;
+                long reAuditSecSum = 0;
+                int reAuditTimeCount = 0;
+                int reAuditTriesSum = 0;
 
                 for (StudentMetrics sm : list) {
                     if (sm.phaseMetrics.size() > i) {
                         PhaseMetric pm = sm.phaseMetrics.get(i);
-                        if (pm.isCompleted) passedInPhase++;
-                        if (pm.seconds > 0) {
-                            totalPhaseSec += pm.seconds;
-                            timeCount++;
+                        if (pm.isFirstCompleted) firstPassed++;
+                        if (pm.firstSeconds > 0) {
+                            firstSecSum += pm.firstSeconds;
+                            firstTimeCount++;
                         }
-                        phaseAttemptsSum += pm.tries;
+                        firstTriesSum += pm.firstTries;
+
+                        if (pm.isReAuditCompleted) reAuditPassed++;
+                        if (pm.reAuditSeconds > 0) {
+                            reAuditSecSum += pm.reAuditSeconds;
+                            reAuditTimeCount++;
+                        }
+                        reAuditTriesSum += pm.reAuditTries;
                     }
                 }
 
-                long avgSec = timeCount > 0 ? (totalPhaseSec / timeCount) : 0;
-                double rate = totalEnrolled > 0 ? ((double) passedInPhase / totalEnrolled) * 100.0 : 0.0;
+                long fAvgSec = firstTimeCount > 0 ? (firstSecSum / firstTimeCount) : 0;
+                double fRate = totalEnrolled > 0 ? ((double) firstPassed / totalEnrolled) * 100.0 : 0.0;
+                long rAvgSec = reAuditTimeCount > 0 ? (reAuditSecSum / reAuditTimeCount) : 0;
 
                 Row r = summarySheet.createRow(rowIdx++);
                 Cell c0 = r.createCell(0); c0.setCellValue("Phase " + phaseId); c0.setCellStyle(cellCenterStyle);
                 Cell c1 = r.createCell(1); c1.setCellValue(PHASE_NAMES[i]); c1.setCellStyle(cellStyle);
-                Cell c2 = r.createCell(2); c2.setCellValue(passedInPhase + " / " + totalEnrolled); c2.setCellStyle(cellCenterStyle);
-                Cell c3 = r.createCell(3); c3.setCellValue(String.format("%.1f%%", rate)); c3.setCellStyle(cellCenterStyle);
-                Cell c4 = r.createCell(4); c4.setCellValue(formatSeconds(avgSec)); c4.setCellStyle(cellCenterStyle);
-                Cell c5 = r.createCell(5); c5.setCellValue(phaseAttemptsSum); c5.setCellStyle(cellCenterStyle);
+                Cell c2 = r.createCell(2); c2.setCellValue(firstPassed + " / " + totalEnrolled); c2.setCellStyle(cellCenterStyle);
+                Cell c3 = r.createCell(3); c3.setCellValue(String.format("%.1f%%", fRate)); c3.setCellStyle(cellCenterStyle);
+                Cell c4 = r.createCell(4); c4.setCellValue(formatSeconds(fAvgSec)); c4.setCellStyle(cellCenterStyle);
+                Cell c5 = r.createCell(5); c5.setCellValue(firstTriesSum); c5.setCellStyle(cellCenterStyle);
+                Cell c6 = r.createCell(6); c6.setCellValue(reAuditPassed > 0 ? (reAuditPassed + " passed") : "--"); c6.setCellStyle(cellCenterStyle);
+                Cell c7 = r.createCell(7); c7.setCellValue(rAvgSec > 0 ? formatSeconds(rAvgSec) : "--"); c7.setCellStyle(cellCenterStyle);
+                Cell c8 = r.createCell(8); c8.setCellValue(reAuditTriesSum); c8.setCellStyle(cellCenterStyle);
             }
 
             for (int col = 0; col < summaryHeaders.length; col++) {
                 summarySheet.autoSizeColumn(col);
-                summarySheet.setColumnWidth(col, Math.max(summarySheet.getColumnWidth(col) + 1200, 4200));
+                summarySheet.setColumnWidth(col, Math.max(summarySheet.getColumnWidth(col) + 1000, 3800));
             }
 
             // ==========================================
-            // SHEET 2: Student Roster & Metrics
+            // SHEET 2: First Attempt Audit (Grading Baseline)
             // ==========================================
-            Sheet rosterSheet = workbook.createSheet("Student Roster");
+            Sheet firstSheet = workbook.createSheet("First Attempt Audit");
+            firstSheet.setDisplayGridlines(true);
+
+            String[] firstHeaders = {
+                "#", "Student Name", "Student ID", "First Attempt Status", "Passed Phases",
+                "Total Attempts", "Total Time Spent", "Avg Time / Phase",
+                "P1 Tries", "P1 Time", "P2 Tries", "P2 Time", "P3 Tries", "P3 Time",
+                "P4 Tries", "P4 Time", "P5 Tries", "P5 Time", "P6 Tries", "P6 Time",
+                "P7 Tries", "P7 Time"
+            };
+
+            Row firstHeaderRow = firstSheet.createRow(0);
+            firstHeaderRow.setHeightInPoints(24);
+            for (int col = 0; col < firstHeaders.length; col++) {
+                Cell c = firstHeaderRow.createCell(col);
+                c.setCellValue(firstHeaders[col]);
+                c.setCellStyle(headerStyle);
+            }
+
+            int sIdx = 1;
+            for (StudentMetrics sm : list) {
+                Row r = firstSheet.createRow(sIdx);
+                Cell c0 = r.createCell(0); c0.setCellValue(sIdx); c0.setCellStyle(cellCenterStyle);
+                Cell c1 = r.createCell(1); c1.setCellValue(sm.profile.getFullName()); c1.setCellStyle(cellStyle);
+                Cell c2 = r.createCell(2); c2.setCellValue(sm.profile.getStudentNumber()); c2.setCellStyle(cellCenterStyle);
+                Cell c3 = r.createCell(3);
+                c3.setCellValue(sm.firstCompletedCount >= 7 ? "PASSED (7/7)" : "In Progress (" + sm.firstCompletedCount + "/7)");
+                c3.setCellStyle(sm.firstCompletedCount >= 7 ? completedBadgeStyle : inProgressBadgeStyle);
+
+                Cell c4 = r.createCell(4); c4.setCellValue(sm.firstCompletedCount + " / 7"); c4.setCellStyle(cellCenterStyle);
+                Cell c5 = r.createCell(5); c5.setCellValue(sm.firstTotalAttempts); c5.setCellStyle(cellCenterStyle);
+                Cell c6 = r.createCell(6); c6.setCellValue(formatSeconds(sm.firstTotalSeconds)); c6.setCellStyle(cellCenterStyle);
+                Cell c7 = r.createCell(7); c7.setCellValue(formatSeconds(sm.firstAvgSeconds)); c7.setCellStyle(cellCenterStyle);
+
+                for (int p = 0; p < 7; p++) {
+                    int tryCol = 8 + (p * 2);
+                    int timeCol = 9 + (p * 2);
+                    if (p < sm.phaseMetrics.size()) {
+                        PhaseMetric pm = sm.phaseMetrics.get(p);
+                        Cell cTries = r.createCell(tryCol);
+                        cTries.setCellValue(pm.firstTries);
+                        cTries.setCellStyle(cellCenterStyle);
+
+                        Cell cTime = r.createCell(timeCol);
+                        cTime.setCellValue(pm.isFirstCompleted || pm.firstSeconds > 0 ? formatSeconds(pm.firstSeconds) : "--");
+                        cTime.setCellStyle(cellCenterStyle);
+                    } else {
+                        Cell cTries = r.createCell(tryCol); cTries.setCellValue(0); cTries.setCellStyle(cellCenterStyle);
+                        Cell cTime = r.createCell(timeCol); cTime.setCellValue("--"); cTime.setCellStyle(cellCenterStyle);
+                    }
+                }
+                sIdx++;
+            }
+
+            for (int col = 0; col < firstHeaders.length; col++) {
+                firstSheet.autoSizeColumn(col);
+                firstSheet.setColumnWidth(col, Math.max(firstSheet.getColumnWidth(col) + 800, 3200));
+            }
+
+            // ==========================================
+            // SHEET 3: Re-Audit Mastery (Practice & Fluency)
+            // ==========================================
+            Sheet reAuditSheet = workbook.createSheet("Re-Audit Mastery");
+            reAuditSheet.setDisplayGridlines(true);
+
+            String[] reAuditHeaders = {
+                "#", "Student Name", "Student ID", "Re-Audit Status", "Re-Audited Phases",
+                "Re-Audit Attempts", "Re-Audit Time", "Avg Time / Phase",
+                "P1 Tries", "P1 Time", "P2 Tries", "P2 Time", "P3 Tries", "P3 Time",
+                "P4 Tries", "P4 Time", "P5 Tries", "P5 Time", "P6 Tries", "P6 Time",
+                "P7 Tries", "P7 Time"
+            };
+
+            Row reAuditHeaderRow = reAuditSheet.createRow(0);
+            reAuditHeaderRow.setHeightInPoints(24);
+            for (int col = 0; col < reAuditHeaders.length; col++) {
+                Cell c = reAuditHeaderRow.createCell(col);
+                c.setCellValue(reAuditHeaders[col]);
+                c.setCellStyle(headerReAuditStyle);
+            }
+
+            int rIdx = 1;
+            for (StudentMetrics sm : list) {
+                Row r = reAuditSheet.createRow(rIdx);
+                Cell c0 = r.createCell(0); c0.setCellValue(rIdx); c0.setCellStyle(cellCenterStyle);
+                Cell c1 = r.createCell(1); c1.setCellValue(sm.profile.getFullName()); c1.setCellStyle(cellStyle);
+                Cell c2 = r.createCell(2); c2.setCellValue(sm.profile.getStudentNumber()); c2.setCellStyle(cellCenterStyle);
+                Cell c3 = r.createCell(3);
+                if (sm.reAuditCompletedCount >= 7) {
+                    c3.setCellValue("RE-AUDITED ALL (7/7)");
+                    c3.setCellStyle(completedBadgeStyle);
+                } else if (sm.hasReAudited) {
+                    c3.setCellValue("Re-Auditing (" + sm.reAuditCompletedCount + "/7)");
+                    c3.setCellStyle(inProgressBadgeStyle);
+                } else {
+                    c3.setCellValue("No Re-Audit");
+                    c3.setCellStyle(cellCenterStyle);
+                }
+
+                Cell c4 = r.createCell(4); c4.setCellValue(sm.reAuditCompletedCount + " / 7"); c4.setCellStyle(cellCenterStyle);
+                Cell c5 = r.createCell(5); c5.setCellValue(sm.reAuditTotalAttempts); c5.setCellStyle(cellCenterStyle);
+                Cell c6 = r.createCell(6); c6.setCellValue(sm.reAuditTotalSeconds > 0 ? formatSeconds(sm.reAuditTotalSeconds) : "--"); c6.setCellStyle(cellCenterStyle);
+                Cell c7 = r.createCell(7); c7.setCellValue(sm.reAuditAvgSeconds > 0 ? formatSeconds(sm.reAuditAvgSeconds) : "--"); c7.setCellStyle(cellCenterStyle);
+
+                for (int p = 0; p < 7; p++) {
+                    int tryCol = 8 + (p * 2);
+                    int timeCol = 9 + (p * 2);
+                    if (p < sm.phaseMetrics.size()) {
+                        PhaseMetric pm = sm.phaseMetrics.get(p);
+                        Cell cTries = r.createCell(tryCol);
+                        cTries.setCellValue(pm.hasReAudited ? pm.reAuditTries : 0);
+                        cTries.setCellStyle(cellCenterStyle);
+
+                        Cell cTime = r.createCell(timeCol);
+                        cTime.setCellValue(pm.hasReAudited && pm.reAuditSeconds > 0 ? formatSeconds(pm.reAuditSeconds) : "--");
+                        cTime.setCellStyle(cellCenterStyle);
+                    } else {
+                        Cell cTries = r.createCell(tryCol); cTries.setCellValue(0); cTries.setCellStyle(cellCenterStyle);
+                        Cell cTime = r.createCell(timeCol); cTime.setCellValue("--"); cTime.setCellStyle(cellCenterStyle);
+                    }
+                }
+                rIdx++;
+            }
+
+            for (int col = 0; col < reAuditHeaders.length; col++) {
+                reAuditSheet.autoSizeColumn(col);
+                reAuditSheet.setColumnWidth(col, Math.max(reAuditSheet.getColumnWidth(col) + 800, 3200));
+            }
+
+            // ==========================================
+            // SHEET 4: Combined Full Audit (Legacy & Composite)
+            // ==========================================
+            Sheet rosterSheet = workbook.createSheet("Combined Student Roster");
             rosterSheet.setDisplayGridlines(true);
 
             String[] rosterHeaders = {
@@ -632,13 +995,13 @@ public class EmailReportService {
             for (int col = 0; col < rosterHeaders.length; col++) {
                 Cell c = rosterHeaderRow.createCell(col);
                 c.setCellValue(rosterHeaders[col]);
-                c.setCellStyle(headerStyle);
+                c.setCellStyle(headerCombinedStyle);
             }
 
-            int sIdx = 1;
+            int cIdx = 1;
             for (StudentMetrics sm : list) {
-                Row r = rosterSheet.createRow(sIdx);
-                Cell c0 = r.createCell(0); c0.setCellValue(sIdx); c0.setCellStyle(cellCenterStyle);
+                Row r = rosterSheet.createRow(cIdx);
+                Cell c0 = r.createCell(0); c0.setCellValue(cIdx); c0.setCellStyle(cellCenterStyle);
                 Cell c1 = r.createCell(1); c1.setCellValue(sm.profile.getFullName()); c1.setCellStyle(cellStyle);
                 Cell c2 = r.createCell(2); c2.setCellValue(sm.profile.getStudentNumber()); c2.setCellStyle(cellCenterStyle);
                 Cell c3 = r.createCell(3);
@@ -667,7 +1030,7 @@ public class EmailReportService {
                         Cell cTime = r.createCell(timeCol); cTime.setCellValue("--"); cTime.setCellStyle(cellCenterStyle);
                     }
                 }
-                sIdx++;
+                cIdx++;
             }
 
             for (int col = 0; col < rosterHeaders.length; col++) {

@@ -137,12 +137,30 @@ public class ValidationService {
             }
         }
 
+        // Check if this submission is part of a RE_AUDIT (student has already completed this phase)
+        boolean isReAudit = false;
+        List<com.NoZeroDays.backend.common.model.GameSession> activeSessions =
+                gameSessionRepository.findByStudentProfileAndStatus(student, "ACTIVE");
+        if (!activeSessions.isEmpty()) {
+            com.NoZeroDays.backend.common.model.GameSession session = activeSessions.get(0);
+            int canonicalPhase = 1;
+            if ("M1_MATH".equalsIgnoreCase(module)) canonicalPhase = phase;
+            else if ("M2_MULTIPLIERS".equalsIgnoreCase(module)) canonicalPhase = 2 + phase;
+            else if ("M3_BUREAUCRACY".equalsIgnoreCase(module)) canonicalPhase = 4 + phase;
+            else if ("M4_TRIBUNAL".equalsIgnoreCase(module)) canonicalPhase = 7;
+
+            if ("COMPLETED".equalsIgnoreCase(session.getStatus()) || session.getCurrentPhase() > canonicalPhase) {
+                isReAudit = true;
+            }
+        }
+
         // Persist current attempt
         AttemptLog attempt = new AttemptLog();
         attempt.setStudentProfile(student);
         attempt.setModule(module);
         attempt.setPhase(phase);
         attempt.setStep(step);
+        attempt.setAttemptType(isReAudit ? "RE_AUDIT" : "FIRST_ATTEMPT");
         attempt.setSuccessful(success);
         attempt.setRedHerring(isRedHerring);
         attempt.setFeedbackMessage(message);
@@ -215,6 +233,7 @@ public class ValidationService {
             resetBarrier.setFeedbackMessage("[DRILL_RESET] Strike counter reset after Infinite Drill trigger.");
             resetBarrier.setUserInputData("system=DRILL_RESET");
             resetBarrier.setExpectedData("system=DRILL_RESET");
+            resetBarrier.setAttemptType(isReAudit ? "RE_AUDIT" : "FIRST_ATTEMPT");
             attemptLogRepository.save(resetBarrier);
         }
 

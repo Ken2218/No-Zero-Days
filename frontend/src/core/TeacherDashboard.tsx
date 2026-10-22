@@ -3,17 +3,38 @@ import API_BASE_URL from '../config';
 import './TeacherLobby.css';
 import './TeacherDashboard.css';
 
-interface PhaseDetail {
-  phaseId: number;
-  title: string;
-  module: string;
-  phaseIndex: number;
-  status: 'COMPLETED' | 'ACTIVE' | 'LOCKED';
+interface PhaseStreamDetail {
+  status: 'COMPLETED' | 'ACTIVE' | 'LOCKED' | 'NOT_ATTEMPTED';
   attempts: number;
   failedAttempts: number;
   bestScore: number;
   timeSpentSeconds: number;
   timeSpentFormatted: string;
+  hasReAudited?: boolean;
+}
+
+interface PhaseDetail {
+  phaseId: number;
+  title: string;
+  module: string;
+  phaseIndex: number;
+  status: 'COMPLETED' | 'ACTIVE' | 'LOCKED' | 'NOT_ATTEMPTED';
+  attempts: number;
+  failedAttempts: number;
+  bestScore: number;
+  timeSpentSeconds: number;
+  timeSpentFormatted: string;
+  firstAttempt?: PhaseStreamDetail;
+  reAudit?: PhaseStreamDetail;
+}
+
+interface StudentStreamDetail {
+  completedPhases: number;
+  attempts: number;
+  totalTimeSpentSeconds: number;
+  totalTimeFormatted: string;
+  status: string;
+  hasReAudited?: boolean;
 }
 
 interface StudentProgress {
@@ -28,6 +49,9 @@ interface StudentProgress {
   totalTimeSpentSeconds: number;
   totalTimeFormatted: string;
   phases: PhaseDetail[];
+  firstAttempt?: StudentStreamDetail;
+  reAudit?: StudentStreamDetail;
+  hasReAudited?: boolean;
 }
 
 interface PhaseSummaryStat {
@@ -47,6 +71,10 @@ interface DashboardSummary {
   activeStudents: number;
   totalAttempts: number;
   phaseStats: PhaseSummaryStat[];
+  firstAttemptPhaseStats?: PhaseSummaryStat[];
+  reAuditPhaseStats?: PhaseSummaryStat[];
+  firstAttemptCompletedStudents?: number;
+  reAuditStudentsCount?: number;
 }
 
 interface TeacherDashboardProps {
@@ -94,6 +122,7 @@ export default function TeacherDashboard({
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState<'ALL' | 'ACTIVE' | 'COMPLETED'>('ALL');
   const [expandedStudent, setExpandedStudent] = useState<string | null>(null);
+  const [auditAttemptMode, setAuditAttemptMode] = useState<'FIRST_ATTEMPT' | 'RE_AUDIT' | 'ALL'>('FIRST_ATTEMPT');
 
   // Add student modal
   const [showAddModal, setShowAddModal] = useState(false);
@@ -382,9 +411,75 @@ export default function TeacherDashboard({
     }
   };
 
-  // Filtered students
+  // Active Phase Stats for the selected audit stream
+  const activePhaseStats: PhaseSummaryStat[] = useMemo(() => {
+    if (!summary) return [];
+    if (auditAttemptMode === 'FIRST_ATTEMPT' && summary.firstAttemptPhaseStats && summary.firstAttemptPhaseStats.length > 0) {
+      return summary.firstAttemptPhaseStats;
+    }
+    if (auditAttemptMode === 'RE_AUDIT' && summary.reAuditPhaseStats && summary.reAuditPhaseStats.length > 0) {
+      return summary.reAuditPhaseStats;
+    }
+    return summary.phaseStats || [];
+  }, [summary, auditAttemptMode]);
+
+  // Transformed students list reflecting the selected audit stream
+  const displayedStudents = useMemo(() => {
+    return students.map(s => {
+      if (auditAttemptMode === 'FIRST_ATTEMPT' && s.firstAttempt) {
+        return {
+          ...s,
+          completedPhases: s.firstAttempt.completedPhases,
+          attempts: s.firstAttempt.attempts,
+          totalTimeSpentSeconds: s.firstAttempt.totalTimeSpentSeconds,
+          totalTimeFormatted: s.firstAttempt.totalTimeFormatted,
+          status: s.firstAttempt.status,
+          phases: (s.phases || []).map(p => {
+            const f = p.firstAttempt;
+            if (!f) return p;
+            return {
+              ...p,
+              status: f.status as any,
+              attempts: f.attempts,
+              failedAttempts: f.failedAttempts,
+              bestScore: f.bestScore,
+              timeSpentSeconds: f.timeSpentSeconds,
+              timeSpentFormatted: f.timeSpentFormatted
+            };
+          })
+        };
+      }
+      if (auditAttemptMode === 'RE_AUDIT' && s.reAudit) {
+        return {
+          ...s,
+          completedPhases: s.reAudit.completedPhases,
+          attempts: s.reAudit.attempts,
+          totalTimeSpentSeconds: s.reAudit.totalTimeSpentSeconds,
+          totalTimeFormatted: s.reAudit.totalTimeFormatted,
+          status: s.reAudit.status,
+          hasReAudited: s.reAudit.hasReAudited,
+          phases: (s.phases || []).map(p => {
+            const r = p.reAudit;
+            if (!r) return p;
+            return {
+              ...p,
+              status: r.status as any,
+              attempts: r.attempts,
+              failedAttempts: r.failedAttempts,
+              bestScore: r.bestScore,
+              timeSpentSeconds: r.timeSpentSeconds,
+              timeSpentFormatted: r.timeSpentFormatted
+            };
+          })
+        };
+      }
+      return s;
+    });
+  }, [students, auditAttemptMode]);
+
+  // Filtered students based on search and status
   const filteredStudents = useMemo(() => {
-    return students.filter(s => {
+    return displayedStudents.filter(s => {
       const matchesSearch =
         s.fullName.toLowerCase().includes(searchQuery.toLowerCase()) ||
         s.studentNumber.toLowerCase().includes(searchQuery.toLowerCase());
@@ -392,23 +487,23 @@ export default function TeacherDashboard({
         filterStatus === 'ALL' ? true : s.status === filterStatus;
       return matchesSearch && matchesStatus;
     });
-  }, [students, searchQuery, filterStatus]);
+  }, [displayedStudents, searchQuery, filterStatus]);
 
-  // Total class completion percent
+  // Total class completion percent for current stream
   const totalCompletionPercent = useMemo(() => {
-    if (students.length === 0) return 0;
-    const totalPhasesPossible = students.length * 7;
-    const completedPhasesSum = students.reduce((sum, s) => sum + s.completedPhases, 0);
+    if (displayedStudents.length === 0) return 0;
+    const totalPhasesPossible = displayedStudents.length * 7;
+    const completedPhasesSum = displayedStudents.reduce((sum, s) => sum + s.completedPhases, 0);
     return Math.round((completedPhasesSum / totalPhasesPossible) * 100);
-  }, [students]);
+  }, [displayedStudents]);
 
   // ---------------------------------------------------------------------------
   // SVG CHARTS RENDERERS
   // ---------------------------------------------------------------------------
 
   const renderFunnelChart = () => {
-    const phaseStats = summary?.phaseStats || [];
-    const total = summary?.totalStudents || students.length || 1;
+    const phaseStats = activePhaseStats;
+    const total = summary?.totalStudents || displayedStudents.length || 1;
 
     return (
       <div style={{ width: '100%', overflowX: 'auto' }}>
@@ -427,7 +522,9 @@ export default function TeacherDashboard({
                   <div
                     style={{
                       width: `${percent}%`,
-                      background: 'linear-gradient(90deg, #10b981, #06b6d4)',
+                      background: auditAttemptMode === 'RE_AUDIT'
+                        ? 'linear-gradient(90deg, #10b981, #059669)'
+                        : 'linear-gradient(90deg, #10b981, #06b6d4)',
                       height: '100%',
                       transition: 'width 0.5s ease',
                       boxShadow: percent > 0 ? '0 0 10px rgba(16, 185, 129, 0.4)' : 'none'
@@ -456,7 +553,9 @@ export default function TeacherDashboard({
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '20px', marginTop: '16px', fontSize: '0.8rem' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
             <span style={{ width: '12px', height: '12px', background: '#10b981', borderRadius: '2px', display: 'inline-block' }}></span>
-            <span style={{ color: '#94a3b8' }}>Completed</span>
+            <span style={{ color: '#94a3b8' }}>
+              {auditAttemptMode === 'RE_AUDIT' ? 'Re-Audit Completed' : 'Completed'}
+            </span>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
             <span style={{ width: '12px', height: '12px', background: '#f59e0b', borderRadius: '2px', display: 'inline-block' }}></span>
@@ -468,13 +567,15 @@ export default function TeacherDashboard({
   };
 
   const renderTimeChart = () => {
-    const phaseStats = summary?.phaseStats || [];
+    const phaseStats = activePhaseStats;
     const maxTime = Math.max(...phaseStats.map(p => p.avgTimeSeconds), 60);
 
     return (
       <div style={{ width: '100%', overflowX: 'auto' }}>
         <p style={{ color: '#94a3b8', fontSize: '0.85rem', marginTop: 0, marginBottom: '20px' }}>
-          Average duration students took to successfully conquer each phase. Highlights key learning bottlenecks.
+          {auditAttemptMode === 'RE_AUDIT'
+            ? 'Average duration students took during Re-Audit practice. Demonstrates mastery speedup.'
+            : 'Average duration students took to successfully conquer each phase on initial audit. Highlights key learning bottlenecks.'}
         </p>
         <div style={{ display: 'flex', alignItems: 'flex-end', gap: '16px', height: '220px', paddingBottom: '30px', borderBottom: '1px solid #334155', minWidth: '650px' }}>
           {phaseStats.map((p, idx) => {
@@ -492,7 +593,9 @@ export default function TeacherDashboard({
                     height: `${barHeight}px`,
                     background: isHighest
                       ? 'linear-gradient(180deg, #f59e0b, #b45309)'
-                      : 'linear-gradient(180deg, #0ea5e9, #1e3a8a)',
+                      : (auditAttemptMode === 'RE_AUDIT'
+                          ? 'linear-gradient(180deg, #10b981, #065f46)'
+                          : 'linear-gradient(180deg, #0ea5e9, #1e3a8a)'),
                     borderRadius: '4px 4px 0 0',
                     transition: 'height 0.4s ease',
                     boxShadow: isHighest ? '0 0 15px rgba(245, 158, 11, 0.4)' : 'none'
@@ -520,13 +623,15 @@ export default function TeacherDashboard({
   };
 
   const renderAttemptsChart = () => {
-    const phaseStats = summary?.phaseStats || [];
+    const phaseStats = activePhaseStats;
     const maxAttempts = Math.max(...phaseStats.map(p => p.avgAttempts), 5);
 
     return (
       <div style={{ width: '100%', overflowX: 'auto' }}>
         <p style={{ color: '#94a3b8', fontSize: '0.85rem', marginTop: 0, marginBottom: '20px' }}>
-          Average calculation attempts submitted per phase. Spikes reflect where Infinite Drills or mistakes occurred.
+          {auditAttemptMode === 'RE_AUDIT'
+            ? 'Average attempts during Re-Audit runs. Shows how quickly students solve scenarios on subsequent practice.'
+            : 'Average calculation attempts submitted on First Attempt. Spikes reflect where Infinite Drills or mistakes occurred.'}
         </p>
         <div style={{ display: 'flex', alignItems: 'flex-end', gap: '16px', height: '220px', paddingBottom: '30px', borderBottom: '1px solid #334155', minWidth: '650px' }}>
           {phaseStats.map((p, idx) => {
@@ -544,7 +649,9 @@ export default function TeacherDashboard({
                     height: `${barHeight}px`,
                     background: isFriction
                       ? 'linear-gradient(180deg, #ef4444, #991b1b)'
-                      : 'linear-gradient(180deg, #a855f7, #6b21a8)',
+                      : (auditAttemptMode === 'RE_AUDIT'
+                          ? 'linear-gradient(180deg, #34d399, #047857)'
+                          : 'linear-gradient(180deg, #a855f7, #6b21a8)'),
                     borderRadius: '4px 4px 0 0',
                     transition: 'height 0.4s ease',
                     boxShadow: isFriction ? '0 0 12px rgba(239, 68, 68, 0.4)' : 'none'
@@ -572,14 +679,24 @@ export default function TeacherDashboard({
   };
 
   const renderStatusDonut = () => {
-    const total = students.length || 1;
-    const completed = students.filter(s => s.completedPhases === 7).length;
-    const inProgress = students.filter(s => s.completedPhases > 0 && s.completedPhases < 7).length;
-    const justStarted = students.filter(s => s.completedPhases === 0).length;
+    const total = displayedStudents.length || 1;
+    const completed = displayedStudents.filter(s => s.completedPhases === 7).length;
+    const inProgress = displayedStudents.filter(s => s.completedPhases > 0 && s.completedPhases < 7).length;
+    const justStarted = displayedStudents.filter(s => s.completedPhases === 0).length;
 
     const completedPct = Math.round((completed / total) * 100);
     const inProgressPct = Math.round((inProgress / total) * 100);
     const justStartedPct = Math.round((justStarted / total) * 100);
+
+    const completedLabel = auditAttemptMode === 'RE_AUDIT'
+      ? 'Mastered Re-Audit (7/7):'
+      : (auditAttemptMode === 'FIRST_ATTEMPT' ? '1st Attempt Passed (7/7):' : 'Fully Passed (7/7):');
+    const inProgressLabel = auditAttemptMode === 'RE_AUDIT'
+      ? 'Re-Auditing (1-6):'
+      : 'In Progress (1-6):';
+    const justStartedLabel = auditAttemptMode === 'RE_AUDIT'
+      ? 'No Re-Audit Yet:'
+      : 'At Starting Line:';
 
     return (
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '40px', flexWrap: 'wrap', padding: '10px 0' }}>
@@ -605,7 +722,7 @@ export default function TeacherDashboard({
             position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
             display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center'
           }}>
-            <span style={{ fontSize: '1.4rem', fontWeight: 'bold', color: '#fff' }}>{students.length}</span>
+            <span style={{ fontSize: '1.4rem', fontWeight: 'bold', color: '#fff' }}>{displayedStudents.length}</span>
             <span style={{ fontSize: '0.7rem', color: '#94a3b8' }}>STUDENTS</span>
           </div>
         </div>
@@ -613,17 +730,17 @@ export default function TeacherDashboard({
         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <span style={{ width: '14px', height: '14px', background: '#10b981', borderRadius: '3px' }}></span>
-            <span style={{ color: '#e2e8f0', fontSize: '0.9rem' }}>Fully Passed (7/7):</span>
+            <span style={{ color: '#e2e8f0', fontSize: '0.9rem' }}>{completedLabel}</span>
             <strong style={{ color: '#10b981' }}>{completed} ({completedPct}%)</strong>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <span style={{ width: '14px', height: '14px', background: '#3b82f6', borderRadius: '3px' }}></span>
-            <span style={{ color: '#e2e8f0', fontSize: '0.9rem' }}>In Progress (1-6):</span>
+            <span style={{ color: '#e2e8f0', fontSize: '0.9rem' }}>{inProgressLabel}</span>
             <strong style={{ color: '#60a5fa' }}>{inProgress} ({inProgressPct}%)</strong>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <span style={{ width: '14px', height: '14px', background: '#1e293b', borderRadius: '3px', border: '1px solid #475569' }}></span>
-            <span style={{ color: '#e2e8f0', fontSize: '0.9rem' }}>At Starting Line:</span>
+            <span style={{ color: '#e2e8f0', fontSize: '0.9rem' }}>{justStartedLabel}</span>
             <strong style={{ color: '#94a3b8' }}>{justStarted} ({justStartedPct}%)</strong>
           </div>
         </div>
@@ -892,31 +1009,51 @@ export default function TeacherDashboard({
 
         {/* CHARTS SECTION */}
         <section className="chart-section">
-          <div className="chart-tabs">
-            <button
-              className={`chart-tab-btn ${activeChartTab === 'funnel' ? 'active' : ''}`}
-              onClick={() => setActiveChartTab('funnel')}
-            >
-              📊 PHASE PROGRESSION FUNNEL
-            </button>
-            <button
-              className={`chart-tab-btn ${activeChartTab === 'time' ? 'active' : ''}`}
-              onClick={() => setActiveChartTab('time')}
-            >
-              ⏱️ AVG TIME PER PHASE
-            </button>
-            <button
-              className={`chart-tab-btn ${activeChartTab === 'attempts' ? 'active' : ''}`}
-              onClick={() => setActiveChartTab('attempts')}
-            >
-              🎯 ATTEMPTS & FRICTION
-            </button>
-            <button
-              className={`chart-tab-btn ${activeChartTab === 'status' ? 'active' : ''}`}
-              onClick={() => setActiveChartTab('status')}
-            >
-              🍩 COHORT STATUS
-            </button>
+          <div className="chart-header-controls">
+            <div className="chart-tabs">
+              <button
+                className={`chart-tab-btn ${activeChartTab === 'funnel' ? 'active' : ''}`}
+                onClick={() => setActiveChartTab('funnel')}
+              >
+                📊 PHASE PROGRESSION FUNNEL
+              </button>
+              <button
+                className={`chart-tab-btn ${activeChartTab === 'time' ? 'active' : ''}`}
+                onClick={() => setActiveChartTab('time')}
+              >
+                ⏱️ AVG TIME PER PHASE
+              </button>
+              <button
+                className={`chart-tab-btn ${activeChartTab === 'attempts' ? 'active' : ''}`}
+                onClick={() => setActiveChartTab('attempts')}
+              >
+                🎯 ATTEMPTS & FRICTION
+              </button>
+              <button
+                className={`chart-tab-btn ${activeChartTab === 'status' ? 'active' : ''}`}
+                onClick={() => setActiveChartTab('status')}
+              >
+                🍩 COHORT STATUS
+              </button>
+            </div>
+
+            {/* AUDIT ATTEMPT STREAM DROPDOWN (Right of Cohort Status) */}
+            <div className="audit-attempt-selector">
+              <label className="audit-selector-label" htmlFor="auditAttemptSelect">
+                AUDIT DATA STREAM:
+              </label>
+              <select
+                id="auditAttemptSelect"
+                className="audit-selector-dropdown"
+                value={auditAttemptMode}
+                onChange={(e) => setAuditAttemptMode(e.target.value as any)}
+                title="Filter metrics by First Attempt, Re-Audit practice, or Combined"
+              >
+                <option value="FIRST_ATTEMPT">🎯 First Attempt (Initial Diagnostic)</option>
+                <option value="RE_AUDIT">↻ Re-Audit Attempt (Practice &amp; Mastery)</option>
+                <option value="ALL">Σ All Attempts (Combined Stream)</option>
+              </select>
+            </div>
           </div>
 
           <div className="chart-canvas-wrapper">
@@ -932,7 +1069,13 @@ export default function TeacherDashboard({
           <div className="roster-title-group">
             <h2>STUDENT AUDIT ROSTER</h2>
             <span style={{ color: '#64748b', fontSize: '0.85rem' }}>
-              Showing {filteredStudents.length} of {students.length} students
+              Showing {filteredStudents.length} of {students.length} students • Mode:{' '}
+              <strong style={{
+                color: auditAttemptMode === 'FIRST_ATTEMPT' ? '#60a5fa' : auditAttemptMode === 'RE_AUDIT' ? '#34d399' : '#fbbf24',
+                letterSpacing: '0.5px'
+              }}>
+                {auditAttemptMode === 'FIRST_ATTEMPT' ? 'First Attempt Baseline' : auditAttemptMode === 'RE_AUDIT' ? 'Re-Audit Practice & Mastery' : 'All Combined'}
+              </strong>
             </span>
           </div>
 
@@ -1022,6 +1165,11 @@ export default function TeacherDashboard({
                       <h3 className="stu-name">{stu.fullName}</h3>
                       <div className="stu-id-section">
                         <span>{stu.studentNumber}</span> • <span>{stu.section || roomSection}</span>
+                        {stu.hasReAudited && (
+                          <span className="badge-reaudit-active" title="Student has engaged in Re-Audit practice">
+                            ↻ RE-AUDITED
+                          </span>
+                        )}
                       </div>
                     </div>
                     <span className={`badge-status ${isCompleted ? 'badge-passed' : 'badge-active'}`}>
@@ -1032,24 +1180,34 @@ export default function TeacherDashboard({
                   {/* Progress Bar */}
                   <div className="progress-bar-container">
                     <div className="progress-header">
-                      <span style={{ color: '#94a3b8' }}>Phases Completed</span>
+                      <span style={{ color: '#94a3b8' }}>
+                        {auditAttemptMode === 'RE_AUDIT' ? 'Re-Audited Phases' : 'Phases Completed'}
+                      </span>
                       <strong style={{ color: isCompleted ? '#34d399' : '#60a5fa' }}>
                         {percent}% ({stu.completedPhases} / 7)
                       </strong>
                     </div>
                     <div className="progress-track">
-                      <div className="progress-fill" style={{ width: `${percent}%` }}></div>
+                      <div
+                        className="progress-fill"
+                        style={{
+                          width: `${percent}%`,
+                          background: auditAttemptMode === 'RE_AUDIT'
+                            ? 'linear-gradient(90deg, #10b981, #059669)'
+                            : undefined
+                        }}
+                      ></div>
                     </div>
                   </div>
 
                   {/* Quick stats: Total Time & Attempts */}
                   <div className="stu-quick-stats">
                     <div className="stat-item">
-                      <span>TOTAL TIME SPENT</span>
+                      <span>{auditAttemptMode === 'RE_AUDIT' ? 'RE-AUDIT TIME' : 'TOTAL TIME SPENT'}</span>
                       <strong style={{ color: '#38bdf8' }}>{stu.totalTimeFormatted || '--'}</strong>
                     </div>
                     <div className="stat-item">
-                      <span>TOTAL ATTEMPTS</span>
+                      <span>{auditAttemptMode === 'RE_AUDIT' ? 'RE-AUDIT TRIES' : 'TOTAL ATTEMPTS'}</span>
                       <strong style={{ color: stu.attempts === 0 ? '#10b981' : stu.attempts >= 3 ? '#f87171' : '#fbbf24' }}>
                         {stu.attempts} attempt{stu.attempts !== 1 ? 's' : ''}
                       </strong>
@@ -1076,9 +1234,9 @@ export default function TeacherDashboard({
                   {/* Phase Chips Row (P1 to P7) */}
                   <div className="phases-grid-container">
                     <div className="phases-grid-title">
-                      <span>PHASE STATUS & METRICS</span>
+                      <span>PHASE STATUS &amp; METRICS</span>
                       <span style={{ color: '#60a5fa', cursor: 'pointer' }} onClick={() => setExpandedStudent(isExpanded ? null : stu.studentNumber)}>
-                        {isExpanded ? '▲ Hide Breakdown' : '▼ View Breakdown'}
+                        {isExpanded ? '▲ Hide Breakdown' : '▼ Compare 1st vs Re-Audit'}
                       </span>
                     </div>
 
@@ -1098,31 +1256,59 @@ export default function TeacherDashboard({
                       ))}
                     </div>
 
-                    {/* Detailed Accordion for this student */}
+                    {/* Detailed Accordion for this student: Side-by-side First Attempt vs Re-Audit */}
                     {isExpanded && (
                       <div className="phase-details-list">
-                        {(stu.phases || []).map((p) => (
-                          <div key={p.phaseId} className={`phase-detail-row ${p.status}`}>
-                            <div className="p-name">
-                              P{p.phaseId}: {p.title.replace(/^Phase \d+: /, '')}
+                        <div className="comparative-detail-header">
+                          <span>PHASE</span>
+                          <span>1ST ATTEMPT</span>
+                          <span>RE-AUDIT</span>
+                          <span>STATUS</span>
+                        </div>
+                        {(stu.phases || []).map((p) => {
+                          const first = p.firstAttempt;
+                          const re = p.reAudit;
+                          return (
+                            <div key={p.phaseId} className={`comparative-detail-row ${p.status}`}>
+                              <div className="p-col-name">
+                                <strong>P{p.phaseId}</strong>: {p.title.replace(/^Phase \d+: /, '')}
+                              </div>
+                              <div className="p-col-first">
+                                <span className="p-metric-tag" title="First attempt tries">
+                                  🎯 {first?.attempts ?? p.attempts} att
+                                </span>
+                                <span className="p-metric-tag" title="First attempt duration">
+                                  ⏱️ {first?.timeSpentFormatted ?? p.timeSpentFormatted}
+                                </span>
+                              </div>
+                              <div className="p-col-reaudit">
+                                {re && re.hasReAudited ? (
+                                  <>
+                                    <span className="p-metric-tag reaudit" title="Re-audit practice tries">
+                                      ↻ {re.attempts} att
+                                    </span>
+                                    <span className="p-metric-tag reaudit" title="Re-audit duration">
+                                      ⏱️ {re.timeSpentFormatted}
+                                    </span>
+                                  </>
+                                ) : (
+                                  <span style={{ color: '#64748b', fontSize: '0.75rem', fontStyle: 'italic' }}>
+                                    --
+                                  </span>
+                                )}
+                              </div>
+                              <div className="p-col-status">
+                                <span style={{
+                                  fontSize: '0.75rem',
+                                  color: p.status === 'COMPLETED' ? '#10b981' : p.status === 'ACTIVE' ? '#f59e0b' : '#64748b',
+                                  fontWeight: 'bold'
+                                }}>
+                                  {p.status}
+                                </span>
+                              </div>
                             </div>
-                            <div className="p-metrics">
-                              <span className="p-attempts" title="Attempts count">
-                                🎯 {p.attempts} att
-                              </span>
-                              <span className="p-time" title="Time taken in this phase">
-                                ⏱️ {p.timeSpentFormatted}
-                              </span>
-                              <span style={{
-                                fontSize: '0.75rem',
-                                color: p.status === 'COMPLETED' ? '#10b981' : p.status === 'ACTIVE' ? '#f59e0b' : '#64748b',
-                                fontWeight: 'bold'
-                              }}>
-                                {p.status}
-                              </span>
-                            </div>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     )}
                   </div>
@@ -1157,9 +1343,15 @@ export default function TeacherDashboard({
               <thead>
                 <tr>
                   <th style={{ width: '220px' }}>STUDENT</th>
-                  <th style={{ width: '100px' }}>TOTAL TIME</th>
-                  <th style={{ width: '80px' }}>ATTEMPTS</th>
-                  <th style={{ width: '90px' }}>PROGRESS</th>
+                  <th style={{ width: '110px' }}>
+                    {auditAttemptMode === 'RE_AUDIT' ? 'RE-AUDIT TIME' : 'TOTAL TIME'}
+                  </th>
+                  <th style={{ width: '90px' }}>
+                    {auditAttemptMode === 'RE_AUDIT' ? 'RE-AUD TRIES' : 'ATTEMPTS'}
+                  </th>
+                  <th style={{ width: '100px' }}>
+                    {auditAttemptMode === 'RE_AUDIT' ? 'RE-AUD PASSED' : 'PROGRESS'}
+                  </th>
                   <th>P1: GROSS</th>
                   <th>P2: TARDY</th>
                   <th>P3: OT</th>
