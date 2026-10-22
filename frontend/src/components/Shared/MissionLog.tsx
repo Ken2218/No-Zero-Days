@@ -93,6 +93,7 @@ interface MissionLogProps {
   handleValidateTribunal: () => Promise<void>;
   tribunalStatus: 'ACTIVE' | 'SUCCESS' | 'ERROR';
   onReturnToDashboard?: () => void;
+  timerSeconds?: number;
 }
 
 export default function MissionLog({
@@ -104,6 +105,7 @@ export default function MissionLog({
   handleRerollScenario,
   setCurrentView,
   onReturnToDashboard,
+  timerSeconds = 0,
   student,
 
   extractedA,
@@ -183,15 +185,44 @@ export default function MissionLog({
   tribunalStatus
 }: MissionLogProps) {
 
+  const formatTimer = (totalSec: number) => {
+    const mins = Math.floor(totalSec / 60);
+    const secs = totalSec % 60;
+    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  };
+
   if (activePhaseIndex === 7) {
     // Tribunal Boardroom UI
     return (
       <div className="right-panel">
         <div className="mission-header" style={{ borderBottom: '2px solid #ef4444' }}>
           <h3 style={{ color: '#ef4444', letterSpacing: '1px' }}>⚖️ TRIBUNAL AUDIT LOG [PHASE 7]</h3>
-          <span className="timer" style={{ color: tribunalStatus === 'SUCCESS' ? '#10b981' : '#ef4444' }}>
-            {tribunalStatus === 'SUCCESS' ? '🟢 PASSED' : '🔴 PENDING AUDIT'}
-          </span>
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+            <span
+              className="phase-realtime-timer"
+              title="Active phase duration (pauses when returning to dashboard)"
+              style={{
+                fontFamily: "'Courier New', Courier, monospace",
+                fontWeight: 700,
+                fontSize: '0.85rem',
+                color: '#38bdf8',
+                backgroundColor: 'rgba(56, 189, 248, 0.12)',
+                border: '1px solid rgba(56, 189, 248, 0.35)',
+                padding: '2px 8px',
+                borderRadius: '4px',
+                letterSpacing: '1px',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '4px',
+                boxShadow: '0 0 8px rgba(56, 189, 248, 0.15)'
+              }}
+            >
+              ⏱ {formatTimer(timerSeconds || 0)}
+            </span>
+            <span className="timer" style={{ color: tribunalStatus === 'SUCCESS' ? '#10b981' : '#ef4444', fontWeight: 600 }}>
+              {tribunalStatus === 'SUCCESS' ? '🟢 PASSED' : '🔴 PENDING AUDIT'}
+            </span>
+          </div>
         </div>
 
         <div className="tracker-steps" style={{ overflowY: 'auto', padding: '10px 0' }}>
@@ -412,9 +443,32 @@ export default function MissionLog({
     <div className="right-panel">
       <div className="mission-header">
         <h3>⚡ COGNITIVE AUDIT LOG</h3>
-        <span className="timer" style={{ color: step3Status === 'SUCCESS' ? '#10b981' : '#f59e0b' }}>
-          {step3Status === 'SUCCESS' ? '🟢 UNLOCKED' : '🔴 IN PROGRESS'}
-        </span>
+        <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+          <span
+            className="phase-realtime-timer"
+            title="Active phase duration (pauses when returning to dashboard)"
+            style={{
+              fontFamily: "'Courier New', Courier, monospace",
+              fontWeight: 700,
+              fontSize: '0.85rem',
+              color: '#38bdf8',
+              backgroundColor: 'rgba(56, 189, 248, 0.12)',
+              border: '1px solid rgba(56, 189, 248, 0.35)',
+              padding: '2px 8px',
+              borderRadius: '4px',
+              letterSpacing: '1px',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '4px',
+              boxShadow: '0 0 8px rgba(56, 189, 248, 0.15)'
+            }}
+          >
+            ⏱ {formatTimer(timerSeconds || 0)}
+          </span>
+          <span className="timer" style={{ color: (isSynthesisSupported ? step4Status === 'SUCCESS' : step3Status === 'SUCCESS') ? '#10b981' : '#f59e0b', fontWeight: 600 }}>
+            {(isSynthesisSupported ? step4Status === 'SUCCESS' : step3Status === 'SUCCESS') ? '🟢 UNLOCKED' : '🔴 IN PROGRESS'}
+          </span>
+        </div>
       </div>
 
       <div className="tracker-steps" style={{ overflowY: 'auto' }}>

@@ -254,9 +254,104 @@ function App() {
 
   const handleReturnToDashboard = () => {
     notifyPhaseExit();
-    handleRerollScenario(false, activePhaseIndex);
     setCurrentView('DASHBOARD');
   };
+
+  // Real-time per-phase elapsed timer (seconds)
+  const [phaseTimers, setPhaseTimers] = useState<{ [phase: number]: number }>(() => {
+    const initial: { [phase: number]: number } = {};
+    for (let p = 1; p <= 7; p++) {
+      try {
+        const saved = localStorage.getItem(`phase_timer_${p}`);
+        initial[p] = saved ? parseInt(saved, 10) : 0;
+      } catch (_) {
+        initial[p] = 0;
+      }
+    }
+    return initial;
+  });
+
+  const isCurrentPhaseComplete = activePhaseIndex === 1
+    ? step3Status === 'SUCCESS'
+    : activePhaseIndex === 7
+      ? tribunalStatus === 'SUCCESS'
+      : step4Status === 'SUCCESS';
+
+  // Live timer interval: ticks every 1 second when active inside a phase room
+  useEffect(() => {
+    if (!isStudentInPhase || isCurrentPhaseComplete) return;
+
+    const timerInterval = setInterval(() => {
+      setPhaseTimers(prev => {
+        const nextVal = (prev[activePhaseIndex] || 0) + 1;
+        try {
+          localStorage.setItem(`phase_timer_${activePhaseIndex}`, nextVal.toString());
+        } catch (_) {}
+        return { ...prev, [activePhaseIndex]: nextVal };
+      });
+    }, 1000);
+
+    return () => clearInterval(timerInterval);
+  }, [isStudentInPhase, activePhaseIndex, isCurrentPhaseComplete]);
+
+  // Auto-persist active phase progress to sessionStorage so leaving to dashboard or reloading doesn't wipe progress
+  useEffect(() => {
+    if (!isStudentInPhase || !scenario || !(scenario as any).phaseId) return;
+    try {
+      const stateToSave = {
+        phaseId: activePhaseIndex,
+        scenario,
+        extractedA,
+        extractedB,
+        step1Status,
+        extractionAttempts,
+        selectedRule,
+        step2Status,
+        calculatedValue,
+        step3Status,
+        netPayValue,
+        step4Status,
+        grossPayValue,
+        grossPayStatus,
+        netPayFormula,
+        netFormulaStatus,
+        pagIbigDeductionValue,
+        pagIbigDeductionStatus,
+        philhealthErValue,
+        philhealthSssEeValue,
+        philhealthErStatus,
+        trueOtHoursValue,
+        trueOtHoursStatus,
+        otMultiplierValue,
+        otMultiplierStatus,
+        otFormulaValue,
+        otFormulaStatus,
+        holidayTypeValue,
+        holidayMultiplierValue,
+        holidayFormulaValue,
+        holidayFormulaStatus,
+        tribunalGross,
+        tribunalDeductions,
+        tribunalNet,
+        tribunalStatus
+      };
+      sessionStorage.setItem(`phase_progress_${activePhaseIndex}`, JSON.stringify(stateToSave));
+    } catch (_) {}
+  }, [
+    isStudentInPhase,
+    activePhaseIndex,
+    scenario,
+    extractedA,
+    extractedB,
+    step1Status,
+    selectedRule,
+    step2Status,
+    calculatedValue,
+    step3Status,
+    step4Status,
+    grossPayStatus,
+    tribunalStatus
+  ]);
 
   // 1. Hook into phase transition / component unmount lifecycle:
   // When entering a phase, start/resume the timer.
@@ -603,7 +698,20 @@ function App() {
       newScenario = generatePhase7Scenario();
     }
 
+    if (newScenario) {
+      (newScenario as any).phaseId = phaseToUse;
+    }
     setScenario(newScenario);
+
+    // Reset this phase's timer upon a genuine scenario reroll / drill reset
+    setPhaseTimers(prev => {
+      const updated = { ...prev, [phaseToUse]: 0 };
+      try {
+        localStorage.setItem(`phase_timer_${phaseToUse}`, '0');
+        sessionStorage.removeItem(`phase_progress_${phaseToUse}`);
+      } catch (_) {}
+      return updated;
+    });
 
     // Reset simulator inputs
     setExtractedA('');
@@ -659,6 +767,10 @@ function App() {
 
 
   const handleTransitionToNextPhase = () => {
+    try {
+      sessionStorage.removeItem(`phase_progress_${activePhaseIndex}`);
+    } catch (_) {}
+
     if (activePhaseIndex === 1) {
       setCurrentView('PHASE2');
       handleRerollScenario(true, 2);
@@ -1766,8 +1878,59 @@ function App() {
           theme={theme}
           toggleTheme={toggleTheme}
           onSelectPhase={(phase) => {
+            const hasOngoingState = (scenario as any)?.phaseId === phase;
+            let loadedFromStorage = false;
+
+            if (!hasOngoingState) {
+              try {
+                const stored = sessionStorage.getItem(`phase_progress_${phase}`);
+                if (stored) {
+                  const parsed = JSON.parse(stored);
+                  if (parsed && parsed.phaseId === phase && parsed.scenario) {
+                    setScenario(parsed.scenario);
+                    setExtractedA(parsed.extractedA || '');
+                    setExtractedB(parsed.extractedB || '');
+                    setStep1Status(parsed.step1Status || 'ACTIVE');
+                    setExtractionAttempts(parsed.extractionAttempts || 0);
+                    setSelectedRule(parsed.selectedRule || '');
+                    setStep2Status(parsed.step2Status || 'LOCKED');
+                    setCalculatedValue(parsed.calculatedValue || '');
+                    setStep3Status(parsed.step3Status || 'LOCKED');
+                    setNetPayValue(parsed.netPayValue || '');
+                    setStep4Status(parsed.step4Status || 'LOCKED');
+                    setGrossPayValue(parsed.grossPayValue || '');
+                    setGrossPayStatus(parsed.grossPayStatus || 'LOCKED');
+                    setNetPayFormula(parsed.netPayFormula || '');
+                    setNetFormulaStatus(parsed.netFormulaStatus || 'LOCKED');
+                    setPagIbigDeductionValue(parsed.pagIbigDeductionValue || '');
+                    setPagIbigDeductionStatus(parsed.pagIbigDeductionStatus || 'LOCKED');
+                    setPhilhealthErValue(parsed.philhealthErValue || '');
+                    setPhilhealthSssEeValue(parsed.philhealthSssEeValue || '');
+                    setPhilhealthErStatus(parsed.philhealthErStatus || 'LOCKED');
+                    setTrueOtHoursValue(parsed.trueOtHoursValue || '');
+                    setTrueOtHoursStatus(parsed.trueOtHoursStatus || 'LOCKED');
+                    setOtMultiplierValue(parsed.otMultiplierValue || '');
+                    setOtMultiplierStatus(parsed.otMultiplierStatus || 'LOCKED');
+                    setOtFormulaValue(parsed.otFormulaValue || '');
+                    setOtFormulaStatus(parsed.otFormulaStatus || 'LOCKED');
+                    setHolidayTypeValue(parsed.holidayTypeValue || '');
+                    setHolidayMultiplierValue(parsed.holidayMultiplierValue || '');
+                    setHolidayFormulaValue(parsed.holidayFormulaValue || '');
+                    setHolidayFormulaStatus(parsed.holidayFormulaStatus || 'LOCKED');
+                    setTribunalGross(parsed.tribunalGross || '');
+                    setTribunalDeductions(parsed.tribunalDeductions || '');
+                    setTribunalNet(parsed.tribunalNet || '');
+                    setTribunalStatus(parsed.tribunalStatus || 'ACTIVE');
+                    loadedFromStorage = true;
+                  }
+                }
+              } catch (_) {}
+            }
+
             setActivePhaseIndex(phase);
-            handleRerollScenario(true, phase);
+            if (!hasOngoingState && !loadedFromStorage) {
+              handleRerollScenario(true, phase);
+            }
             
             let targetView = 'PHASE';
             if (phase === 1) {
@@ -1910,6 +2073,7 @@ function App() {
           handleRerollScenario={handleRerollScenario}
           setCurrentView={setCurrentView}
           onReturnToDashboard={handleReturnToDashboard}
+          timerSeconds={phaseTimers[activePhaseIndex] || 0}
           student={student}
           extractedA={extractedA}
           setExtractedA={setExtractedA}

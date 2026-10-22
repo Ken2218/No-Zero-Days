@@ -284,6 +284,8 @@ public class EmailReportService {
                 if (firstAttempt != null) {
                     LocalDateTime endRef = lastSuccessful != null ? lastSuccessful : (lastAttempt != null ? lastAttempt : firstAttempt);
                     long diff = ChronoUnit.SECONDS.between(firstAttempt, endRef);
+                    long paused = (session != null && phaseId == currentPhaseIndex) ? session.getAccumulatedPauseSeconds() : 0L;
+                    diff = Math.max(diff - paused, 0L);
                     if (diff <= 0) {
                         diff = Math.max(tries * 45L, 30L);
                     }
