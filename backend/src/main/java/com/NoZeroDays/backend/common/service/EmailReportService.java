@@ -254,36 +254,63 @@ public class EmailReportService {
             String key = MODULES[i] + "_" + PHASES[i];
             List<AttemptLog> phaseAttempts = phaseAttemptsMap.getOrDefault(key, Collections.emptyList());
 
+            int tries = 0;
             int failedCount = 0;
-            int drillResets = 0;
             LocalDateTime firstAttempt = phaseAttempts.isEmpty() ? null : phaseAttempts.get(0).getAttemptTime();
+            LocalDateTime lastAttempt = null;
             LocalDateTime lastSuccessful = null;
             for (AttemptLog log : phaseAttempts) {
                 if ("system=DRILL_RESET".equals(log.getUserInputData())) {
-                    drillResets++;
+                    tries++;
                 } else if (!log.isSuccessful()) {
                     failedCount++;
                 } else {
                     lastSuccessful = log.getAttemptTime();
                 }
+                lastAttempt = log.getAttemptTime();
             }
 
-            // An attempt is counted when the student was wrong 3 times or hit a drill reset
-            int tries = Math.max(drillResets, failedCount / 3);
+            // If no drill reset was triggered, count 1 attempt per 3 failures
+            if (tries == 0 && failedCount > 0) {
+                tries = failedCount / 3;
+            }
             totalAttempts += tries;
 
-            boolean isPhaseDone = isSessionCompleted || phaseId < currentPhaseIndex || (lastSuccessful != null);
+            boolean isPhaseDone = isSessionCompleted || (lastSuccessful != null) || (phaseId < currentPhaseIndex);
             if (isPhaseDone) completedCount++;
 
             long phaseSec = 0;
             if (isPhaseDone) {
-                LocalDateTime startRef = (firstAttempt != null && firstAttempt.isBefore(previousCompletedTime)) ? firstAttempt : previousCompletedTime;
-                LocalDateTime endRef = lastSuccessful != null ? lastSuccessful : startRef;
-                phaseSec = Math.max(ChronoUnit.SECONDS.between(startRef, endRef), tries * 30L);
-                previousCompletedTime = endRef;
+                if (firstAttempt != null) {
+                    LocalDateTime endRef = lastSuccessful != null ? lastSuccessful : (lastAttempt != null ? lastAttempt : firstAttempt);
+                    long diff = ChronoUnit.SECONDS.between(firstAttempt, endRef);
+                    if (diff <= 0) {
+                        diff = Math.max(tries * 45L, 30L);
+                    }
+                    phaseSec = diff;
+                    previousCompletedTime = endRef;
+                } else if (previousCompletedTime != null) {
+                    LocalDateTime endRef = lastSuccessful != null ? lastSuccessful : previousCompletedTime;
+                    long diff = ChronoUnit.SECONDS.between(previousCompletedTime, endRef);
+                    phaseSec = Math.max(diff, 30L);
+                    previousCompletedTime = endRef;
+                }
+                totalSeconds += phaseSec;
             } else if (phaseId == currentPhaseIndex) {
-                LocalDateTime startRef = (firstAttempt != null && firstAttempt.isBefore(previousCompletedTime)) ? firstAttempt : previousCompletedTime;
-                phaseSec = Math.max(ChronoUnit.SECONDS.between(startRef, LocalDateTime.now()), 0L);
+                // Synchronize active phase timer with RoomController (pause/exit aware)
+                if (session != null && session.getPhaseEnteredAt() != null) {
+                    LocalDateTime activeStart = session.getPhaseEnteredAt();
+                    LocalDateTime activeEnd = (session.getPhaseExitedAt() != null)
+                            ? session.getPhaseExitedAt()
+                            : LocalDateTime.now();
+
+                    long diff = ChronoUnit.SECONDS.between(activeStart, activeEnd);
+                    long paused = session.getAccumulatedPauseSeconds();
+                    phaseSec = Math.max(diff - paused, 0L);
+                    totalSeconds += phaseSec;
+                } else {
+                    phaseSec = 0L;
+                }
             }
 
             totalSeconds += phaseSec;
@@ -419,11 +446,19 @@ public class EmailReportService {
         return sb.toString();
     }
 
-    private String formatSeconds(long sec) {
-        if (sec <= 0) return "00m 00s";
-        long mins = sec / 60;
-        long rem = sec % 60;
-        return String.format("%02dm %02ds", mins, rem);
+    private String formatSeconds(long totalSeconds) {
+        if (totalSeconds <= 0) return "--";
+        long hours = totalSeconds / 3600;
+        long minutes = (totalSeconds % 3600) / 60;
+        long seconds = totalSeconds % 60;
+
+        if (hours > 0) {
+            return String.format("%dh %02dm", hours, minutes);
+        } else if (minutes > 0) {
+            return String.format("%dm %02ds", minutes, seconds);
+        } else {
+            return String.format("%ds", seconds);
+        }
     }
 
     /**
