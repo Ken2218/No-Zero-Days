@@ -250,6 +250,13 @@ public class ValidationService {
 
             if (session.getCurrentPhase() <= currentCompletedPhase) {
                 session.setCurrentPhase(currentCompletedPhase + 1);
+
+                // Reset phase presence timer state so the next phase timer does NOT
+                // start until the student explicitly navigates into that phase room.
+                session.setPhaseEnteredAt(null);
+                session.setPhaseExitedAt(null);
+                session.setAccumulatedPauseSeconds(0L);
+
                 if (currentCompletedPhase >= 7) {
                     session.setStatus("COMPLETED");
 

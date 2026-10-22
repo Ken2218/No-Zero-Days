@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import API_BASE_URL from '../config';
 import Phase1Room from '../phases/Phase1/Phase1Room';
 import Phase2Room from '../phases/Phase2/Phase2Room';
@@ -212,6 +212,80 @@ function App() {
   useEffect(() => {
     console.log(`[DEBUG INTRO GATE] Student has seen the narrative briefing intro: ${hasSeenIntro}`);
   }, [hasSeenIntro]);
+
+  // --- PHASE PRESENCE & TIMER LIFECYCLE MANAGEMENT ---
+  // Tracks active presence inside a phase room so the backend timer strictly
+  // pauses when the student navigates away (e.g. to Dashboard) and only resumes
+  // when actively inside the phase room.
+  const isStudentInPhase = currentView.startsWith('PHASE');
+
+  const notifyPhaseEnter = async (phaseIndex?: number) => {
+    const studentNum = (student as any)?.studentNumber;
+    const currentRoom = roomCode || localStorage.getItem('studentRoomCode');
+    if (!studentNum || !currentRoom) return;
+    try {
+      await fetch(`${API_BASE_URL}/api/rooms/${currentRoom}/phase-enter`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          studentNumber: studentNum,
+          phase: phaseIndex || activePhaseIndex
+        })
+      });
+    } catch (err) {
+      console.error('[Timer] Failed to notify phase enter:', err);
+    }
+  };
+
+  const notifyPhaseExit = async () => {
+    const studentNum = (student as any)?.studentNumber;
+    const currentRoom = roomCode || localStorage.getItem('studentRoomCode');
+    if (!studentNum || !currentRoom) return;
+    try {
+      await fetch(`${API_BASE_URL}/api/rooms/${currentRoom}/phase-exit`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ studentNumber: studentNum })
+      });
+    } catch (err) {
+      console.error('[Timer] Failed to notify phase exit:', err);
+    }
+  };
+
+  // 1. Hook into phase transition / component unmount lifecycle:
+  // When entering a phase, start/resume the timer.
+  // When leaving or unmounting, cleanup immediately triggers pause/stop.
+  useEffect(() => {
+    if (isStudentInPhase) {
+      notifyPhaseEnter(activePhaseIndex);
+
+      return () => {
+        notifyPhaseExit();
+      };
+    }
+  }, [isStudentInPhase, activePhaseIndex]);
+
+  // 2. Beacon on page close / unload to freeze timer even if window or tab is closed
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      const studentNum = (student as any)?.studentNumber;
+      const currentRoom = roomCode || localStorage.getItem('studentRoomCode');
+      if (isStudentInPhase && studentNum && currentRoom) {
+        const payload = JSON.stringify({ studentNumber: studentNum });
+        if (navigator.sendBeacon) {
+          const blob = new Blob([payload], { type: 'application/json' });
+          navigator.sendBeacon(`${API_BASE_URL}/api/rooms/${currentRoom}/phase-exit`, blob);
+        }
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    window.addEventListener('pagehide', handleBeforeUnload);
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      window.removeEventListener('pagehide', handleBeforeUnload);
+    };
+  }, [isStudentInPhase, student, roomCode]);
 
   // Poll for pending room invitations when logged in as a student without an active room
   useEffect(() => {
@@ -580,21 +654,27 @@ function App() {
 
   const handleTransitionToNextPhase = () => {
     if (activePhaseIndex === 1) {
+      setCurrentView('PHASE2');
       handleRerollScenario(true, 2);
       setFeedback('Security & Biometrics Room entered. Scan the Biometrics Terminal and DOLE Poster to audit the tardiness deduction.');
     } else if (activePhaseIndex === 2) {
+      setCurrentView('PHASE3');
       handleRerollScenario(true, 3);
       setFeedback('Production Line Room entered. Scan the Production Time Card and DOLE Overtime Poster to audit overtime premiums.');
     } else if (activePhaseIndex === 3) {
+      setCurrentView('PHASE4');
       handleRerollScenario(true, 4);
       setFeedback('Factory Breakroom entered. Scan the Corkboard Corporate Memos and Timesheet Terminal to audit Regular Holiday Pay.');
     } else if (activePhaseIndex === 4) {
+      setCurrentView('PHASE5');
       handleRerollScenario(true, 5);
       setFeedback('PC Lab / Bureaucracy Room entered. Scan the SSS contribution table and employee loan statement on the monitor to audit SSS deductions.');
     } else if (activePhaseIndex === 5) {
+      setCurrentView('PHASE6');
       handleRerollScenario(true, 6);
       setFeedback('PC Lab / Bureaucracy Room entered. Scan the PhilHealth table and HR salary database to audit PhilHealth premium deductions.');
     } else if (activePhaseIndex === 6) {
+      setCurrentView('PHASE7');
       handleRerollScenario(true, 7);
       setFeedback('Executive Boardroom entered. Scan the Master Case File in the Audit Folder on the table to perform the final payroll run.');
     } else {
@@ -623,11 +703,27 @@ function App() {
     return { module, phase };
   };
 
-  // Trigger a toast notification and auto-dismiss it after 3 seconds
-  const triggerRerollToast = (type) => {
+  const rerollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Trigger a toast notification and auto-dismiss it after 3.5 seconds with proper ref cleanup
+  const triggerRerollToast = (type: any) => {
+    if (rerollTimeoutRef.current) {
+      clearTimeout(rerollTimeoutRef.current);
+    }
     setRerollToast(type);
-    setTimeout(() => setRerollToast(null), 3500);
+    rerollTimeoutRef.current = setTimeout(() => {
+      setRerollToast(null);
+      rerollTimeoutRef.current = null;
+    }, 3500);
   };
+
+  useEffect(() => {
+    return () => {
+      if (rerollTimeoutRef.current) {
+        clearTimeout(rerollTimeoutRef.current);
+      }
+    };
+  }, []);
 
   // Submit Step 1: Extraction
   const handleValidateExtraction = async () => {

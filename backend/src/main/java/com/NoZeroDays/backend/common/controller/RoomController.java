@@ -737,6 +737,101 @@ public class RoomController {
     }
 
     // -------------------------------------------------------------------------
+    // 8B. STUDENT PHASE PRESENCE SIGNALS — enter / exit
+    //
+    // Called by the frontend whenever a student enters or leaves a phase room.
+    // These two endpoints drive the accurate per-phase timer by recording the
+    // exact moments the student is actively inside a phase, so idle time spent
+    // on the Dashboard between phases is never counted.
+    // -------------------------------------------------------------------------
+
+    /**
+     * POST /api/rooms/{roomCode}/phase-enter
+     *
+     * Fired by the frontend when the student navigates into a phase room.
+     * - If the student previously exited this phase without completing it,
+     *   the gap (exitedAt -> now) is banked into accumulatedPauseSeconds so
+     *   that pause time can be subtracted when computing net active time.
+     * - Sets phaseEnteredAt = now() to mark the start of the new active window.
+     */
+    @PostMapping("/rooms/{roomCode}/phase-enter")
+    public ResponseEntity<?> notifyPhaseEnter(
+            @PathVariable String roomCode,
+            @RequestBody Map<String, Object> body) {
+
+        String studentNumber = body.get("studentNumber") != null ? body.get("studentNumber").toString() : null;
+        if (studentNumber == null || studentNumber.isBlank()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "studentNumber required"));
+        }
+
+        Optional<StudentProfile> studentOpt = studentRepository.findByStudentNumber(studentNumber.trim());
+        if (studentOpt.isEmpty()) return ResponseEntity.ok(Map.of("ok", true));
+
+        StudentProfile student = studentOpt.get();
+        List<GameSession> sessions = gameSessionRepository.findByStudentProfileAndStatus(student, "ACTIVE");
+        if (sessions.isEmpty()) return ResponseEntity.ok(Map.of("ok", true));
+
+        GameSession session = sessions.get(0);
+        LocalDateTime now = LocalDateTime.now();
+
+        // If student previously exited without completing, bank the pause gap
+        if (session.getPhaseExitedAt() != null) {
+            long pauseGap = ChronoUnit.SECONDS.between(session.getPhaseExitedAt(), now);
+            session.setAccumulatedPauseSeconds(
+                    session.getAccumulatedPauseSeconds() + Math.max(pauseGap, 0));
+            session.setPhaseExitedAt(null); // clear exit marker — student is back
+        }
+
+        // Only set phaseEnteredAt if not already in an active window
+        if (session.getPhaseEnteredAt() == null) {
+            session.setPhaseEnteredAt(now);
+        }
+        gameSessionRepository.save(session);
+
+        System.out.println("[PHASE-ENTER] student=" + studentNumber
+                + " enteredAt=" + session.getPhaseEnteredAt()
+                + " accPause=" + session.getAccumulatedPauseSeconds() + "s");
+
+        return ResponseEntity.ok(Map.of("ok", true, "enteredAt", session.getPhaseEnteredAt().toString()));
+    }
+
+    /**
+     * POST /api/rooms/{roomCode}/phase-exit
+     *
+     * Fired by the frontend when the student leaves a phase room without
+     * completing it (e.g., clicks "Return to Dashboard" or navigates away).
+     * - Sets phaseExitedAt = now() to freeze the active timer.
+     * - phaseEnteredAt is preserved so the RoomController can still compute
+     *   how long this active window lasted.
+     */
+    @PostMapping("/rooms/{roomCode}/phase-exit")
+    public ResponseEntity<?> notifyPhaseExit(
+            @PathVariable String roomCode,
+            @RequestBody Map<String, Object> body) {
+
+        String studentNumber = body.get("studentNumber") != null ? body.get("studentNumber").toString() : null;
+        if (studentNumber == null || studentNumber.isBlank()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "studentNumber required"));
+        }
+
+        Optional<StudentProfile> studentOpt = studentRepository.findByStudentNumber(studentNumber.trim());
+        if (studentOpt.isEmpty()) return ResponseEntity.ok(Map.of("ok", true));
+
+        StudentProfile student = studentOpt.get();
+        List<GameSession> sessions = gameSessionRepository.findByStudentProfileAndStatus(student, "ACTIVE");
+        if (sessions.isEmpty()) return ResponseEntity.ok(Map.of("ok", true));
+
+        GameSession session = sessions.get(0);
+        LocalDateTime now = LocalDateTime.now();
+        session.setPhaseExitedAt(now);
+        gameSessionRepository.save(session);
+
+        System.out.println("[PHASE-EXIT] student=" + studentNumber + " exitedAt=" + now);
+
+        return ResponseEntity.ok(Map.of("ok", true, "exitedAt", now.toString()));
+    }
+
+    // -------------------------------------------------------------------------
     // 9. TEACHER DASHBOARD ANALYTICS WITH PER-PHASE TIME & ATTEMPTS & SUMMARY
     // -------------------------------------------------------------------------
     @GetMapping("/rooms/{roomCode}/dashboard")
@@ -843,18 +938,18 @@ public class RoomController {
                 // Calculate time spent in this phase
                 long phaseSeconds = 0;
                 if (isCompleted) {
-                    // previousPhaseCompletedTime is null only if the student has never attempted
-                    // anything (sessionStart was null). Guard against NPE.
-                    if (previousPhaseCompletedTime != null) {
-                        LocalDateTime startRef = (firstAttemptTime != null && firstAttemptTime.isBefore(previousPhaseCompletedTime))
-                                ? firstAttemptTime : previousPhaseCompletedTime;
-                        LocalDateTime endRef = lastSuccessfulTime != null ? lastSuccessfulTime : (lastAttemptTime != null ? lastAttemptTime : startRef);
-
-                        long diff = ChronoUnit.SECONDS.between(startRef, endRef);
+                    if (firstAttemptTime != null) {
+                        LocalDateTime endRef = lastSuccessfulTime != null ? lastSuccessfulTime : (lastAttemptTime != null ? lastAttemptTime : firstAttemptTime);
+                        long diff = ChronoUnit.SECONDS.between(firstAttemptTime, endRef);
                         if (diff <= 0) {
                             diff = Math.max(attemptsCount * 45L, 30L);
                         }
                         phaseSeconds = diff;
+                        previousPhaseCompletedTime = endRef;
+                    } else if (previousPhaseCompletedTime != null) {
+                        LocalDateTime endRef = lastSuccessfulTime != null ? lastSuccessfulTime : previousPhaseCompletedTime;
+                        long diff = ChronoUnit.SECONDS.between(previousPhaseCompletedTime, endRef);
+                        phaseSeconds = Math.max(diff, 30L);
                         previousPhaseCompletedTime = endRef;
                     }
                     studentTotalSeconds += phaseSeconds;
@@ -862,14 +957,20 @@ public class RoomController {
                     classPhaseTotalSeconds[i] += phaseSeconds;
                     classPhaseTimeContributors[i]++;
                 } else if ("ACTIVE".equals(status)) {
-                    // If previousPhaseCompletedTime is null, the student hasn't made any
-                    // attempt yet — their timer hasn't started, so show 0 / "--".
-                    if (previousPhaseCompletedTime != null) {
-                        LocalDateTime startRef = (firstAttemptTime != null && firstAttemptTime.isBefore(previousPhaseCompletedTime))
-                                ? firstAttemptTime : previousPhaseCompletedTime;
-                        long diff = ChronoUnit.SECONDS.between(startRef, LocalDateTime.now());
-                        phaseSeconds = Math.max(diff, 0L);
+                    // Only compute timer if the student is currently on this phase and has actively entered it
+                    if (phaseId == currentPhaseIndex && session != null && session.getPhaseEnteredAt() != null) {
+                        LocalDateTime activeStart = session.getPhaseEnteredAt();
+                        LocalDateTime activeEnd = (session.getPhaseExitedAt() != null)
+                                ? session.getPhaseExitedAt()
+                                : LocalDateTime.now();
+
+                        long diff = ChronoUnit.SECONDS.between(activeStart, activeEnd);
+                        long paused = session.getAccumulatedPauseSeconds();
+                        phaseSeconds = Math.max(diff - paused, 0L);
                         studentTotalSeconds += phaseSeconds;
+                    } else {
+                        // Student has not entered this active phase yet (still on dashboard)
+                        phaseSeconds = 0L;
                     }
                 }
 

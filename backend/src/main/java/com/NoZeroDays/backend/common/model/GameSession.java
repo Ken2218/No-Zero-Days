@@ -28,6 +28,46 @@ public class GameSession {
 
     private String status = "ACTIVE"; // ACTIVE, COMPLETED
 
+    // -------------------------------------------------------------------------
+    // Phase Presence Timer Fields
+    //
+    // These three fields enable accurate per-phase timing by tracking exactly
+    // when a student enters and exits each phase room. Without them, idle time
+    // spent on the Dashboard between phases inflates the next phase's timer.
+    //
+    // Flow:
+    //   1. Student enters Phase N      -> phaseEnteredAt = now(), phaseExitedAt = null
+    //   2. Student exits without done  -> phaseExitedAt = now()  (timer frozen)
+    //   3. Student re-enters Phase N   -> gap (exitedAt -> now) banked into
+    //                                     accumulatedPauseSeconds;
+    //                                     phaseEnteredAt = now(), phaseExitedAt = null
+    //   4. Phase N completes           -> net time = (lastSuccessTime - phaseEnteredAt)
+    //                                               - accumulatedPauseSeconds
+    //                                     all three fields reset for the next phase
+    // -------------------------------------------------------------------------
+
+    /**
+     * Timestamp set when the student explicitly enters a phase room (via the
+     * frontend notifyPhaseEnter() call). Reset to null on phase completion or
+     * when the student re-enters after a pause (new entry window begins).
+     */
+    private LocalDateTime phaseEnteredAt = null;
+
+    /**
+     * Timestamp set when the student exits a phase room without completing it
+     * (navigating to Dashboard or changing phases). Freezes the active timer
+     * so that idle Dashboard time is NOT counted against this phase.
+     */
+    private LocalDateTime phaseExitedAt = null;
+
+    /**
+     * Cumulative seconds the student spent OUTSIDE the phase room (paused)
+     * during the current phase. Each re-entry adds the gap (exitedAt -> now)
+     * here so it can be subtracted from total elapsed when computing net time.
+     * Reset to 0 whenever the student advances to a new phase.
+     */
+    private long accumulatedPauseSeconds = 0L;
+
     // Default Constructor
     public GameSession() {}
 
@@ -56,4 +96,13 @@ public class GameSession {
 
     public String getStatus() { return status; }
     public void setStatus(String status) { this.status = status; }
+
+    public LocalDateTime getPhaseEnteredAt() { return phaseEnteredAt; }
+    public void setPhaseEnteredAt(LocalDateTime phaseEnteredAt) { this.phaseEnteredAt = phaseEnteredAt; }
+
+    public LocalDateTime getPhaseExitedAt() { return phaseExitedAt; }
+    public void setPhaseExitedAt(LocalDateTime phaseExitedAt) { this.phaseExitedAt = phaseExitedAt; }
+
+    public long getAccumulatedPauseSeconds() { return accumulatedPauseSeconds; }
+    public void setAccumulatedPauseSeconds(long accumulatedPauseSeconds) { this.accumulatedPauseSeconds = accumulatedPauseSeconds; }
 }
