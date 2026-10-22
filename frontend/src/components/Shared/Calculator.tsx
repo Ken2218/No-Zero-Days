@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import './Calculator.css';
 
 // ==========================================
@@ -168,6 +168,131 @@ export default function Calculator({ isVisible, onToggle }: CalculatorProps) {
   const [isEvaluated, setIsEvaluated] = useState(false);
   const [history, setHistory] = useState<string[]>([]);
   const [error, setError] = useState('');
+
+  // Floating Draggable Launcher Tab state (allows moving closed button out of room hotspots on mobile)
+  const [isDragging, setIsDragging] = useState(false);
+  const [dockSide, setDockSide] = useState<'left' | 'right'>('left');
+  const [dragPos, setDragPos] = useState<{ x: number; y: number } | null>(null);
+  const [dockTop, setDockTop] = useState<number | null>(null);
+
+  const pointerStartRef = useRef<{
+    startX: number;
+    startY: number;
+    btnStartX: number;
+    btnStartY: number;
+    hasMoved: boolean;
+    pointerId: number;
+  } | null>(null);
+
+  const wasDraggingRef = useRef(false);
+  const btnRef = useRef<HTMLButtonElement>(null);
+
+  // Repositioning drag handlers for closed launcher button (touch + mouse)
+  const handlePointerDown = (e: React.PointerEvent<HTMLButtonElement>) => {
+    // Only allow dragging when calculator is closed
+    if (isVisible) return;
+    if (e.button !== 0 && e.pointerType === 'mouse') return;
+
+    const btn = btnRef.current;
+    if (!btn) return;
+
+    const rect = btn.getBoundingClientRect();
+    pointerStartRef.current = {
+      startX: e.clientX,
+      startY: e.clientY,
+      btnStartX: rect.left,
+      btnStartY: rect.top,
+      hasMoved: false,
+      pointerId: e.pointerId
+    };
+
+    try {
+      btn.setPointerCapture(e.pointerId);
+    } catch (_) {}
+  };
+
+  const handlePointerMove = (e: React.PointerEvent<HTMLButtonElement>) => {
+    if (!pointerStartRef.current || pointerStartRef.current.pointerId !== e.pointerId) return;
+
+    const { startX, startY, btnStartX, btnStartY, hasMoved } = pointerStartRef.current;
+    const dx = e.clientX - startX;
+    const dy = e.clientY - startY;
+
+    // Movement threshold (6px) before initiating drag
+    if (!hasMoved && Math.hypot(dx, dy) < 6) {
+      return;
+    }
+
+    pointerStartRef.current.hasMoved = true;
+    if (!isDragging) setIsDragging(true);
+
+    const btn = btnRef.current;
+    const btnWidth = btn ? btn.offsetWidth : 40;
+    const btnHeight = btn ? btn.offsetHeight : 90;
+
+    const newX = Math.max(0, Math.min(window.innerWidth - btnWidth, btnStartX + dx));
+    const newY = Math.max(50, Math.min(window.innerHeight - btnHeight - 20, btnStartY + dy));
+
+    setDragPos({ x: newX, y: newY });
+  };
+
+  const handlePointerUp = (e: React.PointerEvent<HTMLButtonElement>) => {
+    if (!pointerStartRef.current || pointerStartRef.current.pointerId !== e.pointerId) return;
+
+    const { hasMoved } = pointerStartRef.current;
+    const btn = btnRef.current;
+    try {
+      btn?.releasePointerCapture(e.pointerId);
+    } catch (_) {}
+
+    pointerStartRef.current = null;
+    setIsDragging(false);
+
+    if (hasMoved && dragPos) {
+      wasDraggingRef.current = true;
+      const btnWidth = btn ? btn.offsetWidth : 40;
+      const btnHeight = btn ? btn.offsetHeight : 90;
+      const isCloserToRight = dragPos.x >= (window.innerWidth - btnWidth) / 2;
+
+      setDockSide(isCloserToRight ? 'right' : 'left');
+      setDockTop(Math.max(50, Math.min(window.innerHeight - btnHeight - 20, dragPos.y)));
+      setDragPos(null);
+    } else {
+      setDragPos(null);
+    }
+  };
+
+  const handlePointerCancel = (e: React.PointerEvent<HTMLButtonElement>) => {
+    if (!pointerStartRef.current || pointerStartRef.current.pointerId !== e.pointerId) return;
+    try {
+      btnRef.current?.releasePointerCapture(e.pointerId);
+    } catch (_) {}
+    pointerStartRef.current = null;
+    setIsDragging(false);
+    setDragPos(null);
+  };
+
+  const handleClick = () => {
+    if (wasDraggingRef.current) {
+      wasDraggingRef.current = false;
+      return;
+    }
+    onToggle();
+  };
+
+  // Keep button within screen bounds on screen resize / rotation
+  useEffect(() => {
+    const handleResize = () => {
+      setDockTop(prev => {
+        if (prev === null) return null;
+        const btnHeight = btnRef.current ? btnRef.current.offsetHeight : 90;
+        const maxTop = window.innerHeight - btnHeight - 20;
+        return Math.max(50, Math.min(maxTop, prev));
+      });
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   const copyToClipboard = (text: string) => {
     if (text === 'Error' || !text) return;
@@ -465,11 +590,37 @@ export default function Calculator({ isVisible, onToggle }: CalculatorProps) {
         </div>
       </div>
 
-      {/* Floating Toggle Button */}
+      {/* Floating Draggable Toggle Button (repositionable when closed on mobile/desktop) */}
       <button
-        className={`calc-toggle-btn ${isVisible ? 'calc-toggle-active' : ''}`}
-        onClick={onToggle}
-        title={isVisible ? 'Hide Calculator' : 'Open Calculator'}
+        ref={btnRef}
+        className={`calc-toggle-btn ${isVisible ? 'calc-toggle-active' : ''} ${
+          !isVisible && dockSide === 'right' ? 'calc-toggle-dock-right' : ''
+        } ${isDragging ? 'calc-toggle-dragging' : ''}`}
+        style={
+          isDragging && dragPos
+            ? {
+                position: 'fixed',
+                left: `${dragPos.x}px`,
+                top: `${dragPos.y}px`,
+                right: 'auto',
+                transform: 'none',
+                transition: 'none',
+                zIndex: 9999
+              }
+            : !isVisible && dockTop !== null
+            ? {
+                top: `${dockTop}px`,
+                transform: 'none',
+                ...(dockSide === 'right' ? { left: 'auto', right: 0 } : { left: 0, right: 'auto' })
+              }
+            : {}
+        }
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerCancel}
+        onClick={handleClick}
+        title={isVisible ? 'Hide Calculator' : 'Open Calculator (Drag up/down to reposition)'}
         aria-label="Toggle Calculator"
       >
         <span className="calc-toggle-icon">🧮</span>

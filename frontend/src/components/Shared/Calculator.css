@@ -3,7 +3,7 @@
    Theme: No Zero Days! (Share Tech Mono)
    ========================================== */
 
-/* ── Toggle Button (fixed, left-center of screen) ── */
+/* ── Toggle Button (fixed, left-center of screen by default, draggable on mobile/desktop) ── */
 .calc-toggle-btn {
   position: fixed;
   left: 0;
@@ -21,14 +21,17 @@
   border-left: none;
   border-radius: 0 8px 8px 0;
   padding: 14px 10px;
-  cursor: pointer;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
 
   font-family: 'Share Tech Mono', monospace;
   font-size: 0.6rem;
   letter-spacing: 1px;
   color: #64748b;
 
-  transition: left 0.35s cubic-bezier(0.4, 0, 0.2, 1), background 0.25s, border 0.25s, color 0.25s, box-shadow 0.25s;
+  transition: left 0.35s cubic-bezier(0.4, 0, 0.2, 1), right 0.35s cubic-bezier(0.4, 0, 0.2, 1), top 0.2s ease, background 0.25s, border 0.25s, color 0.25s, box-shadow 0.25s;
   box-shadow: 4px 0 20px rgba(0, 0, 0, 0.4);
 }
 
@@ -37,6 +40,34 @@
   border-color: #facc15;
   color: #facc15;
   box-shadow: 4px 0 24px rgba(250, 204, 21, 0.15);
+}
+
+.calc-toggle-btn:active {
+  cursor: grabbing;
+}
+
+.calc-toggle-dragging {
+  cursor: grabbing !important;
+  border-radius: 8px !important;
+  border: 1px solid #facc15 !important;
+  opacity: 0.95;
+  transform: scale(1.08) !important;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.6), 0 0 16px rgba(250, 204, 21, 0.4) !important;
+  transition: none !important;
+}
+
+.calc-toggle-dock-right {
+  left: auto !important;
+  right: 0 !important;
+  border-radius: 8px 0 0 8px !important;
+  border-left: 1px solid #334155 !important;
+  border-right: none !important;
+  box-shadow: -4px 0 20px rgba(0, 0, 0, 0.4) !important;
+}
+
+.calc-toggle-dock-right:hover {
+  border-color: #facc15 !important;
+  box-shadow: -4px 0 24px rgba(250, 204, 21, 0.2) !important;
 }
 
 .calc-toggle-active {
@@ -188,18 +219,19 @@
   letter-spacing: 0.5px;
 }
 
-/* ── Button Grid ── */
+/* ── Button Grid (Standard 4-Column Layout) ── */
 .calc-grid {
   display: grid;
-  grid-template-columns: repeat(5, 1fr); /* 5 columns for scientific layout */
-  gap: 5px;
+  grid-template-columns: repeat(4, 1fr); /* strictly 4 columns for standard layout */
+  gap: 6px;
   padding: 10px;
 }
 
 .calc-btn {
   font-family: 'Share Tech Mono', monospace;
-  font-size: 0.82rem; /* compact font for text keys */
-  padding: 10px 2px;
+  font-size: 0.95rem; /* readable key font */
+  padding: 11px 2px;
+  min-height: 42px;
   border-radius: 6px;
   cursor: pointer;
   border: 1px solid transparent;
@@ -330,13 +362,12 @@
   transform: scale(0.96);
 }
 
-/* Tall equals button */
+/* Equals button */
 .btn-equals {
   background: linear-gradient(135deg, #065f46 0%, #047857 100%);
   border-color: #10b981;
   color: #fff;
-  font-size: 1.2rem;
-  grid-row: span 2; /* tall key spanning two rows */
+  font-size: 1.15rem;
   display: flex;
   align-items: center;
   justify-content: center;
