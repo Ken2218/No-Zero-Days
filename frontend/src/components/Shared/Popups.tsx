@@ -262,7 +262,7 @@ export default function Popups({
           <div className="popup-content">
             <div className="popup-header">
               <h4>📅 Official Wall Calendar - June 2026</h4>
-              <p>Total verified present shifts: <strong className="highlight-green" style={{ color: '#10b981' }}>{scenario.daysPresent} Days</strong></p>
+              <p style={{ color: '#94a3b8', fontSize: '0.85rem' }}>Official Attendance Log — Count Present (P) Weekday Shifts</p>
             </div>
 
             {/* The Visual Calendar Grid */}
@@ -273,9 +273,14 @@ export default function Popups({
               <div className="cal-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '4px', textAlign: 'center', fontSize: '0.85rem' }}>
                 {renderCalendarGrid()}
               </div>
-              <p style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '12px', textAlign: 'center', fontStyle: 'italic' }}>
-                ★ June 12 is Independence Day (Regular Holiday) - Present shift recorded.
-              </p>
+              <div style={{ marginTop: '12px', textAlign: 'center', borderTop: '1px dashed #1e293b', paddingTop: '8px' }}>
+                <p style={{ fontSize: '0.75rem', color: '#94a3b8', margin: '0 0 4px 0' }}>
+                  <strong>Legend:</strong> <span style={{ color: '#34d399', fontWeight: 'bold' }}>P = Present</span> | <span style={{ color: '#f87171', fontWeight: 'bold' }}>A = Absent</span> | <span style={{ color: '#fbbf24', fontWeight: 'bold' }}>P★ = Regular Holiday (Worked)</span>
+                </p>
+                <p style={{ fontSize: '0.7rem', color: '#64748b', margin: 0, fontStyle: 'italic' }}>
+                  ★ June 12 is Independence Day (Regular Holiday) - Present shift recorded.
+                </p>
+              </div>
             </div>
           </div>
         );
