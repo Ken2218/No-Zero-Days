@@ -1443,11 +1443,7 @@ function App() {
         setFeedback(data.message);
       } else {
         setGrossPayStatus('ERROR');
-        let feedbackMsg = data.message;
-        if (data.expected !== undefined && data.expected !== null) {
-          feedbackMsg += ` | Expected: ₱${data.expected.toFixed(2)}, Received: ₱${data.received !== null ? parseFloat(data.received).toFixed(2) : '0.00'}`;
-        }
-        setFeedback(feedbackMsg);
+        setFeedback(data.message);
         if (data.drillTriggered) handleRerollScenario();
       }
     } catch (err) {
@@ -1560,11 +1556,7 @@ function App() {
         setFeedback(data.message);
       } else {
         setStep4Status('ERROR');
-        let feedbackMsg = data.message;
-        if (data.expected !== undefined && data.expected !== null) {
-          feedbackMsg += ` | Backend Audit: Expected ₱${data.expected.toFixed(2)}, Received ₱${data.received !== null ? data.received.toFixed(2) : '0.00'}.`;
-        }
-        setFeedback(feedbackMsg);
+        setFeedback(data.message);
         if (data.drillTriggered) handleRerollScenario();
       }
     } catch (err) {

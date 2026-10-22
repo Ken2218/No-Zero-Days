@@ -219,7 +219,8 @@ public class ValidationService {
         }
 
         ValidationResponse response = new ValidationResponse(success, finalMessage, isRedHerring, drillTriggered);
-        response.setExpected(auditExpected);
+        // Only return expected value on success to prevent leaking correct answers to students upon failure
+        response.setExpected(success ? auditExpected : null);
         response.setReceived(auditReceived);
         return response;
     }
