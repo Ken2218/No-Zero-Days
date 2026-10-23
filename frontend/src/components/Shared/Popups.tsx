@@ -546,6 +546,78 @@ export default function Popups({
           </div>
         );
 
+      case 'P5_CONTRACT':
+      case 'CONTRACT_PROFILE':
+        return (
+          <div className="popup-content">
+            <div className="popup-header">
+              <h4>📁 Employee Profile & Contract (SSS Deductions Audit)</h4>
+              <p>Classified HR Document // Form 109-E</p>
+            </div>
+
+            <div className="data-box authentic-data" style={{ padding: '15px', lineHeight: '1.5' }}>
+              <div className="data-row" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                <span>Employee Name:</span> <strong>{scenario.employeeName || 'Juan Dela Cruz'}</strong>
+              </div>
+              <div className="data-row" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                <span>Monthly Basic Salary:</span> <strong className="highlight-green">₱{(scenario.basicSalary ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
+              </div>
+              <div className="data-row" style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span>Mid-Year Bonus Advance:</span> <strong>₱8,000.00</strong>
+              </div>
+            </div>
+          </div>
+        );
+
+      case 'P6_CONTRACT':
+        return (
+          <div className="popup-content">
+            <div className="popup-header">
+              <h4>📁 Employee Profile & Contract (PhilHealth Audit)</h4>
+              <p>Classified HR Document // Form 109-F</p>
+            </div>
+
+            <div className="data-box authentic-data" style={{ padding: '15px', lineHeight: '1.5' }}>
+              <div className="data-row" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                <span>Employee Name:</span> <strong>{scenario.employeeName || 'Juan Dela Cruz'}</strong>
+              </div>
+              <div className="data-row" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                <span>Monthly Basic Salary:</span> <strong className="highlight-green">₱{(scenario.basicSalary ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
+              </div>
+              <div className="data-row" style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span>Standard Daily Rate:</span> <strong>₱{(scenario.dailyRate ?? 0).toFixed(2)} / Day</strong>
+              </div>
+            </div>
+          </div>
+        );
+
+      case 'PAGIBIG_MEMO':
+        return (
+          <div className="popup-content">
+            <div className="popup-header">
+              <h4>📋 HDMF Pag-IBIG Circular</h4>
+              <p>Home Development Mutual Fund // Statutory Standards</p>
+            </div>
+
+            <div className="data-box authentic-data" style={{ padding: '15px', lineHeight: '1.6' }}>
+              <p><strong>1. MANDATORY CONTRIBUTIONS:</strong></p>
+              <p>For all covered employees, the monthly Pag-IBIG contribution is computed based on the basic monthly salary. Under the updated statutory schedule:</p>
+
+              <div className="formula-box" style={{ margin: '12px 0', padding: '10px', background: '#0b1120', border: '1px solid #1e293b', textAlign: 'center', color: '#fbbf24', fontWeight: 'bold' }}>
+                Pag-Ibig Contribution Cap = ₱200.00
+              </div>
+
+              <div className="data-row" style={{ display: 'flex', justifyContent: 'space-between', margin: '8px 0' }}>
+                <span>Pag-Ibig Employer (ER) Share:</span> <strong>₱200.00</strong>
+              </div>
+
+              <p style={{ color: '#94a3b8', fontSize: '0.8rem', fontStyle: 'italic', marginTop: '8px' }}>
+                * For basic monthly salaries of ₱10,000 and above, the maximum employee deduction is capped strictly at ₱200.00.
+              </p>
+            </div>
+          </div>
+        );
+
       case 'TIMESHEET_TERMINAL':
         return (
           <div className="popup-content">

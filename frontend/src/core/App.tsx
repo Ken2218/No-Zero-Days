@@ -2118,20 +2118,121 @@ function App() {
             {activePhaseIndex === 7 && <Phase7Room setActivePopup={setActivePopup} />}
           </div>
 
-          <div className="panel-footer">
-            <span className="intel-icon">💬</span> {
-              activePhaseIndex === 1 
-                ? 'Click office objects (Desk, Calendar, Whiteboard) to inspect details.' 
-                : activePhaseIndex === 2 
-                  ? 'Click objects (Biometrics Terminal, HR Filing Cabinet, DOLE Poster, Exit Door) to inspect details.' 
-                  : activePhaseIndex === 3
-                    ? 'Click office objects (Time Card, DOLE Overtime Poster, Exit Door) to inspect details.'
-                    : activePhaseIndex === 4
-                      ? 'Click breakroom objects (Corkboard Memos, Timesheet Terminal, DOLE Holiday Poster, Exit Door) to inspect details.'
-                      : activePhaseIndex === 5 || activePhaseIndex === 6
-                        ? 'Click PC Lab objects (Notice Board, PC Monitor, Company Manual, Exit Door) to inspect details.'
-                        : 'Click boardroom objects (Executive Audit Folder, Exit Door) to inspect details.'
-            }
+          <div className="panel-footer" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span className="intel-icon">💬</span>
+              <span style={{ fontSize: '0.82rem', color: '#cbd5e1' }}>
+                {activePhaseIndex === 1 
+                  ? 'Click office objects or quick-shortcuts below to inspect details:' 
+                  : activePhaseIndex === 2 
+                    ? 'Click objects or quick-shortcuts below to inspect details:' 
+                    : activePhaseIndex === 3
+                      ? 'Click office objects or quick-shortcuts below to inspect details:'
+                      : activePhaseIndex === 4
+                        ? 'Click breakroom objects or quick-shortcuts below to inspect details:'
+                        : activePhaseIndex === 5 || activePhaseIndex === 6
+                          ? 'Click PC Lab objects or quick-shortcuts below to inspect details:'
+                          : 'Click boardroom objects or quick-shortcuts below to inspect details:'}
+              </span>
+            </div>
+
+            {/* Interactive Hotspot Quick-Access Chips */}
+            <div className="quick-access-bar" style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+              {activePhaseIndex === 1 && (
+                <>
+                  <button type="button" className="quick-chip" onClick={() => setActivePopup('HR_DESK')}>📁 HR Contract Desk</button>
+                  <button type="button" className="quick-chip" onClick={() => setActivePopup('WALL_CALENDAR')}>📅 Attendance Calendar</button>
+                  <button type="button" className="quick-chip" onClick={() => setActivePopup('WHITEBOARD')}>📝 Gross Pay Whiteboard</button>
+                  <button type="button" className="quick-chip" onClick={() => setActivePopup('DOOR')}>🚪 Exit Door</button>
+                </>
+              )}
+              {activePhaseIndex === 2 && (
+                <>
+                  <button type="button" className="quick-chip" onClick={() => setActivePopup('BIOMETRICS')}>⏱️ Biometrics Terminal</button>
+                  <button type="button" className="quick-chip" onClick={() => setActivePopup('DOLE_POSTER')}>📌 DOLE Poster</button>
+                  <button type="button" className="quick-chip" onClick={() => setActivePopup('P2_CONTRACT')}>📁 HR Cabinet</button>
+                  <button type="button" className="quick-chip" onClick={() => setActivePopup('HANDBOOK')}>📘 Handbook</button>
+                  <button type="button" className="quick-chip" onClick={() => setActivePopup('DOOR')}>🚪 Exit Door</button>
+                </>
+              )}
+              {activePhaseIndex === 3 && (
+                <>
+                  <button type="button" className="quick-chip" onClick={() => setActivePopup('TIMECARD')}>⏱️ Production Time Card</button>
+                  <button type="button" className="quick-chip" onClick={() => setActivePopup('DOLE_OVERTIME')}>📌 DOLE OT Poster</button>
+                  <button type="button" className="quick-chip" onClick={() => setActivePopup('P3_CONTRACT')}>📁 Contract</button>
+                  <button type="button" className="quick-chip" onClick={() => setActivePopup('DOOR')}>🚪 Exit Door</button>
+                </>
+              )}
+              {activePhaseIndex === 4 && (
+                <>
+                  <button type="button" className="quick-chip" onClick={() => setActivePopup('MEMOS')}>📌 Corkboard Memos</button>
+                  <button type="button" className="quick-chip" onClick={() => setActivePopup('TIMESHEET_TERMINAL')}>⏱️ Timesheet Terminal</button>
+                  <button type="button" className="quick-chip" onClick={() => setActivePopup('DOLE_HOLIDAY')}>📜 DOLE Holiday Poster</button>
+                  <button type="button" className="quick-chip" onClick={() => setActivePopup('P4_CONTRACT')}>📁 Contract</button>
+                  <button type="button" className="quick-chip" onClick={() => setActivePopup('DOOR')}>🚪 Exit Door</button>
+                </>
+              )}
+              {activePhaseIndex === 5 && (
+                <>
+                  <button type="button" className="quick-chip sss-chip" onClick={() => setActivePopup('SSS_TABLE')} title="View SSS Contribution Table">
+                    📌 SSS Table
+                  </button>
+                  <button type="button" className="quick-chip loan-chip" onClick={() => setActivePopup('LOAN_STATEMENT')} title="View Employee Loan Statement">
+                    🖥️ Loan Statement
+                  </button>
+                  <button type="button" className="quick-chip contract-chip" onClick={() => setActivePopup('P5_CONTRACT')} title="View Employee Contract Profile">
+                    📁 Contract Profile
+                  </button>
+                  <button type="button" className="quick-chip pagibig-chip" onClick={() => setActivePopup('PAGIBIG_MEMO')} title="View HDMF Pag-IBIG Memo Circular">
+                    📋 Pag-IBIG Memo
+                  </button>
+                  <button type="button" className="quick-chip handbook-chip" onClick={() => setActivePopup('HANDBOOK')} title="View Company Payroll Manual">
+                    📘 Payroll Manual
+                  </button>
+                  <button type="button" className="quick-chip door-chip" onClick={() => setActivePopup('DOOR')} title="View PC Lab Exit Door">
+                    🚪 Exit Door
+                  </button>
+                </>
+              )}
+              {activePhaseIndex === 6 && (
+                <>
+                  <button type="button" className="quick-chip philhealth-chip" onClick={() => setActivePopup('PHILHEALTH_TABLE')} title="View PhilHealth Contribution Table">
+                    📌 PhilHealth Table
+                  </button>
+                  <button type="button" className="quick-chip salary-chip" onClick={() => setActivePopup('SALARY_DATABASE')} title="View HR Salary Database">
+                    🖥️ Salary Database
+                  </button>
+                  <button type="button" className="quick-chip sss-chip" onClick={() => setActivePopup('SSS_TABLE')} title="View SSS Table Reference">
+                    📌 SSS Reference
+                  </button>
+                  <button type="button" className="quick-chip loan-chip" onClick={() => setActivePopup('LOAN_STATEMENT')} title="View Employee Loan Statement">
+                    🖥️ Loan Statement
+                  </button>
+                  <button type="button" className="quick-chip tax-chip" onClick={() => setActivePopup('TAX_TABLE')} title="View BIR Tax Withholding Table">
+                    📈 BIR Tax Table
+                  </button>
+                  <button type="button" className="quick-chip contract-chip" onClick={() => setActivePopup('P6_CONTRACT')} title="View Employee Contract Profile">
+                    📁 Contract Profile
+                  </button>
+                  <button type="button" className="quick-chip pagibig-chip" onClick={() => setActivePopup('PAGIBIG_MEMO')} title="View HDMF Pag-IBIG Memo Circular">
+                    📋 Pag-IBIG Memo
+                  </button>
+                  <button type="button" className="quick-chip handbook-chip" onClick={() => setActivePopup('HANDBOOK')} title="View Company Payroll Manual">
+                    📘 Payroll Manual
+                  </button>
+                  <button type="button" className="quick-chip door-chip" onClick={() => setActivePopup('DOOR')} title="View PC Lab Exit Door">
+                    🚪 Exit Door
+                  </button>
+                </>
+              )}
+              {activePhaseIndex === 7 && (
+                <>
+                  <button type="button" className="quick-chip" onClick={() => setActivePopup('AUDIT_FOLDER')}>📁 Master Case File</button>
+                  <button type="button" className="quick-chip" onClick={() => setActivePopup('HANDBOOK')}>📘 Payroll Manual</button>
+                  <button type="button" className="quick-chip" onClick={() => setActivePopup('DOOR')}>🚪 Exit Door</button>
+                </>
+              )}
+            </div>
           </div>
         </div>
 

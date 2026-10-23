@@ -1,80 +1,267 @@
-/* --- PHASE 6: PHILHEALTH PC LAB POSITIONS --- */
+/* --- PHASE 6: PHILHEALTH PC LAB POSITIONS & NEON GLOW --- */
 .phase6-room {
   --room-aspect-ratio: 2528 / 1684;
   aspect-ratio: 2528 / 1684;
 }
 
+/* Animations for vibrant neon pulsing */
+@keyframes hotspot-pulse-cyan {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(6, 182, 212, 0), inset 0 0 0 0 rgba(6, 182, 212, 0);
+  }
+  50% {
+    box-shadow: 0 0 14px 4px rgba(6, 182, 212, 0.75), inset 0 0 8px 1px rgba(6, 182, 212, 0.3);
+  }
+}
+
+@keyframes hotspot-pulse-emerald {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0), inset 0 0 0 0 rgba(16, 185, 129, 0);
+  }
+  50% {
+    box-shadow: 0 0 14px 4px rgba(16, 185, 129, 0.75), inset 0 0 8px 1px rgba(16, 185, 129, 0.3);
+  }
+}
+
+@keyframes hotspot-pulse-amber {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(245, 158, 11, 0), inset 0 0 0 0 rgba(245, 158, 11, 0);
+  }
+  50% {
+    box-shadow: 0 0 14px 4px rgba(245, 158, 11, 0.75), inset 0 0 8px 1px rgba(245, 158, 11, 0.3);
+  }
+}
+
+@keyframes hotspot-pulse-purple {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(168, 85, 247, 0), inset 0 0 0 0 rgba(168, 85, 247, 0);
+  }
+  50% {
+    box-shadow: 0 0 14px 4px rgba(168, 85, 247, 0.75), inset 0 0 8px 1px rgba(168, 85, 247, 0.3);
+  }
+}
+
+@keyframes hotspot-pulse-red {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0), inset 0 0 0 0 rgba(239, 68, 68, 0);
+  }
+  50% {
+    box-shadow: 0 0 14px 4px rgba(239, 68, 68, 0.75), inset 0 0 8px 1px rgba(239, 68, 68, 0.3);
+  }
+}
+
+/* Notice Board Corkboard Memos (PhilHealth Table) */
 .phase6-room .corkboard-hotspot {
-  top: 9%;
-  left: 61.5%;
-  width: 8%;
-  height: 16%;
-  border-color: rgba(96, 165, 250, 0.4);
-}
-
-.phase6-room .monitor-hotspot {
-  top: 13%;
-  left: 70%;
-  width: 10.5%;
-  height: 12%;
-  border-color: rgba(96, 165, 250, 0.4);
-}
-
-.phase6-room .door-hotspot {
-  top: 15%;
-  left: 4.5%;
+  top: 7%;
+  left: 59%;
   width: 9%;
-  height: 20%;
-  border-color: rgba(239, 68, 68, 0.4);
+  height: 18%;
+  background-color: rgba(6, 182, 212, 0.14);
+  border: 2px solid #06b6d4;
+  animation: hotspot-pulse-cyan 2.4s ease-in-out infinite;
+}
+.phase6-room .corkboard-hotspot:hover {
+  background-color: rgba(6, 182, 212, 0.32);
+  border-color: #38bdf8;
+  box-shadow: 0 0 18px 5px rgba(6, 182, 212, 0.85);
+  animation: none;
+}
+.phase6-room .corkboard-hotspot .hotspot-badge {
+  color: #38bdf8;
+  border-color: #06b6d4;
 }
 
-.phase6-room .handbook-hotspot {
-  top: 49%;
-  left: 12.5%;
-  width: 5%;
-  height: 9.5%;
-  border-color: rgba(250, 204, 21, 0.4);
-}
-
-.phase6-room .contract-hotspot {
-  top: 46%;
-  left: 18%;
-  width: 6.5%;
-  height: 12.5%;
-  border-color: rgba(16, 185, 129, 0.4);
-  position: absolute;
-  cursor: pointer;
-  background: transparent;
-}
-
+/* SSS Contribution Table (Reference in Phase 6) */
 .phase6-room .sss-hotspot {
-  top: 8%;
-  left: 42%;
-  width: 18.5%;
-  height: 15%;
-  border-color: rgba(96, 165, 250, 0.4);
+  top: 7%;
+  left: 39%;
+  width: 19%;
+  height: 18%;
+  background-color: rgba(6, 182, 212, 0.14);
+  border: 2px solid #06b6d4;
+  animation: hotspot-pulse-cyan 2.4s ease-in-out infinite;
+}
+.phase6-room .sss-hotspot:hover {
+  background-color: rgba(6, 182, 212, 0.32);
+  border-color: #38bdf8;
+  box-shadow: 0 0 18px 5px rgba(6, 182, 212, 0.85);
+  animation: none;
+}
+.phase6-room .sss-hotspot .hotspot-badge {
+  color: #38bdf8;
+  border-color: #06b6d4;
 }
 
-.phase6-room .pagibig-hotspot {
-  top: 13%;
-  left: 89.5%;
-  width: 8%;
-  height: 12%;
-  border-color: rgba(250, 204, 21, 0.4);
-}
-
-.phase6-room .tax-hotspot {
-  top: 12%;
-  left: 20.5%;
-  width: 16%;
+/* HR Salary Database Terminal */
+.phase6-room .monitor-hotspot {
+  top: 18%;
+  left: 29%;
+  width: 12%;
   height: 17%;
-  border-color: rgba(239, 68, 68, 0.4);
+  background-color: rgba(16, 185, 129, 0.14);
+  border: 2px solid #10b981;
+  animation: hotspot-pulse-emerald 2.4s ease-in-out infinite;
+}
+.phase6-room .monitor-hotspot:hover {
+  background-color: rgba(16, 185, 129, 0.32);
+  border-color: #34d399;
+  box-shadow: 0 0 18px 5px rgba(16, 185, 129, 0.85);
+  animation: none;
+}
+.phase6-room .monitor-hotspot .hotspot-badge {
+  color: #34d399;
+  border-color: #10b981;
 }
 
+/* Loan Statement */
 .phase6-room .loan-hotspot {
-  top: 64%;
-  left: 79%;
-  width: 14%;
-  height: 24%;
-  border-color: rgba(96, 165, 250, 0.4);
+  top: 61%;
+  left: 68%;
+  width: 15%;
+  height: 25%;
+  background-color: rgba(16, 185, 129, 0.14);
+  border: 2px solid #10b981;
+  animation: hotspot-pulse-emerald 2.4s ease-in-out infinite;
+}
+.phase6-room .loan-hotspot:hover {
+  background-color: rgba(16, 185, 129, 0.32);
+  border-color: #34d399;
+  box-shadow: 0 0 18px 5px rgba(16, 185, 129, 0.85);
+  animation: none;
+}
+.phase6-room .loan-hotspot .hotspot-badge {
+  color: #34d399;
+  border-color: #10b981;
+}
+
+/* BIR Tax Withholding Table */
+.phase6-room .tax-hotspot {
+  top: 10%;
+  left: 18%;
+  width: 10%;
+  height: 16%;
+  background-color: rgba(244, 63, 94, 0.14);
+  border: 2px solid #f43f5e;
+  animation: hotspot-pulse-red 2.4s ease-in-out infinite;
+}
+.phase6-room .tax-hotspot:hover {
+  background-color: rgba(244, 63, 94, 0.32);
+  border-color: #fb7185;
+  box-shadow: 0 0 18px 5px rgba(244, 63, 94, 0.85);
+  animation: none;
+}
+.phase6-room .tax-hotspot .hotspot-badge {
+  color: #fb7185;
+  border-color: #f43f5e;
+}
+
+/* Exit Door */
+.phase6-room .door-hotspot {
+  top: 13%;
+  left: 4%;
+  width: 10%;
+  height: 22%;
+  background-color: rgba(239, 68, 68, 0.14);
+  border: 2px solid #ef4444;
+  animation: hotspot-pulse-red 2.4s ease-in-out infinite;
+}
+.phase6-room .door-hotspot:hover {
+  background-color: rgba(239, 68, 68, 0.32);
+  border-color: #f87171;
+  box-shadow: 0 0 18px 5px rgba(239, 68, 68, 0.85);
+  animation: none;
+}
+.phase6-room .door-hotspot .hotspot-badge {
+  color: #f87171;
+  border-color: #ef4444;
+}
+
+/* Company Payroll Manual */
+.phase6-room .handbook-hotspot {
+  top: 48%;
+  left: 12%;
+  width: 5.5%;
+  height: 10%;
+  background-color: rgba(99, 102, 241, 0.14);
+  border: 2px solid #6366f1;
+}
+.phase6-room .handbook-hotspot:hover {
+  background-color: rgba(99, 102, 241, 0.32);
+  border-color: #818cf8;
+  box-shadow: 0 0 16px 4px rgba(99, 102, 241, 0.75);
+}
+.phase6-room .handbook-hotspot .hotspot-badge {
+  color: #a5b4fc;
+  border-color: #6366f1;
+}
+
+/* Employee Contract Profile */
+.phase6-room .contract-hotspot {
+  top: 45%;
+  left: 17%;
+  width: 7.5%;
+  height: 13%;
+  background-color: rgba(245, 158, 11, 0.14);
+  border: 2px solid #f59e0b;
+  animation: hotspot-pulse-amber 2.4s ease-in-out infinite;
+}
+.phase6-room .contract-hotspot:hover {
+  background-color: rgba(245, 158, 11, 0.32);
+  border-color: #fbbf24;
+  box-shadow: 0 0 18px 5px rgba(245, 158, 11, 0.85);
+  animation: none;
+}
+.phase6-room .contract-hotspot .hotspot-badge {
+  color: #fbbf24;
+  border-color: #f59e0b;
+}
+
+/* HDMF Pag-IBIG Memo Circular */
+.phase6-room .pagibig-hotspot {
+  top: 10%;
+  left: 74%;
+  width: 8%;
+  height: 15%;
+  background-color: rgba(168, 85, 247, 0.14);
+  border: 2px solid #a855f7;
+  animation: hotspot-pulse-purple 2.4s ease-in-out infinite;
+}
+.phase6-room .pagibig-hotspot:hover {
+  background-color: rgba(168, 85, 247, 0.32);
+  border-color: #c084fc;
+  box-shadow: 0 0 18px 5px rgba(168, 85, 247, 0.85);
+  animation: none;
+}
+.phase6-room .pagibig-hotspot .hotspot-badge {
+  color: #c084fc;
+  border-color: #a855f7;
+}
+
+/* Floating badge label for hotspots */
+.hotspot-badge {
+  position: absolute;
+  top: -12px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(15, 23, 42, 0.95);
+  border: 1px solid currentColor;
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-size: 0.65rem;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+  pointer-events: none;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.7);
+  text-transform: uppercase;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  z-index: 15;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.hotspot:hover .hotspot-badge {
+  transform: translateX(-50%) scale(1.08);
+  box-shadow: 0 0 10px currentColor;
 }

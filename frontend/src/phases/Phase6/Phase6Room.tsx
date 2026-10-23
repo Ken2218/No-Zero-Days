@@ -18,6 +18,16 @@ export default function Phase6Room({ setActivePopup, scenario }: Phase6RoomProps
   const [isContractOpen, setIsContractOpen] = useState(false);
   const [isPagIbigOpen, setIsPagIbigOpen] = useState(false);
 
+  const handleOpenContract = () => {
+    if (setActivePopup) setActivePopup('P6_CONTRACT');
+    else setIsContractOpen(true);
+  };
+
+  const handleOpenPagIbig = () => {
+    if (setActivePopup) setActivePopup('PAGIBIG_MEMO');
+    else setIsPagIbigOpen(true);
+  };
+
   return (
     <div className="room-container pclab-floor phase6-room" style={{ position: 'relative' }}>
       <img 
@@ -30,72 +40,89 @@ export default function Phase6Room({ setActivePopup, scenario }: Phase6RoomProps
         className="hotspot corkboard-hotspot" 
         title="📌 PhilHealth Premium Table" 
         onClick={() => setActivePopup('PHILHEALTH_TABLE')}
-      />
+      >
+        <span className="hotspot-badge">📌 PHILHEALTH</span>
+      </button>
 
       {/* Hotspot 2: PC Monitor (HR Salary Database) */}
       <button 
         className="hotspot monitor-hotspot" 
         title="🖥️ HR Salary Database" 
         onClick={() => setActivePopup('SALARY_DATABASE')}
-      />
+      >
+        <span className="hotspot-badge">🖥️ SALARY DB</span>
+      </button>
 
       {/* Hotspot 3: Exit Door */}
       <button 
         className="hotspot door-hotspot" 
         title="🚪 PC Lab Exit Door" 
         onClick={() => setActivePopup('DOOR')}
-      />
+      >
+        <span className="hotspot-badge">🚪 EXIT</span>
+      </button>
 
       {/* Hotspot 4: Company Payroll Manual */}
       <button 
         className="hotspot handbook-hotspot" 
         title="📘 Company Payroll Manual" 
         onClick={() => setActivePopup('HANDBOOK')}
-      />
+      >
+        <span className="hotspot-badge">📘 MANUAL</span>
+      </button>
 
       {/* Hotspot 5: Employee Contract Folder */}
       <button 
         className="hotspot contract-hotspot" 
         title="📁 Employee Contract Profile" 
-        onClick={() => setIsContractOpen(true)}
-      />
+        onClick={handleOpenContract}
+      >
+        <span className="hotspot-badge">📁 CONTRACT</span>
+      </button>
 
       {/* Hotspot 6: SSS Premium Table */}
       <button 
         className="hotspot sss-hotspot" 
         title="📌 SSS Contribution Table" 
         onClick={() => setActivePopup('SSS_TABLE')}
-      />
+      >
+        <span className="hotspot-badge">📌 SSS TABLE</span>
+      </button>
 
       {/* Hotspot 7: Personal Salary Loan Statement */}
       <button 
         className="hotspot loan-hotspot" 
         title="🖥️ Employee Loan Statement" 
         onClick={() => setActivePopup('LOAN_STATEMENT')}
-      />
+      >
+        <span className="hotspot-badge">🖥️ LOAN</span>
+      </button>
 
       {/* Hotspot 8: HDMF Pag-IBIG Memo Circular */}
       <button 
         className="hotspot pagibig-hotspot" 
         title="📋 HDMF Pag-IBIG Circular" 
-        onClick={() => setIsPagIbigOpen(true)}
-      />
+        onClick={handleOpenPagIbig}
+      >
+        <span className="hotspot-badge">📋 PAG-IBIG</span>
+      </button>
 
       {/* Hotspot 9: BIR Tax Withholding Table */}
       <button 
         className="hotspot tax-hotspot" 
         title="📈 BIR Withholding Tax Table" 
         onClick={() => setActivePopup('TAX_TABLE')}
-      />
+      >
+        <span className="hotspot-badge">📈 TAX TABLE</span>
+      </button>
 
-      {/* Employee Contract Profile Modal */}
+      {/* Fallback Modals if setActivePopup is not available */}
       <EmployeeContractModal 
         isOpen={isContractOpen} 
         onClose={() => setIsContractOpen(false)} 
         scenario={scenario}
       />
 
-      {/* HDMF Pag-IBIG Memo Circular Modal */}
       <PagIbigMemoModal 
         isOpen={isPagIbigOpen} 
         onClose={() => setIsPagIbigOpen(false)} 
