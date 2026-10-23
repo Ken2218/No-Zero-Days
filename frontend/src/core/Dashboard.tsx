@@ -49,13 +49,13 @@ export default function Dashboard({ student: propStudent, onSelectPhase, onStude
   }, []);
 
   const defaultRoadmap = [
-    { phaseId: 1, title: "Phase 1: Basic Gross Pay", description: "Audit morning Lobby Daily Rate and Shifts worked.", status: "ACTIVE", bestScore: 0, module: "M1_MATH", phaseIndex: 1 },
-    { phaseId: 2, title: "Phase 2: Tardiness Deductions", description: "Audit biometric clock-in logs and raw late minutes.", status: "LOCKED", bestScore: 0, module: "M1_MATH", phaseIndex: 2 },
-    { phaseId: 3, title: "Phase 3: Overtime Premiums", description: "Verify OT multipliers and unpaid lunch breaks.", status: "LOCKED", bestScore: 0, module: "M2_MULTIPLIERS", phaseIndex: 1 },
-    { phaseId: 4, title: "Phase 4: Regular Holiday Pay", description: "Audit Regular Holiday Double Pay rules.", status: "LOCKED", bestScore: 0, module: "M2_MULTIPLIERS", phaseIndex: 2 },
-    { phaseId: 5, title: "Phase 5: SSS Deductions", description: "Verify SSS EE share vs ER share deductions.", status: "LOCKED", bestScore: 0, module: "M3_BUREAUCRACY", phaseIndex: 1 },
-    { phaseId: 6, title: "Phase 6: PhilHealth Premiums", description: "Verify PhilHealth premium percentages.", status: "LOCKED", bestScore: 0, module: "M3_BUREAUCRACY", phaseIndex: 2 },
-    { phaseId: 7, title: "Phase 7: Net Payroll Boardroom", description: "Audit the complete Net Pay ledger unscaffolded.", status: "LOCKED", bestScore: 0, module: "M4_TRIBUNAL", phaseIndex: 1 }
+    { phaseId: 1, title: "Phase 1: Basic Gross Pay", description: "Audit morning Lobby Daily Rate and Shifts worked.", status: "ACTIVE", bestScore: 0, module: "M1_MATH", phaseIndex: 1, hasReAudited: false, reAuditCompleted: false, reAuditScore: 0 },
+    { phaseId: 2, title: "Phase 2: Tardiness Deductions", description: "Audit biometric clock-in logs and raw late minutes.", status: "LOCKED", bestScore: 0, module: "M1_MATH", phaseIndex: 2, hasReAudited: false, reAuditCompleted: false, reAuditScore: 0 },
+    { phaseId: 3, title: "Phase 3: Overtime Premiums", description: "Verify OT multipliers and unpaid lunch breaks.", status: "LOCKED", bestScore: 0, module: "M2_MULTIPLIERS", phaseIndex: 1, hasReAudited: false, reAuditCompleted: false, reAuditScore: 0 },
+    { phaseId: 4, title: "Phase 4: Regular Holiday Pay", description: "Audit Regular Holiday Double Pay rules.", status: "LOCKED", bestScore: 0, module: "M2_MULTIPLIERS", phaseIndex: 2, hasReAudited: false, reAuditCompleted: false, reAuditScore: 0 },
+    { phaseId: 5, title: "Phase 5: SSS Deductions", description: "Verify SSS EE share vs ER share deductions.", status: "LOCKED", bestScore: 0, module: "M3_BUREAUCRACY", phaseIndex: 1, hasReAudited: false, reAuditCompleted: false, reAuditScore: 0 },
+    { phaseId: 6, title: "Phase 6: PhilHealth Premiums", description: "Verify PhilHealth premium percentages.", status: "LOCKED", bestScore: 0, module: "M3_BUREAUCRACY", phaseIndex: 2, hasReAudited: false, reAuditCompleted: false, reAuditScore: 0 },
+    { phaseId: 7, title: "Phase 7: Net Payroll Boardroom", description: "Audit the complete Net Pay ledger unscaffolded.", status: "LOCKED", bestScore: 0, module: "M4_TRIBUNAL", phaseIndex: 1, hasReAudited: false, reAuditCompleted: false, reAuditScore: 0 }
   ];
 
   const fetchProgress = async (studentNum: string, currentRoomCode?: string) => {
@@ -222,6 +222,11 @@ export default function Dashboard({ student: propStudent, onSelectPhase, onStude
   const completedCount = rawRoadmap.filter(p => p.status === 'COMPLETED').length;
   const completionPercent = Math.round((completedCount / 7.0) * 100);
 
+  // Calculate re-audit completion progress
+  const reAuditCount = rawRoadmap.filter(p => p.reAuditCompleted).length;
+  const reAuditPercent = Math.round((reAuditCount / 7.0) * 100);
+  const hasAnyReAudit = rawRoadmap.some(p => p.hasReAudited || p.reAuditCompleted);
+
   // Scenario Lock Override: Set all LOCKED phases to ACTIVE for practice accessibility
   const activeRoadmap = rawRoadmap.map(p => {
     if (p.status === 'LOCKED') {
@@ -323,14 +328,26 @@ export default function Dashboard({ student: propStudent, onSelectPhase, onStude
             </div>
           </div>
 
-          {/* Progress Bar */}
+          {/* Progress Bar Container: Overall Auditing Progress & Re-Audit Progress */}
           <div className="progress-bar-container" style={{ marginBottom: 'clamp(1rem, 2vh, 1.5rem)', background: 'rgba(30, 41, 59, 0.4)', padding: 'clamp(0.6rem, 1.2vw, 1rem) clamp(0.75rem, 1.5vw, 1.25rem)', borderRadius: '8px', border: '1px solid #334155' }}>
+            {/* Primary: Overall Auditing Roadmap Completion */}
             <div className="dashboard-progress-stats" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', fontSize: 'clamp(0.75rem, 1vw, 0.85rem)', letterSpacing: '1px' }}>
               <span style={{ color: '#60a5fa' }}>OVERALL AUDITING ROADMAP COMPLETION:</span>
-              <strong style={{ color: '#10b981' }}>{completionPercent}% COMPLETE ({completedCount} / 7 PHASES)</strong>
+              <strong style={{ color: '#38bdf8' }}>{completionPercent}% COMPLETE ({completedCount} / 7 PHASES)</strong>
             </div>
-            <div style={{ width: '100%', height: '12px', background: '#0b1120', borderRadius: '6px', overflow: 'hidden', border: '1px solid #334155' }}>
-              <div style={{ width: `${completionPercent}%`, height: '100%', background: 'linear-gradient(90deg, #10b981, #34d399)', transition: 'width 0.5s ease-in-out' }}></div>
+            <div className="progress-bar-track" style={{ width: '100%', height: '12px', background: '#0b1120', borderRadius: '6px', overflow: 'hidden', border: '1px solid #334155', marginBottom: '14px' }}>
+              <div style={{ width: `${completionPercent}%`, height: '100%', background: 'linear-gradient(90deg, #0284c7, #38bdf8)', transition: 'width 0.5s ease-in-out' }}></div>
+            </div>
+
+            {/* Secondary: Re-Audit Practice & Mastery Progress */}
+            <div className="dashboard-progress-stats reaudit-progress-stats" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', fontSize: 'clamp(0.75rem, 1vw, 0.85rem)', letterSpacing: '1px' }}>
+              <span style={{ color: '#34d399', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span style={{ fontSize: '0.95rem' }}>↻</span> RE-AUDIT PRACTICE &amp; MASTERY PROGRESS:
+              </span>
+              <strong style={{ color: '#10b981' }}>{reAuditPercent}% MASTERED ({reAuditCount} / 7 PHASES)</strong>
+            </div>
+            <div className="progress-bar-track" style={{ width: '100%', height: '12px', background: '#0b1120', borderRadius: '6px', overflow: 'hidden', border: '1px solid #334155' }}>
+              <div style={{ width: `${reAuditPercent}%`, height: '100%', background: 'linear-gradient(90deg, #059669, #10b981, #34d399)', transition: 'width 0.5s ease-in-out' }}></div>
             </div>
           </div>
 
@@ -360,9 +377,25 @@ export default function Dashboard({ student: propStudent, onSelectPhase, onStude
                   >
                     <div>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', borderBottom: '1px dashed #334155', paddingBottom: '8px' }}>
-                        <span style={{ color: isCompleted ? '#10b981' : '#fbbf24', fontSize: '0.8rem', fontWeight: 'bold' }}>
-                          {isCompleted ? '✓ COMPLETED' : '▶ AVAILABLE'}
-                        </span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <span style={{ color: isCompleted ? '#10b981' : '#fbbf24', fontSize: '0.8rem', fontWeight: 'bold' }}>
+                            {isCompleted ? '✓ COMPLETED' : '▶ AVAILABLE'}
+                          </span>
+                          {originalProgress?.reAuditCompleted && (
+                            <span style={{
+                              background: 'rgba(16, 185, 129, 0.2)',
+                              border: '1px solid #10b981',
+                              color: '#34d399',
+                              fontSize: '0.68rem',
+                              padding: '1px 6px',
+                              borderRadius: '4px',
+                              fontWeight: 'bold',
+                              letterSpacing: '0.5px'
+                            }}>
+                              ↻ RE-AUDITED
+                            </span>
+                          )}
+                        </div>
                         <span style={{ color: isCompleted ? '#10b981' : '#fbbf24', fontWeight: 'bold' }}>
                           {(p.completionPercentage !== undefined ? p.completionPercentage : (isCompleted ? 100 : 0))}%
                         </span>
@@ -440,12 +473,38 @@ export default function Dashboard({ student: propStudent, onSelectPhase, onStude
                     : (selectedPhaseSummary.failedAttempts !== undefined ? `${(selectedPhaseSummary.failedAttempts || 0) + 1} tries` : '1 try')}
                 </strong>
               </div>
-              <div className="data-row" style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <div className="data-row" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: selectedPhaseSummary.hasReAudited ? '8px' : '0' }}>
                 <span style={{ color: '#60a5fa' }}>Best Audit Score:</span>
                 <strong className="highlight-green" style={{ fontSize: '1.3rem', color: '#10b981' }}>
                   {selectedPhaseSummary.bestScore || 100}%
                 </strong>
               </div>
+              {selectedPhaseSummary.hasReAudited && (
+                <>
+                  <div className="data-row" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', borderTop: '1px dashed #334155', paddingTop: '8px' }}>
+                    <span style={{ color: '#34d399' }}>Re-Audit Practice:</span>
+                    <strong style={{ color: selectedPhaseSummary.reAuditCompleted ? '#10b981' : '#fbbf24' }}>
+                      {selectedPhaseSummary.reAuditCompleted ? 'MASTERED ✓' : 'IN PROGRESS'}
+                    </strong>
+                  </div>
+                  {selectedPhaseSummary.reAuditCompleted && selectedPhaseSummary.reAuditScore !== undefined && selectedPhaseSummary.reAuditScore > 0 && (
+                    <div className="data-row" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+                      <span style={{ color: '#34d399' }}>Re-Audit Score:</span>
+                      <strong style={{ color: '#10b981', fontSize: '1.1rem' }}>
+                        {selectedPhaseSummary.reAuditScore}%
+                      </strong>
+                    </div>
+                  )}
+                  {selectedPhaseSummary.reAuditAttemptsCount !== undefined && selectedPhaseSummary.reAuditAttemptsCount > 0 && (
+                    <div className="data-row" style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={{ color: '#34d399' }}>Re-Audit Tries:</span>
+                      <strong style={{ color: '#f1f5f9' }}>
+                        {selectedPhaseSummary.reAuditAttemptsCount} {selectedPhaseSummary.reAuditAttemptsCount === 1 ? 'try' : 'tries'}
+                      </strong>
+                    </div>
+                  )}
+                </>
+              )}
               <p style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '15px', fontStyle: 'italic', borderTop: '1px dashed #1e293b', paddingTop: '10px', margin: '15px 0 0 0' }}>
                 * Audit score starts at 100% with a 10% deduction per incorrect calculation attempt (minimum 50%). Practice leads to zero errors!
               </p>

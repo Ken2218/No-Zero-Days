@@ -640,6 +640,27 @@ body.light-mode .progress-bar-container {
   border: 1.5px solid #cbd5e1 !important;
 }
 
+body.light-mode .progress-bar-container .progress-bar-track {
+  background: #e2e8f0 !important;
+  border-color: #cbd5e1 !important;
+}
+
+body.light-mode .progress-bar-container .dashboard-progress-stats span {
+  color: #0369a1 !important;
+}
+
+body.light-mode .progress-bar-container .dashboard-progress-stats strong {
+  color: #0284c7 !important;
+}
+
+body.light-mode .progress-bar-container .reaudit-progress-stats span {
+  color: #047857 !important;
+}
+
+body.light-mode .progress-bar-container .reaudit-progress-stats strong {
+  color: #059669 !important;
+}
+
 body.light-mode .module-card {
   background-color: #ffffff !important;
   border: 1.5px solid #cbd5e1 !important;

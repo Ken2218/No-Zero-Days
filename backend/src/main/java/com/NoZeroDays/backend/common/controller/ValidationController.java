@@ -258,6 +258,13 @@ public class ValidationController {
         int currentPhase = activeSession != null ? activeSession.getCurrentPhase() : 1;
         boolean isSessionCompleted = activeSession != null && "COMPLETED".equalsIgnoreCase(activeSession.getStatus());
 
+        List<AttemptLog> allStudentAttempts = attemptLogRepository.findByStudentProfileOrderByAttemptTimeAsc(student);
+        Map<String, List<AttemptLog>> phaseAttemptsMap = new HashMap<>();
+        for (AttemptLog log : allStudentAttempts) {
+            String key = (log.getModule() != null ? log.getModule().toUpperCase() : "") + "_" + log.getPhase();
+            phaseAttemptsMap.computeIfAbsent(key, k -> new java.util.ArrayList<>()).add(log);
+        }
+
         for (int i = 0; i < 7; i++) {
             int phaseId = i + 1;
             String module = modules[i];
@@ -298,7 +305,55 @@ public class ValidationController {
                 bestScore = Math.max(100 - (failures * 10), 50);
             }
 
-            list.add(new PhaseProgress(phaseId, titles[i], descriptions[i], status, bestScore, completionPercentage, module, phaseIndex, attemptsCount, failedAttempts));
+            // Calculate Re-Audit metrics
+            String phaseKey = module.toUpperCase() + "_" + phaseIndex;
+            List<AttemptLog> phaseAttempts = phaseAttemptsMap.getOrDefault(phaseKey, Collections.emptyList());
+            List<String> requiredSteps = getRequiredStepsForPhase(module, phaseIndex);
+
+            List<AttemptLog> firstAttempts = new java.util.ArrayList<>();
+            List<AttemptLog> reAuditAttempts = new java.util.ArrayList<>();
+            java.util.Set<String> stepsCompletedSoFar = new java.util.HashSet<>();
+            boolean firstCompletedFound = false;
+
+            for (AttemptLog log : phaseAttempts) {
+                if ("RE_AUDIT".equalsIgnoreCase(log.getAttemptType())) {
+                    reAuditAttempts.add(log);
+                } else if ("FIRST_ATTEMPT".equalsIgnoreCase(log.getAttemptType())) {
+                    firstAttempts.add(log);
+                } else {
+                    if (firstCompletedFound) {
+                        reAuditAttempts.add(log);
+                    } else {
+                        firstAttempts.add(log);
+                        if (log.isSuccessful() && log.getStep() != null) {
+                            stepsCompletedSoFar.add(log.getStep().toUpperCase());
+                            if (!requiredSteps.isEmpty() && requiredSteps.stream().allMatch(stepsCompletedSoFar::contains)) {
+                                firstCompletedFound = true;
+                            }
+                        }
+                    }
+                }
+            }
+
+            boolean hasReAudited = !reAuditAttempts.isEmpty();
+            boolean isReAuditCompleted = hasReAudited && isPhaseCompleteBySteps(reAuditAttempts, module, phaseIndex);
+
+            int reAuditFailedCount = 0;
+            int reAuditDrillResets = 0;
+            for (AttemptLog log : reAuditAttempts) {
+                if ("system=DRILL_RESET".equals(log.getUserInputData())) {
+                    reAuditDrillResets++;
+                } else if (!log.isSuccessful()) {
+                    reAuditFailedCount++;
+                }
+            }
+            int reAuditAttemptsCount = Math.max(reAuditDrillResets, reAuditFailedCount / 3);
+            if (hasReAudited && reAuditAttemptsCount == 0) {
+                reAuditAttemptsCount = 1;
+            }
+            int reAuditScore = isReAuditCompleted ? Math.max(100 - (reAuditFailedCount * 10), 50) : 0;
+
+            list.add(new PhaseProgress(phaseId, titles[i], descriptions[i], status, bestScore, completionPercentage, module, phaseIndex, attemptsCount, failedAttempts, hasReAudited, isReAuditCompleted, reAuditAttemptsCount, reAuditScore));
             previousCompleted = completed;
         }
 
@@ -357,6 +412,18 @@ public class ValidationController {
         return calculateCompletionPercentage(student, module, phase, sessionStartTime) == 100;
     }
 
+    private boolean isPhaseCompleteBySteps(List<AttemptLog> attempts, String module, int phase) {
+        List<String> requiredSteps = getRequiredStepsForPhase(module, phase);
+        if (requiredSteps.isEmpty()) return false;
+
+        java.util.Set<String> successfulSteps = attempts.stream()
+                .filter(AttemptLog::isSuccessful)
+                .map(a -> a.getStep() != null ? a.getStep().toUpperCase() : "")
+                .collect(java.util.stream.Collectors.toSet());
+
+        return requiredSteps.stream().allMatch(step -> successfulSteps.contains(step.toUpperCase()));
+    }
+
     public static class PhaseProgress {
         private int phaseId;
         private String title;
@@ -368,12 +435,20 @@ public class ValidationController {
         private int phaseIndex;
         private int attemptsCount;
         private int failedAttempts;
+        private boolean hasReAudited;
+        private boolean reAuditCompleted;
+        private int reAuditAttemptsCount;
+        private int reAuditScore;
 
         public PhaseProgress(int phaseId, String title, String description, String status, int bestScore, int completionPercentage, String module, int phaseIndex) {
-            this(phaseId, title, description, status, bestScore, completionPercentage, module, phaseIndex, 0, 0);
+            this(phaseId, title, description, status, bestScore, completionPercentage, module, phaseIndex, 0, 0, false, false, 0, 0);
         }
 
         public PhaseProgress(int phaseId, String title, String description, String status, int bestScore, int completionPercentage, String module, int phaseIndex, int attemptsCount, int failedAttempts) {
+            this(phaseId, title, description, status, bestScore, completionPercentage, module, phaseIndex, attemptsCount, failedAttempts, false, false, 0, 0);
+        }
+
+        public PhaseProgress(int phaseId, String title, String description, String status, int bestScore, int completionPercentage, String module, int phaseIndex, int attemptsCount, int failedAttempts, boolean hasReAudited, boolean reAuditCompleted, int reAuditAttemptsCount, int reAuditScore) {
             this.phaseId = phaseId;
             this.title = title;
             this.description = description;
@@ -384,6 +459,10 @@ public class ValidationController {
             this.phaseIndex = phaseIndex;
             this.attemptsCount = attemptsCount;
             this.failedAttempts = failedAttempts;
+            this.hasReAudited = hasReAudited;
+            this.reAuditCompleted = reAuditCompleted;
+            this.reAuditAttemptsCount = reAuditAttemptsCount;
+            this.reAuditScore = reAuditScore;
         }
 
         public int getPhaseId() { return phaseId; }
@@ -396,5 +475,11 @@ public class ValidationController {
         public int getPhaseIndex() { return phaseIndex; }
         public int getAttemptsCount() { return attemptsCount; }
         public int getFailedAttempts() { return failedAttempts; }
+        public boolean isHasReAudited() { return hasReAudited; }
+        public boolean getHasReAudited() { return hasReAudited; }
+        public boolean isReAuditCompleted() { return reAuditCompleted; }
+        public boolean getReAuditCompleted() { return reAuditCompleted; }
+        public int getReAuditAttemptsCount() { return reAuditAttemptsCount; }
+        public int getReAuditScore() { return reAuditScore; }
     }
 }
