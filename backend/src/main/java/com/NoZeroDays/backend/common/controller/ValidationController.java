@@ -64,6 +64,12 @@ public class ValidationController {
         String module = request.getModule() != null ? request.getModule() : "M1_MATH";
         int phase     = request.getPhase()  != null ? request.getPhase()  : 1;
 
+        // Ensure phase timer is running and stamp Phase 1 start time on student submission.
+        // CRITICAL: MUST execute BEFORE validation services so that if this submission
+        // successfully completes the phase, updateProgress()'s clean reset (phaseEnteredAt = null)
+        // is NOT immediately overwritten!
+        ensurePhaseTimingOnSubmission(request);
+
         ValidationResponse response;
 
         if ("M1_MATH".equalsIgnoreCase(module)) {
@@ -87,8 +93,6 @@ public class ValidationController {
                     false, false);
         }
 
-        // Ensure phase timer is running and stamp Phase 1 start time on student submission.
-        ensurePhaseTimingOnSubmission(request);
         return ResponseEntity.ok(response);
     }
 
@@ -102,30 +106,49 @@ public class ValidationController {
         String module  = request.getModule()  != null ? request.getModule()  : "M1_MATH";
         Integer phase  = request.getPhase()   != null ? request.getPhase()   : 1;
 
+        int canonicalPhase = 1;
+        if ("M1_MATH".equalsIgnoreCase(module)) {
+            canonicalPhase = (phase != null) ? phase : 1;
+        } else if ("M2_MULTIPLIERS".equalsIgnoreCase(module)) {
+            canonicalPhase = (phase != null) ? 2 + phase : 3;
+        } else if ("M3_BUREAUCRACY".equalsIgnoreCase(module)) {
+            canonicalPhase = (phase != null) ? 4 + phase : 5;
+        } else if ("M4_TRIBUNAL".equalsIgnoreCase(module)) {
+            canonicalPhase = 7;
+        }
+
         Optional<StudentProfile> studentOpt = studentRepository.findByStudentNumber(request.getStudentNumber().trim());
         if (studentOpt.isEmpty()) return;
         StudentProfile student = studentOpt.get();
 
         List<GameSession> sessions = gameSessionRepository.findByStudentProfileAndStatus(student, "ACTIVE");
+        java.time.LocalDateTime now = java.time.LocalDateTime.now();
         if (sessions.isEmpty()) {
             GameSession newSession = new GameSession(student);
             newSession.setCurrentModule(module);
-            newSession.setCurrentPhase(phase);
+            newSession.setCurrentPhase(canonicalPhase);
             newSession.setStatus("ACTIVE");
-            newSession.setPhaseEnteredAt(java.time.LocalDateTime.now());
-            if ("M1_MATH".equalsIgnoreCase(module) && phase == 1) {
-                newSession.setStartTime(java.time.LocalDateTime.now());
-            }
+            newSession.setStartTime(now);
+            newSession.setPhaseEnteredAt(now);
+            newSession.setLastHeartbeatAt(now);
             gameSessionRepository.save(newSession);
         } else {
             GameSession session = sessions.get(0);
             boolean dirty = false;
-            if ("M1_MATH".equalsIgnoreCase(module) && phase == 1 && session.getStartTime() == null) {
-                session.setStartTime(java.time.LocalDateTime.now());
+            session.setLastHeartbeatAt(now);
+            dirty = true;
+            if (session.getStartTime() == null) {
+                session.setStartTime(now);
                 dirty = true;
             }
-            if (session.getPhaseEnteredAt() == null) {
-                session.setPhaseEnteredAt(java.time.LocalDateTime.now());
+            if (session.getCurrentPhase() != canonicalPhase) {
+                session.setCurrentPhase(canonicalPhase);
+                session.setPhaseEnteredAt(now);
+                session.setPhaseExitedAt(null);
+                session.setAccumulatedPauseSeconds(0L);
+                dirty = true;
+            } else if (session.getPhaseEnteredAt() == null) {
+                session.setPhaseEnteredAt(now);
                 session.setPhaseExitedAt(null);
                 session.setAccumulatedPauseSeconds(0L);
                 dirty = true;

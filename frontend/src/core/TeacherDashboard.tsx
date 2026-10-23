@@ -1245,12 +1245,12 @@ export default function TeacherDashboard({
                         <div
                           key={p.phaseId}
                           className={`phase-chip ${p.status}`}
-                          title={`${p.title}: ${p.status} | Attempts: ${p.attempts} | Time: ${p.timeSpentFormatted}`}
+                          title={`${p.title}: ${p.status === 'NOT_ATTEMPTED' ? 'OPEN' : p.status} | Attempts: ${p.attempts} | Time: ${p.timeSpentFormatted}`}
                           onClick={() => setExpandedStudent(isExpanded ? null : stu.studentNumber)}
                         >
                           <span className="chip-num">P{p.phaseId}</span>
                           <span className="chip-icon">
-                            {p.status === 'COMPLETED' ? '✓' : p.status === 'ACTIVE' ? '⚡' : '🔒'}
+                            {p.status === 'COMPLETED' ? '✓' : p.status === 'ACTIVE' || p.attempts > 0 ? '⚡' : '○'}
                           </span>
                         </div>
                       ))}
@@ -1300,10 +1300,10 @@ export default function TeacherDashboard({
                               <div className="p-col-status">
                                 <span style={{
                                   fontSize: '0.75rem',
-                                  color: p.status === 'COMPLETED' ? '#10b981' : p.status === 'ACTIVE' ? '#f59e0b' : '#64748b',
+                                  color: p.status === 'COMPLETED' ? '#10b981' : p.status === 'ACTIVE' || p.attempts > 0 ? '#f59e0b' : '#94a3b8',
                                   fontWeight: 'bold'
                                 }}>
-                                  {p.status}
+                                  {p.status === 'COMPLETED' ? 'COMPLETED' : p.status === 'ACTIVE' || p.attempts > 0 ? 'ACTIVE' : 'OPEN'}
                                 </span>
                               </div>
                             </div>
@@ -1394,17 +1394,20 @@ export default function TeacherDashboard({
                       {/* 7 Phase Columns with Time & Attempts */}
                       {(stu.phases || []).map((p) => (
                         <td key={p.phaseId} className={`matrix-phase-cell ${p.status}`}>
-                          {p.status === 'LOCKED' ? (
-                            <span style={{ color: '#475569' }}>--</span>
-                          ) : (
+                          {p.status === 'COMPLETED' || p.status === 'ACTIVE' || p.attempts > 0 || (p.timeSpentSeconds && p.timeSpentSeconds > 0) ? (
                             <div>
                               <div style={{ fontWeight: 'bold' }}>
                                 {p.status === 'COMPLETED' ? '✓ ' : '⚡ '}
-                                {p.timeSpentFormatted}
+                                {p.timeSpentFormatted !== '--' ? p.timeSpentFormatted : '0s'}
                               </div>
                               <span style={{ fontSize: '0.7rem', color: '#94a3b8' }}>
                                 {p.attempts} att
                               </span>
+                            </div>
+                          ) : (
+                            <div>
+                              <div style={{ fontWeight: 'bold', color: '#64748b' }}>--</div>
+                              <span style={{ fontSize: '0.7rem', color: '#475569' }}>0 att</span>
                             </div>
                           )}
                         </td>

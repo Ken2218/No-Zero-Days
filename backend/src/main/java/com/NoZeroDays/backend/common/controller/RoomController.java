@@ -744,17 +744,18 @@ public class RoomController {
     // -------------------------------------------------------------------------
 
     /**
-     * POST /api/rooms/{roomCode}/phase-enter
+     * POST /api/rooms/{roomCode}/phase-enter or /api/students/phase-enter
      *
      * Fired by the frontend when the student navigates into a phase room.
      * - If the student previously exited this phase without completing it,
      *   the gap (exitedAt -> now) is banked into accumulatedPauseSeconds so
      *   that pause time can be subtracted when computing net active time.
      * - Sets phaseEnteredAt = now() to mark the start of the new active window.
+     * - Refreshes lastHeartbeatAt.
      */
-    @PostMapping("/rooms/{roomCode}/phase-enter")
+    @PostMapping(value = {"/rooms/{roomCode}/phase-enter", "/students/phase-enter"})
     public ResponseEntity<?> notifyPhaseEnter(
-            @PathVariable String roomCode,
+            @PathVariable(name = "roomCode", required = false) String roomCode,
             @RequestBody Map<String, Object> body) {
 
         String studentNumber = body.get("studentNumber") != null ? body.get("studentNumber").toString() : null;
@@ -771,22 +772,43 @@ public class RoomController {
 
         GameSession session = sessions.get(0);
         LocalDateTime now = LocalDateTime.now();
+        session.setLastHeartbeatAt(now);
 
-        // If student previously exited (paused) without completing, bank the pause gap
-        if (session.getPhaseExitedAt() != null) {
-            long pauseGap = ChronoUnit.SECONDS.between(session.getPhaseExitedAt(), now);
-            session.setAccumulatedPauseSeconds(
-                    session.getAccumulatedPauseSeconds() + Math.max(pauseGap, 0));
-            session.setPhaseExitedAt(null); // clear exit marker — student is back
+        Object phaseObj = body.get("phase");
+        int targetPhase = session.getCurrentPhase();
+        if (phaseObj != null) {
+            try {
+                int pNum = Integer.parseInt(phaseObj.toString());
+                if (pNum >= 1 && pNum <= 7) {
+                    targetPhase = pNum;
+                }
+            } catch (Exception ignored) {}
         }
 
-        // Only set phaseEnteredAt if not already in an active window
-        if (session.getPhaseEnteredAt() == null) {
+        // If switching to a different phase, switch active objective and reset presence timer for new phase
+        if (session.getCurrentPhase() != targetPhase) {
+            session.setCurrentPhase(targetPhase);
+            session.setAccumulatedPauseSeconds(0L);
             session.setPhaseEnteredAt(now);
+            session.setPhaseExitedAt(null);
+        } else {
+            // Same phase: if student previously exited (paused) without completing, bank the pause gap
+            if (session.getPhaseExitedAt() != null) {
+                long pauseGap = ChronoUnit.SECONDS.between(session.getPhaseExitedAt(), now);
+                session.setAccumulatedPauseSeconds(
+                        session.getAccumulatedPauseSeconds() + Math.max(pauseGap, 0));
+                session.setPhaseExitedAt(null); // clear exit marker — student is back
+            }
+
+            // Only set phaseEnteredAt if not already in an active window
+            if (session.getPhaseEnteredAt() == null) {
+                session.setPhaseEnteredAt(now);
+            }
         }
         gameSessionRepository.save(session);
 
         System.out.println("[PHASE-ENTER] student=" + studentNumber
+                + " phase=" + session.getCurrentPhase()
                 + " enteredAt=" + session.getPhaseEnteredAt()
                 + " accPause=" + session.getAccumulatedPauseSeconds() + "s");
 
@@ -794,19 +816,19 @@ public class RoomController {
     }
 
     /**
-     * POST /api/rooms/{roomCode}/phase-exit
+     * POST /api/rooms/{roomCode}/phase-exit or /api/students/phase-exit
      *
      * Fired by the frontend when the student leaves a phase room without
-     * completing it (e.g., clicks "Return to Dashboard" or navigates away).
+     * completing it (e.g., clicks "Return to Dashboard", logs out, switches tab, or navigates away).
      * - Pauses the timer by setting phaseExitedAt = now().
      * - Preserves phaseEnteredAt and progress so the student can resume.
      */
-    @PostMapping("/rooms/{roomCode}/phase-exit")
+    @PostMapping(value = {"/rooms/{roomCode}/phase-exit", "/students/phase-exit", "/students/logout-session"})
     public ResponseEntity<?> notifyPhaseExit(
-            @PathVariable String roomCode,
-            @RequestBody Map<String, Object> body) {
+            @PathVariable(name = "roomCode", required = false) String roomCode,
+            @RequestBody(required = false) Map<String, Object> body) {
 
-        String studentNumber = body.get("studentNumber") != null ? body.get("studentNumber").toString() : null;
+        String studentNumber = (body != null && body.get("studentNumber") != null) ? body.get("studentNumber").toString() : null;
         if (studentNumber == null || studentNumber.isBlank()) {
             return ResponseEntity.badRequest().body(Map.of("error", "studentNumber required"));
         }
@@ -823,11 +845,54 @@ public class RoomController {
 
         // Freeze/pause the active timer at this moment
         session.setPhaseExitedAt(now);
+        session.setLastHeartbeatAt(now);
         gameSessionRepository.save(session);
 
         System.out.println("[PHASE-EXIT] student=" + studentNumber + " exitedAt=" + now + " (timer paused)");
 
         return ResponseEntity.ok(Map.of("ok", true, "exitedAt", now.toString()));
+    }
+
+    /**
+     * POST /api/students/heartbeat or /api/rooms/{roomCode}/heartbeat
+     *
+     * Periodic ping sent by active student client while inside a phase room.
+     * Prevents runaway timer if student disconnects, kills browser, or locks screen
+     * without a clean exit beacon firing.
+     */
+    @PostMapping(value = {"/rooms/{roomCode}/heartbeat", "/students/heartbeat"})
+    public ResponseEntity<?> studentHeartbeat(
+            @PathVariable(name = "roomCode", required = false) String roomCode,
+            @RequestBody(required = false) Map<String, Object> body) {
+
+        String studentNumber = (body != null && body.get("studentNumber") != null) ? body.get("studentNumber").toString() : null;
+        if (studentNumber == null || studentNumber.isBlank()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "studentNumber required"));
+        }
+
+        Optional<StudentProfile> studentOpt = studentRepository.findByStudentNumber(studentNumber.trim());
+        if (studentOpt.isEmpty()) return ResponseEntity.ok(Map.of("ok", true));
+
+        StudentProfile student = studentOpt.get();
+        List<GameSession> sessions = gameSessionRepository.findByStudentProfileAndStatus(student, "ACTIVE");
+        if (sessions.isEmpty()) return ResponseEntity.ok(Map.of("ok", true));
+
+        GameSession session = sessions.get(0);
+        LocalDateTime now = LocalDateTime.now();
+        session.setLastHeartbeatAt(now);
+
+        Object phaseObj = body != null ? body.get("phase") : null;
+        if (phaseObj != null) {
+            try {
+                int pNum = Integer.parseInt(phaseObj.toString());
+                if (pNum >= 1 && pNum <= 7 && session.getCurrentPhase() != pNum) {
+                    session.setCurrentPhase(pNum);
+                }
+            } catch (Exception ignored) {}
+        }
+        gameSessionRepository.save(session);
+
+        return ResponseEntity.ok(Map.of("ok", true, "heartbeatAt", now.toString()));
     }
 
     // -------------------------------------------------------------------------
@@ -966,10 +1031,16 @@ public class RoomController {
                 }
 
                 int firstAttemptsCount = Math.max(firstDrillResets, firstFailedCount / 3);
+                if (!firstAttempts.isEmpty() && firstAttemptsCount == 0) {
+                    firstAttemptsCount = 1;
+                }
                 studentFirstTotalAttempts += firstAttemptsCount;
 
-                boolean isFirstCompleted = isSessionCompleted || (phaseId < currentPhaseIndex) || firstCompletedFound
+                // Judge completion solely by actual steps completed (not sequential phase index comparison)
+                boolean isFirstCompleted = isSessionCompleted || firstCompletedFound
                         || (firstLastSuccess != null && isPhaseCompleteBySteps(firstAttempts, module, phaseIndex));
+
+                boolean isCurrentActivePhase = (session != null && session.getCurrentPhase() == phaseId);
 
                 long firstPhaseSeconds = 0;
                 if (isFirstCompleted) {
@@ -980,7 +1051,7 @@ public class RoomController {
                     if (firstStart != null) {
                         LocalDateTime endRef = firstLastSuccess != null ? firstLastSuccess : (firstEnd != null ? firstEnd : firstStart);
                         long diff = ChronoUnit.SECONDS.between(firstStart, endRef);
-                        long paused = (session != null && phaseId == currentPhaseIndex) ? session.getAccumulatedPauseSeconds() : 0L;
+                        long paused = (session != null && isCurrentActivePhase) ? session.getAccumulatedPauseSeconds() : 0L;
                         diff = Math.max(diff - paused, 0L);
                         if (diff <= 0) {
                             diff = Math.max(firstAttemptsCount * 45L, 30L);
@@ -992,23 +1063,56 @@ public class RoomController {
                     studentFirstTotalSeconds += firstPhaseSeconds;
                     classFirstTotalSeconds[i] += firstPhaseSeconds;
                     classFirstTimeContributors[i]++;
-                } else if (phaseId == currentPhaseIndex || (phaseId == 1 && studentFirstCompletedPhases == 0)) {
+                } else if (isCurrentActivePhase) {
                     classFirstActiveCounts[i]++;
                     classFirstTotalAttempts[i] += firstAttemptsCount;
                     if (session != null && session.getPhaseEnteredAt() != null) {
                         LocalDateTime activeStart = session.getPhaseEnteredAt();
-                        LocalDateTime activeEnd = (session.getPhaseExitedAt() != null)
-                                ? session.getPhaseExitedAt()
-                                : LocalDateTime.now();
+                        LocalDateTime activeEnd;
+                        if (session.getPhaseExitedAt() != null) {
+                            // Student is explicitly out of phase / logged out / paused
+                            activeEnd = session.getPhaseExitedAt();
+                        } else {
+                            LocalDateTime now = LocalDateTime.now();
+                            // Inactivity / disconnect safeguard: if no heartbeat received for > 30s, freeze at last heartbeat
+                            if (session.getLastHeartbeatAt() != null) {
+                                long heartbeatAge = ChronoUnit.SECONDS.between(session.getLastHeartbeatAt(), now);
+                                activeEnd = (heartbeatAge > 30) ? session.getLastHeartbeatAt() : now;
+                            } else {
+                                long ageSinceEnter = ChronoUnit.SECONDS.between(activeStart, now);
+                                activeEnd = (ageSinceEnter > 45) ? activeStart.plusSeconds(30) : now;
+                            }
+                        }
                         long diff = ChronoUnit.SECONDS.between(activeStart, activeEnd);
                         long paused = session.getAccumulatedPauseSeconds();
                         firstPhaseSeconds = Math.max(diff - paused, 0L);
-                        studentFirstTotalSeconds += firstPhaseSeconds;
+                    } else if (firstStart != null && firstEnd != null) {
+                        long diff = ChronoUnit.SECONDS.between(firstStart, firstEnd);
+                        firstPhaseSeconds = Math.max(diff, Math.max(firstAttemptsCount * 30L, 20L));
                     }
+                    studentFirstTotalSeconds += firstPhaseSeconds;
+                } else if (!firstAttempts.isEmpty()) {
+                    // Non-consecutive phase previously attempted by student!
+                    classFirstTotalAttempts[i] += firstAttemptsCount;
+                    if (firstStart != null && firstEnd != null) {
+                        long diff = ChronoUnit.SECONDS.between(firstStart, firstEnd);
+                        firstPhaseSeconds = Math.max(diff, Math.max(firstAttemptsCount * 30L, 20L));
+                    } else {
+                        firstPhaseSeconds = Math.max(firstAttemptsCount * 30L, 20L);
+                    }
+                    studentFirstTotalSeconds += firstPhaseSeconds;
                 }
 
                 int firstScore = isFirstCompleted ? Math.max(100 - (firstFailedCount * 10), 50) : 0;
-                String firstStatus = isFirstCompleted ? "COMPLETED" : ((phaseId == currentPhaseIndex) ? "ACTIVE" : "LOCKED");
+                // All phases are unlocked so any attempted phase is visible and accurately tracked
+                String firstStatus;
+                if (isFirstCompleted) {
+                    firstStatus = "COMPLETED";
+                } else if (isCurrentActivePhase || !firstAttempts.isEmpty()) {
+                    firstStatus = "ACTIVE";
+                } else {
+                    firstStatus = "NOT_ATTEMPTED";
+                }
 
                 // --- 2. Compute Re-Audit Metrics ---
                 int reAuditFailedCount = 0;

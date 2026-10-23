@@ -68,6 +68,14 @@ public class GameSession {
      */
     private long accumulatedPauseSeconds = 0L;
 
+    /**
+     * Timestamp of the most recent active heartbeat / action received from the
+     * student while inside a phase room. If no heartbeat arrives for > 30 seconds
+     * (e.g., student disconnected, closed app, or mobile screen locked without
+     * a clean exit beacon), the active timer freezes at this timestamp.
+     */
+    private LocalDateTime lastHeartbeatAt = null;
+
     // Default Constructor
     public GameSession() {}
 
@@ -105,4 +113,7 @@ public class GameSession {
 
     public long getAccumulatedPauseSeconds() { return accumulatedPauseSeconds; }
     public void setAccumulatedPauseSeconds(long accumulatedPauseSeconds) { this.accumulatedPauseSeconds = accumulatedPauseSeconds; }
+
+    public LocalDateTime getLastHeartbeatAt() { return lastHeartbeatAt; }
+    public void setLastHeartbeatAt(LocalDateTime lastHeartbeatAt) { this.lastHeartbeatAt = lastHeartbeatAt; }
 }

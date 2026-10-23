@@ -338,7 +338,7 @@ public class EmailReportService {
             }
             firstTotalAttempts += firstTries;
 
-            boolean isFirstDone = isSessionCompleted || firstCompletedFound || (firstLastSuccess != null) || (phaseId < currentPhaseIndex) || isPhaseCompleteBySteps(firstAttempts, module, phaseIndex);
+            boolean isFirstDone = isSessionCompleted || firstCompletedFound || isPhaseCompleteBySteps(firstAttempts, module, phaseIndex);
             long firstSec = 0;
 
             if (isFirstDone) {
@@ -358,10 +358,27 @@ public class EmailReportService {
                 firstTotalSeconds += firstSec;
             } else if (phaseId == currentPhaseIndex && session != null && session.getPhaseEnteredAt() != null) {
                 LocalDateTime activeStart = session.getPhaseEnteredAt();
-                LocalDateTime activeEnd = (session.getPhaseExitedAt() != null) ? session.getPhaseExitedAt() : LocalDateTime.now();
+                LocalDateTime activeEnd;
+                if (session.getPhaseExitedAt() != null) {
+                    activeEnd = session.getPhaseExitedAt();
+                } else {
+                    LocalDateTime now = LocalDateTime.now();
+                    if (session.getLastHeartbeatAt() != null) {
+                        long heartbeatAge = ChronoUnit.SECONDS.between(session.getLastHeartbeatAt(), now);
+                        activeEnd = (heartbeatAge > 30) ? session.getLastHeartbeatAt() : now;
+                    } else {
+                        long ageSinceEnter = ChronoUnit.SECONDS.between(activeStart, now);
+                        activeEnd = (ageSinceEnter > 45) ? activeStart.plusSeconds(30) : now;
+                    }
+                }
                 long diff = ChronoUnit.SECONDS.between(activeStart, activeEnd);
                 long paused = session.getAccumulatedPauseSeconds();
                 firstSec = Math.max(diff - paused, 0L);
+                firstTotalSeconds += firstSec;
+            } else if (!firstAttempts.isEmpty() && firstAttemptTime != null) {
+                LocalDateTime endRef = firstLastAttempt != null ? firstLastAttempt : firstAttemptTime;
+                long diff = ChronoUnit.SECONDS.between(firstAttemptTime, endRef);
+                firstSec = Math.max(diff, Math.max(firstTries * 30L, 20L));
                 firstTotalSeconds += firstSec;
             }
 
@@ -414,10 +431,8 @@ public class EmailReportService {
 
             if (isCombinedDone) {
                 completedCount++;
-                totalSeconds += combinedSec;
-            } else if (phaseId == currentPhaseIndex) {
-                totalSeconds += combinedSec;
             }
+            totalSeconds += combinedSec;
             totalAttempts += combinedTries;
 
             PhaseMetric pm = new PhaseMetric();

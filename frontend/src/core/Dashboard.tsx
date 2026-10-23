@@ -118,7 +118,42 @@ export default function Dashboard({ student: propStudent, onSelectPhase, onStude
     }
   }, [roomCode, propStudent]);
 
+  // When student is viewing Dashboard, guarantee any active phase timer is paused
+  useEffect(() => {
+    const studentNum = student?.studentNumber;
+    if (studentNum) {
+      const exitUrl = roomCode
+        ? `${API_BASE_URL}/api/rooms/${roomCode}/phase-exit`
+        : `${API_BASE_URL}/api/students/phase-exit`;
+      fetch(exitUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ studentNumber: studentNum }),
+        keepalive: true
+      }).catch(() => {});
+    }
+  }, [student?.studentNumber, roomCode]);
+
   const handleLogout = () => {
+    try {
+      const studentNum = student?.studentNumber;
+      if (studentNum) {
+        const payload = JSON.stringify({ studentNumber: studentNum });
+        const exitUrl = roomCode
+          ? `${API_BASE_URL}/api/rooms/${roomCode}/phase-exit`
+          : `${API_BASE_URL}/api/students/phase-exit`;
+        if (navigator.sendBeacon) {
+          const blob = new Blob([payload], { type: 'application/json' });
+          navigator.sendBeacon(exitUrl, blob);
+        }
+        fetch(exitUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: payload,
+          keepalive: true
+        }).catch(() => {});
+      }
+    } catch (_) {}
     localStorage.removeItem('student');
     localStorage.removeItem('studentRoomCode');
     window.location.reload();

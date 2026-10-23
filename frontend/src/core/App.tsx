@@ -221,16 +221,21 @@ function App() {
 
   const notifyPhaseEnter = async (phaseIndex?: number) => {
     const studentNum = (student as any)?.studentNumber;
-    const currentRoom = roomCode || localStorage.getItem('studentRoomCode');
-    if (!studentNum || !currentRoom) return;
+    if (!studentNum) return;
+    const currentRoom = roomCode || localStorage.getItem('studentRoomCode') || '';
+    const payload = JSON.stringify({
+      studentNumber: studentNum,
+      phase: phaseIndex || activePhaseIndex
+    });
     try {
-      await fetch(`${API_BASE_URL}/api/rooms/${currentRoom}/phase-enter`, {
+      const enterUrl = currentRoom
+        ? `${API_BASE_URL}/api/rooms/${currentRoom}/phase-enter`
+        : `${API_BASE_URL}/api/students/phase-enter`;
+      await fetch(enterUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          studentNumber: studentNum,
-          phase: phaseIndex || activePhaseIndex
-        })
+        body: payload,
+        keepalive: true
       });
     } catch (err) {
       console.error('[Timer] Failed to notify phase enter:', err);
@@ -239,13 +244,27 @@ function App() {
 
   const notifyPhaseExit = async () => {
     const studentNum = (student as any)?.studentNumber;
-    const currentRoom = roomCode || localStorage.getItem('studentRoomCode');
-    if (!studentNum || !currentRoom) return;
+    if (!studentNum) return;
+    const currentRoom = roomCode || localStorage.getItem('studentRoomCode') || '';
+    const payload = JSON.stringify({ studentNumber: studentNum, phase: activePhaseIndex });
+
+    const exitUrl = currentRoom
+      ? `${API_BASE_URL}/api/rooms/${currentRoom}/phase-exit`
+      : `${API_BASE_URL}/api/students/phase-exit`;
+
+    if (navigator.sendBeacon) {
+      try {
+        const blob = new Blob([payload], { type: 'application/json' });
+        navigator.sendBeacon(exitUrl, blob);
+      } catch (_) {}
+    }
+
     try {
-      await fetch(`${API_BASE_URL}/api/rooms/${currentRoom}/phase-exit`, {
+      await fetch(exitUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ studentNumber: studentNum, phase: activePhaseIndex })
+        body: payload,
+        keepalive: true
       });
     } catch (err) {
       console.error('[Timer] Failed to notify phase exit:', err);
@@ -366,16 +385,69 @@ function App() {
     }
   }, [isStudentInPhase, activePhaseIndex]);
 
-  // 2. Beacon on page close / unload to freeze timer even if window or tab is closed
+  // 2. Periodic heartbeat while actively inside a phase: sends ping every 10s
+  // Prevents runaway timer if mobile screen locks, browser crashes, or student disconnects
+  useEffect(() => {
+    if (!isStudentInPhase || isCurrentPhaseComplete) return;
+    const studentNum = (student as any)?.studentNumber;
+    if (!studentNum) return;
+    const currentRoom = roomCode || localStorage.getItem('studentRoomCode') || '';
+    const heartbeatUrl = currentRoom
+      ? `${API_BASE_URL}/api/rooms/${currentRoom}/heartbeat`
+      : `${API_BASE_URL}/api/students/heartbeat`;
+
+    const heartbeatInterval = setInterval(() => {
+      fetch(heartbeatUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ studentNumber: studentNum, phase: activePhaseIndex }),
+        keepalive: true
+      }).catch(() => {});
+    }, 10000);
+
+    return () => clearInterval(heartbeatInterval);
+  }, [isStudentInPhase, isCurrentPhaseComplete, student, roomCode, activePhaseIndex]);
+
+  // 3. Tab visibility / mobile app backgrounding / screen lock detection
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        if (isStudentInPhase) {
+          notifyPhaseExit();
+        }
+      } else if (document.visibilityState === 'visible') {
+        if (isStudentInPhase && !isCurrentPhaseComplete) {
+          notifyPhaseEnter(activePhaseIndex);
+        }
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [isStudentInPhase, activePhaseIndex, isCurrentPhaseComplete]);
+
+  // 4. Guarantee that leaving a phase (e.g. to DASHBOARD or LOGIN) freezes the phase timer
+  useEffect(() => {
+    if (!isStudentInPhase && (student as any)?.studentNumber) {
+      notifyPhaseExit();
+    }
+  }, [isStudentInPhase]);
+
+  // 5. Beacon on page close / unload to freeze timer even if window or tab is closed
   useEffect(() => {
     const handleBeforeUnload = () => {
       const studentNum = (student as any)?.studentNumber;
-      const currentRoom = roomCode || localStorage.getItem('studentRoomCode');
-      if (isStudentInPhase && studentNum && currentRoom) {
-        const payload = JSON.stringify({ studentNumber: studentNum });
+      if (isStudentInPhase && studentNum) {
+        const currentRoom = roomCode || localStorage.getItem('studentRoomCode') || '';
+        const exitUrl = currentRoom
+          ? `${API_BASE_URL}/api/rooms/${currentRoom}/phase-exit`
+          : `${API_BASE_URL}/api/students/phase-exit`;
+        const payload = JSON.stringify({ studentNumber: studentNum, phase: activePhaseIndex });
         if (navigator.sendBeacon) {
           const blob = new Blob([payload], { type: 'application/json' });
-          navigator.sendBeacon(`${API_BASE_URL}/api/rooms/${currentRoom}/phase-exit`, blob);
+          navigator.sendBeacon(exitUrl, blob);
         }
       }
     };
@@ -386,7 +458,7 @@ function App() {
       window.removeEventListener('beforeunload', handleBeforeUnload);
       window.removeEventListener('pagehide', handleBeforeUnload);
     };
-  }, [isStudentInPhase, student, roomCode]);
+  }, [isStudentInPhase, student, roomCode, activePhaseIndex]);
 
   // Poll for pending room invitations when logged in as a student without an active room
   useEffect(() => {

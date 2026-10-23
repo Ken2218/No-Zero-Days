@@ -276,6 +276,7 @@ public class ValidationService {
                 session.setPhaseEnteredAt(null);
                 session.setPhaseExitedAt(null);
                 session.setAccumulatedPauseSeconds(0L);
+                session.setLastHeartbeatAt(null);
 
                 if (currentCompletedPhase >= 7) {
                     session.setStatus("COMPLETED");
