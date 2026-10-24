@@ -87,6 +87,16 @@ interface TeacherDashboardProps {
   onSwitchRoom?: (newRoomCode: string, newSection?: string) => void;
 }
 
+const PHASE_LABELS = [
+  'P1: Gross Pay',
+  'P2: Tardiness',
+  'P3: Overtime',
+  'P4: Holiday Pay',
+  'P5: SSS Share',
+  'P6: PhilHealth',
+  'P7: Final Tribunal'
+];
+
 export default function TeacherDashboard({
   roomCode: initialRoomCode,
   teacherName,
@@ -122,7 +132,7 @@ export default function TeacherDashboard({
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState<'ALL' | 'ACTIVE' | 'COMPLETED'>('ALL');
   const [expandedStudent, setExpandedStudent] = useState<string | null>(null);
-  const [auditAttemptMode, setAuditAttemptMode] = useState<'FIRST_ATTEMPT' | 'RE_AUDIT' | 'ALL'>('FIRST_ATTEMPT');
+  const [auditAttemptMode, setAuditAttemptMode] = useState<'COMPARISON' | 'FIRST_ATTEMPT' | 'RE_AUDIT' | 'ALL'>('COMPARISON');
 
   // Add student modal
   const [showAddModal, setShowAddModal] = useState(false);
@@ -527,8 +537,106 @@ export default function TeacherDashboard({
   // ---------------------------------------------------------------------------
 
   const renderFunnelChart = () => {
-    const phaseStats = activePhaseStats;
+    const isComparison = auditAttemptMode === 'COMPARISON' || auditAttemptMode === 'ALL';
     const total = summary?.totalStudents || displayedStudents.length || 1;
+
+    if (isComparison) {
+      const firstStats = summary?.firstAttemptPhaseStats && summary.firstAttemptPhaseStats.length > 0
+        ? summary.firstAttemptPhaseStats
+        : (summary?.phaseStats || []);
+      const reAuditStats = summary?.reAuditPhaseStats && summary.reAuditPhaseStats.length > 0
+        ? summary.reAuditPhaseStats
+        : [];
+
+      const phases = Array.from({ length: 7 }, (_, idx) => {
+        const phaseId = idx + 1;
+        const f = firstStats.find(p => p.phaseId === phaseId) || firstStats[idx] || {
+          phaseId,
+          title: PHASE_LABELS[idx],
+          completedCount: 0
+        };
+        const r = reAuditStats.find(p => p.phaseId === phaseId) || reAuditStats[idx] || {
+          phaseId,
+          title: PHASE_LABELS[idx],
+          completedCount: 0
+        };
+        return { phaseId, title: f.title || PHASE_LABELS[idx], f, r };
+      });
+
+      return (
+        <div style={{ width: '100%', overflowX: 'auto' }}>
+          <p style={{ color: '#94a3b8', fontSize: '0.85rem', marginTop: 0, marginBottom: '20px' }}>
+            Comparison of completion rates between <strong style={{ color: '#38bdf8' }}>1st Attempt (Blue)</strong> and <strong style={{ color: '#fb923c' }}>Re-Audit Mastery (Orange)</strong>.
+          </p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', minWidth: '650px' }}>
+            {phases.map(({ phaseId, title, f, r }) => {
+              const fPercent = Math.round(((f.completedCount || 0) / total) * 100);
+              const rPercent = Math.round(((r.completedCount || 0) / total) * 100);
+
+              return (
+                <div key={phaseId} style={{ display: 'grid', gridTemplateColumns: '170px 1fr 180px', alignItems: 'center', gap: '16px' }}>
+                  <div style={{ fontSize: '0.85rem', fontWeight: 'bold', color: '#cbd5e1', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {title}
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    {/* Blue 1st Attempt bar */}
+                    <div style={{ height: '14px', background: '#0b1120', borderRadius: '3px', overflow: 'hidden', border: '1px solid #1e293b' }}>
+                      <div
+                        style={{
+                          width: `${fPercent}%`,
+                          background: 'linear-gradient(90deg, #0ea5e9, #0284c7)',
+                          height: '100%',
+                          transition: 'width 0.5s ease',
+                          boxShadow: fPercent > 0 ? '0 0 8px rgba(14, 165, 233, 0.4)' : 'none'
+                        }}
+                        title={`1st Attempt Completed: ${f.completedCount} students (${fPercent}%)`}
+                      />
+                    </div>
+                    {/* Orange Re-Audit bar */}
+                    <div style={{ height: '14px', background: '#0b1120', borderRadius: '3px', overflow: 'hidden', border: '1px solid #1e293b' }}>
+                      <div
+                        style={{
+                          width: `${rPercent}%`,
+                          background: 'linear-gradient(90deg, #fb923c, #ea580c)',
+                          height: '100%',
+                          transition: 'width 0.5s ease',
+                          boxShadow: rPercent > 0 ? '0 0 8px rgba(234, 88, 12, 0.4)' : 'none'
+                        }}
+                        title={`Re-Audit Mastered: ${r.completedCount} students (${rPercent}%)`}
+                      />
+                    </div>
+                  </div>
+                  <div style={{ fontSize: '0.78rem', color: '#94a3b8', textAlign: 'right', whiteSpace: 'nowrap', display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                    <div>
+                      <span style={{ color: '#38bdf8', fontWeight: 'bold' }}>1st: {f.completedCount}</span>/{total} passed{' '}
+                      <span style={{ color: '#60a5fa' }}>({fPercent}%)</span>
+                    </div>
+                    <div>
+                      <span style={{ color: '#fb923c', fontWeight: 'bold' }}>Re: {r.completedCount}</span>/{total} mastered{' '}
+                      <span style={{ color: '#f97316' }}>({rPercent}%)</span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          <div style={{ display: 'flex', justifyContent: 'center', gap: '32px', marginTop: '16px', fontSize: '0.85rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span style={{ width: '14px', height: '14px', background: 'linear-gradient(90deg, #0ea5e9, #0284c7)', borderRadius: '3px', display: 'inline-block' }}></span>
+              <span style={{ color: '#38bdf8', fontWeight: 600 }}>1st Attempt Passed (Diagnostic)</span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span style={{ width: '14px', height: '14px', background: 'linear-gradient(90deg, #fb923c, #ea580c)', borderRadius: '3px', display: 'inline-block' }}></span>
+              <span style={{ color: '#fb923c', fontWeight: 600 }}>Re-Audit Mastered (Practice)</span>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // Single-stream funnel
+    const phaseStats = activePhaseStats;
 
     return (
       <div style={{ width: '100%', overflowX: 'auto' }}>
@@ -548,11 +656,11 @@ export default function TeacherDashboard({
                     style={{
                       width: `${percent}%`,
                       background: auditAttemptMode === 'RE_AUDIT'
-                        ? 'linear-gradient(90deg, #10b981, #059669)'
-                        : 'linear-gradient(90deg, #10b981, #06b6d4)',
+                        ? 'linear-gradient(90deg, #fb923c, #ea580c)'
+                        : 'linear-gradient(90deg, #0ea5e9, #0284c7)',
                       height: '100%',
                       transition: 'width 0.5s ease',
-                      boxShadow: percent > 0 ? '0 0 10px rgba(16, 185, 129, 0.4)' : 'none'
+                      boxShadow: percent > 0 ? (auditAttemptMode === 'RE_AUDIT' ? '0 0 10px rgba(234, 88, 12, 0.4)' : '0 0 10px rgba(14, 165, 233, 0.4)') : 'none'
                     }}
                     title={`Completed: ${p.completedCount} students (${percent}%)`}
                   />
@@ -568,7 +676,7 @@ export default function TeacherDashboard({
                   />
                 </div>
                 <div style={{ fontSize: '0.8rem', color: '#94a3b8', textAlign: 'right', whiteSpace: 'nowrap' }}>
-                  <strong style={{ color: '#10b981' }}>{p.completedCount}</strong>/{total} passed{' '}
+                  <strong style={{ color: auditAttemptMode === 'RE_AUDIT' ? '#fb923c' : '#38bdf8' }}>{p.completedCount}</strong>/{total} passed{' '}
                   <span style={{ color: '#60a5fa' }}>({percent}%)</span>
                 </div>
               </div>
@@ -577,7 +685,7 @@ export default function TeacherDashboard({
         </div>
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '20px', marginTop: '16px', fontSize: '0.8rem' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <span style={{ width: '12px', height: '12px', background: '#10b981', borderRadius: '2px', display: 'inline-block' }}></span>
+            <span style={{ width: '12px', height: '12px', background: auditAttemptMode === 'RE_AUDIT' ? '#fb923c' : '#0ea5e9', borderRadius: '2px', display: 'inline-block' }}></span>
             <span style={{ color: '#94a3b8' }}>
               {auditAttemptMode === 'RE_AUDIT' ? 'Re-Audit Completed' : 'Completed'}
             </span>
@@ -592,6 +700,129 @@ export default function TeacherDashboard({
   };
 
   const renderTimeChart = () => {
+    const isComparison = auditAttemptMode === 'COMPARISON' || auditAttemptMode === 'ALL';
+    const firstStats = summary?.firstAttemptPhaseStats && summary.firstAttemptPhaseStats.length > 0
+      ? summary.firstAttemptPhaseStats
+      : (summary?.phaseStats || []);
+    const reAuditStats = summary?.reAuditPhaseStats && summary.reAuditPhaseStats.length > 0
+      ? summary.reAuditPhaseStats
+      : [];
+
+    if (isComparison) {
+      const allTimes = [
+        ...firstStats.map(p => p.avgTimeSeconds),
+        ...reAuditStats.map(p => p.avgTimeSeconds)
+      ];
+      const maxTime = Math.max(...allTimes, 60);
+
+      const phases = Array.from({ length: 7 }, (_, idx) => {
+        const phaseId = idx + 1;
+        const f = firstStats.find(p => p.phaseId === phaseId) || firstStats[idx] || {
+          phaseId,
+          title: PHASE_LABELS[idx],
+          avgTimeSeconds: 0,
+          avgTimeFormatted: '--',
+          avgAttempts: 0,
+          completedCount: 0
+        };
+        const r = reAuditStats.find(p => p.phaseId === phaseId) || reAuditStats[idx] || {
+          phaseId,
+          title: PHASE_LABELS[idx],
+          avgTimeSeconds: 0,
+          avgTimeFormatted: '--',
+          avgAttempts: 0,
+          completedCount: 0
+        };
+        return { phaseId, title: f.title || PHASE_LABELS[idx], f, r };
+      });
+
+      return (
+        <div style={{ width: '100%', overflowX: 'auto' }}>
+          <p style={{ color: '#94a3b8', fontSize: '0.85rem', marginTop: 0, marginBottom: '20px' }}>
+            Side-by-side comparison of <strong style={{ color: '#38bdf8' }}>1st Attempt (Blue)</strong> baseline duration vs. <strong style={{ color: '#fb923c' }}>Re-Audit (Orange)</strong> practice duration across Phases 1–7. Highlights speedup and retention.
+          </p>
+          <div style={{ display: 'flex', alignItems: 'flex-end', gap: '16px', height: '230px', paddingBottom: '30px', borderBottom: '1px solid #334155', minWidth: '650px' }}>
+            {phases.map(({ phaseId, title, f, r }) => {
+              const fHeight = Math.max(Math.round(((f.avgTimeSeconds || 0) / maxTime) * 160), f.avgTimeSeconds > 0 ? 8 : 4);
+              const rHeight = Math.max(Math.round(((r.avgTimeSeconds || 0) / maxTime) * 160), r.avgTimeSeconds > 0 ? 8 : 4);
+
+              return (
+                <div key={phaseId} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', height: '100%', justifyContent: 'flex-end' }}>
+                  {/* Side-by-side grouped bars */}
+                  <div style={{ display: 'flex', alignItems: 'flex-end', gap: '6px', width: '100%', justifyContent: 'center' }}>
+                    {/* Blue bar: First Attempt */}
+                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', maxWidth: '38px' }}>
+                      <span style={{ fontSize: '0.7rem', color: '#38bdf8', fontWeight: 'bold', marginBottom: '4px', whiteSpace: 'nowrap' }}>
+                        {f.avgTimeFormatted !== '--' ? f.avgTimeFormatted : '0s'}
+                      </span>
+                      <div
+                        style={{
+                          width: '100%',
+                          height: `${fHeight}px`,
+                          background: 'linear-gradient(180deg, #0ea5e9, #0284c7)',
+                          borderRadius: '4px 4px 0 0',
+                          transition: 'height 0.4s ease',
+                          boxShadow: '0 0 10px rgba(14, 165, 233, 0.35)'
+                        }}
+                        title={`${title} (1st Attempt): Avg ${f.avgTimeFormatted} (${f.completedCount} passed)`}
+                      />
+                    </div>
+
+                    {/* Orange bar: Re-Audit */}
+                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', maxWidth: '38px' }}>
+                      <span style={{ fontSize: '0.7rem', color: '#fb923c', fontWeight: 'bold', marginBottom: '4px', whiteSpace: 'nowrap' }}>
+                        {r.completedCount > 0 && r.avgTimeFormatted !== '--' ? r.avgTimeFormatted : '--'}
+                      </span>
+                      <div
+                        style={{
+                          width: '100%',
+                          height: `${rHeight}px`,
+                          background: r.completedCount > 0
+                            ? 'linear-gradient(180deg, #fb923c, #ea580c)'
+                            : 'rgba(234, 88, 12, 0.25)',
+                          borderRadius: '4px 4px 0 0',
+                          transition: 'height 0.4s ease',
+                          boxShadow: r.completedCount > 0 ? '0 0 10px rgba(234, 88, 12, 0.35)' : 'none'
+                        }}
+                        title={`${title} (Re-Audit): Avg ${r.avgTimeFormatted} (${r.completedCount} re-audited)`}
+                      />
+                    </div>
+                  </div>
+
+                  <span style={{ fontSize: '0.78rem', color: '#e2e8f0', fontWeight: 'bold', marginTop: '8px', textAlign: 'center' }}>
+                    P{phaseId}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Legend */}
+          <div style={{ display: 'flex', justifyContent: 'center', gap: '32px', marginTop: '16px', fontSize: '0.85rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span style={{ width: '14px', height: '14px', background: 'linear-gradient(180deg, #0ea5e9, #0284c7)', borderRadius: '3px', display: 'inline-block' }}></span>
+              <span style={{ color: '#38bdf8', fontWeight: 600 }}>1st Attempt (Initial Diagnostic)</span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span style={{ width: '14px', height: '14px', background: 'linear-gradient(180deg, #fb923c, #ea580c)', borderRadius: '3px', display: 'inline-block' }}></span>
+              <span style={{ color: '#fb923c', fontWeight: 600 }}>Re-Audit Attempt (Practice &amp; Mastery)</span>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '12px', fontSize: '0.75rem', color: '#64748b' }}>
+            <span>P1: Gross Pay</span>
+            <span>P2: Tardiness</span>
+            <span>P3: Overtime</span>
+            <span>P4: Holiday Pay</span>
+            <span>P5: SSS Share</span>
+            <span>P6: PhilHealth</span>
+            <span>P7: Final Tribunal</span>
+          </div>
+        </div>
+      );
+    }
+
+    // Single-stream view
     const phaseStats = activePhaseStats;
     const maxTime = Math.max(...phaseStats.map(p => p.avgTimeSeconds), 60);
 
@@ -609,7 +840,7 @@ export default function TeacherDashboard({
 
             return (
               <div key={idx} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', height: '100%', justifyContent: 'flex-end' }}>
-                <span style={{ fontSize: '0.75rem', color: isHighest ? '#fbbf24' : '#38bdf8', fontWeight: 'bold', marginBottom: '6px' }}>
+                <span style={{ fontSize: '0.75rem', color: isHighest ? '#fbbf24' : (auditAttemptMode === 'RE_AUDIT' ? '#fb923c' : '#38bdf8'), fontWeight: 'bold', marginBottom: '6px' }}>
                   {p.avgTimeFormatted !== '--' ? p.avgTimeFormatted : '0s'}
                 </span>
                 <div
@@ -619,8 +850,8 @@ export default function TeacherDashboard({
                     background: isHighest
                       ? 'linear-gradient(180deg, #f59e0b, #b45309)'
                       : (auditAttemptMode === 'RE_AUDIT'
-                          ? 'linear-gradient(180deg, #10b981, #065f46)'
-                          : 'linear-gradient(180deg, #0ea5e9, #1e3a8a)'),
+                          ? 'linear-gradient(180deg, #fb923c, #ea580c)'
+                          : 'linear-gradient(180deg, #0ea5e9, #0284c7)'),
                     borderRadius: '4px 4px 0 0',
                     transition: 'height 0.4s ease',
                     boxShadow: isHighest ? '0 0 15px rgba(245, 158, 11, 0.4)' : 'none'
@@ -648,6 +879,125 @@ export default function TeacherDashboard({
   };
 
   const renderAttemptsChart = () => {
+    const isComparison = auditAttemptMode === 'COMPARISON' || auditAttemptMode === 'ALL';
+    const firstStats = summary?.firstAttemptPhaseStats && summary.firstAttemptPhaseStats.length > 0
+      ? summary.firstAttemptPhaseStats
+      : (summary?.phaseStats || []);
+    const reAuditStats = summary?.reAuditPhaseStats && summary.reAuditPhaseStats.length > 0
+      ? summary.reAuditPhaseStats
+      : [];
+
+    if (isComparison) {
+      const allAtts = [
+        ...firstStats.map(p => p.avgAttempts),
+        ...reAuditStats.map(p => p.avgAttempts)
+      ];
+      const maxAttempts = Math.max(...allAtts, 5);
+
+      const phases = Array.from({ length: 7 }, (_, idx) => {
+        const phaseId = idx + 1;
+        const f = firstStats.find(p => p.phaseId === phaseId) || firstStats[idx] || {
+          phaseId,
+          title: PHASE_LABELS[idx],
+          avgAttempts: 0,
+          completedCount: 0
+        };
+        const r = reAuditStats.find(p => p.phaseId === phaseId) || reAuditStats[idx] || {
+          phaseId,
+          title: PHASE_LABELS[idx],
+          avgAttempts: 0,
+          completedCount: 0
+        };
+        return { phaseId, title: f.title || PHASE_LABELS[idx], f, r };
+      });
+
+      return (
+        <div style={{ width: '100%', overflowX: 'auto' }}>
+          <p style={{ color: '#94a3b8', fontSize: '0.85rem', marginTop: 0, marginBottom: '20px' }}>
+            Side-by-side comparison of <strong style={{ color: '#38bdf8' }}>1st Attempt (Blue)</strong> friction tries vs. <strong style={{ color: '#fb923c' }}>Re-Audit (Orange)</strong> retry counts across Phases 1–7.
+          </p>
+          <div style={{ display: 'flex', alignItems: 'flex-end', gap: '16px', height: '230px', paddingBottom: '30px', borderBottom: '1px solid #334155', minWidth: '650px' }}>
+            {phases.map(({ phaseId, title, f, r }) => {
+              const fHeight = Math.max(Math.round(((f.avgAttempts || 0) / maxAttempts) * 160), f.avgAttempts > 0 ? 8 : 4);
+              const rHeight = Math.max(Math.round(((r.avgAttempts || 0) / maxAttempts) * 160), r.avgAttempts > 0 ? 8 : 4);
+
+              return (
+                <div key={phaseId} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', height: '100%', justifyContent: 'flex-end' }}>
+                  {/* Side-by-side grouped bars */}
+                  <div style={{ display: 'flex', alignItems: 'flex-end', gap: '6px', width: '100%', justifyContent: 'center' }}>
+                    {/* Blue bar: First Attempt */}
+                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', maxWidth: '38px' }}>
+                      <span style={{ fontSize: '0.72rem', color: '#38bdf8', fontWeight: 'bold', marginBottom: '4px', whiteSpace: 'nowrap' }}>
+                        {(f.avgAttempts || 0).toFixed(1)}x
+                      </span>
+                      <div
+                        style={{
+                          width: '100%',
+                          height: `${fHeight}px`,
+                          background: 'linear-gradient(180deg, #0ea5e9, #0284c7)',
+                          borderRadius: '4px 4px 0 0',
+                          transition: 'height 0.4s ease',
+                          boxShadow: '0 0 10px rgba(14, 165, 233, 0.35)'
+                        }}
+                        title={`${title} (1st Attempt): Avg ${f.avgAttempts} attempts`}
+                      />
+                    </div>
+
+                    {/* Orange bar: Re-Audit */}
+                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', maxWidth: '38px' }}>
+                      <span style={{ fontSize: '0.72rem', color: '#fb923c', fontWeight: 'bold', marginBottom: '4px', whiteSpace: 'nowrap' }}>
+                        {r.completedCount > 0 ? `${(r.avgAttempts || 0).toFixed(1)}x` : '--'}
+                      </span>
+                      <div
+                        style={{
+                          width: '100%',
+                          height: `${rHeight}px`,
+                          background: r.completedCount > 0
+                            ? 'linear-gradient(180deg, #fb923c, #ea580c)'
+                            : 'rgba(234, 88, 12, 0.25)',
+                          borderRadius: '4px 4px 0 0',
+                          transition: 'height 0.4s ease',
+                          boxShadow: r.completedCount > 0 ? '0 0 10px rgba(234, 88, 12, 0.35)' : 'none'
+                        }}
+                        title={`${title} (Re-Audit): Avg ${r.avgAttempts} attempts`}
+                      />
+                    </div>
+                  </div>
+
+                  <span style={{ fontSize: '0.78rem', color: '#e2e8f0', fontWeight: 'bold', marginTop: '8px', textAlign: 'center' }}>
+                    P{phaseId}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Legend */}
+          <div style={{ display: 'flex', justifyContent: 'center', gap: '32px', marginTop: '16px', fontSize: '0.85rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span style={{ width: '14px', height: '14px', background: 'linear-gradient(180deg, #0ea5e9, #0284c7)', borderRadius: '3px', display: 'inline-block' }}></span>
+              <span style={{ color: '#38bdf8', fontWeight: 600 }}>1st Attempt Average Tries</span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span style={{ width: '14px', height: '14px', background: 'linear-gradient(180deg, #fb923c, #ea580c)', borderRadius: '3px', display: 'inline-block' }}></span>
+              <span style={{ color: '#fb923c', fontWeight: 600 }}>Re-Audit Average Tries</span>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '12px', fontSize: '0.75rem', color: '#64748b' }}>
+            <span>P1: Gross Pay</span>
+            <span>P2: Tardiness</span>
+            <span>P3: Overtime</span>
+            <span>P4: Holiday Pay</span>
+            <span>P5: SSS Share</span>
+            <span>P6: PhilHealth</span>
+            <span>P7: Final Tribunal</span>
+          </div>
+        </div>
+      );
+    }
+
+    // Single-stream view
     const phaseStats = activePhaseStats;
     const maxAttempts = Math.max(...phaseStats.map(p => p.avgAttempts), 5);
 
@@ -665,7 +1015,7 @@ export default function TeacherDashboard({
 
             return (
               <div key={idx} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', height: '100%', justifyContent: 'flex-end' }}>
-                <span style={{ fontSize: '0.8rem', color: isFriction ? '#ef4444' : '#a855f7', fontWeight: 'bold', marginBottom: '6px' }}>
+                <span style={{ fontSize: '0.8rem', color: isFriction ? '#ef4444' : (auditAttemptMode === 'RE_AUDIT' ? '#fb923c' : '#38bdf8'), fontWeight: 'bold', marginBottom: '6px' }}>
                   {p.avgAttempts.toFixed(1)}x
                 </span>
                 <div
@@ -675,8 +1025,8 @@ export default function TeacherDashboard({
                     background: isFriction
                       ? 'linear-gradient(180deg, #ef4444, #991b1b)'
                       : (auditAttemptMode === 'RE_AUDIT'
-                          ? 'linear-gradient(180deg, #34d399, #047857)'
-                          : 'linear-gradient(180deg, #a855f7, #6b21a8)'),
+                          ? 'linear-gradient(180deg, #fb923c, #ea580c)'
+                          : 'linear-gradient(180deg, #0ea5e9, #0284c7)'),
                     borderRadius: '4px 4px 0 0',
                     transition: 'height 0.4s ease',
                     boxShadow: isFriction ? '0 0 12px rgba(239, 68, 68, 0.4)' : 'none'
@@ -704,7 +1054,113 @@ export default function TeacherDashboard({
   };
 
   const renderStatusDonut = () => {
-    const total = displayedStudents.length || 1;
+    const isComparison = auditAttemptMode === 'COMPARISON' || auditAttemptMode === 'ALL';
+    const total = students.length || 1;
+
+    if (isComparison) {
+      const firstCompleted = summary?.firstAttemptCompletedStudents ?? students.filter(s => s.firstAttempt ? s.firstAttempt.completedPhases === 7 : s.completedPhases === 7).length;
+      const firstInProgress = students.filter(s => {
+        const c = s.firstAttempt ? s.firstAttempt.completedPhases : s.completedPhases;
+        return c > 0 && c < 7;
+      }).length;
+      const firstNotStarted = Math.max(0, total - firstCompleted - firstInProgress);
+
+      const firstCompletedPct = Math.round((firstCompleted / total) * 100);
+      const firstInProgressPct = Math.round((firstInProgress / total) * 100);
+
+      const reCompleted = students.filter(s => s.reAudit && s.reAudit.completedPhases === 7).length;
+      const reInProgress = students.filter(s => s.reAudit && s.reAudit.completedPhases > 0 && s.reAudit.completedPhases < 7).length;
+      const reNotStarted = Math.max(0, total - reCompleted - reInProgress);
+
+      const reCompletedPct = Math.round((reCompleted / total) * 100);
+      const reInProgressPct = Math.round((reInProgress / total) * 100);
+
+      return (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '48px', flexWrap: 'wrap', padding: '10px 0' }}>
+          {/* Left: 1st Attempt Cohort */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '20px', background: 'rgba(14, 165, 233, 0.05)', padding: '16px 24px', borderRadius: '12px', border: '1px solid rgba(14, 165, 233, 0.2)' }}>
+            <div style={{ position: 'relative', width: '130px', height: '130px' }}>
+              <svg viewBox="0 0 36 36" style={{ width: '100%', height: '100%', transform: 'rotate(-90deg)' }}>
+                <circle cx="18" cy="18" r="15.915" fill="transparent" stroke="#1e293b" strokeWidth="4" />
+                <circle
+                  cx="18" cy="18" r="15.915" fill="transparent"
+                  stroke="#0ea5e9" strokeWidth="4"
+                  strokeDasharray={`${firstCompletedPct} ${100 - firstCompletedPct}`}
+                  strokeDashoffset="0"
+                />
+                <circle
+                  cx="18" cy="18" r="15.915" fill="transparent"
+                  stroke="#38bdf8" strokeWidth="4"
+                  strokeDasharray={`${firstInProgressPct} ${100 - firstInProgressPct}`}
+                  strokeDashoffset={`${-firstCompletedPct}`}
+                />
+              </svg>
+              <div style={{
+                position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+                display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center'
+              }}>
+                <span style={{ fontSize: '1.2rem', fontWeight: 'bold', color: '#38bdf8' }}>{firstCompleted}/{total}</span>
+                <span style={{ fontSize: '0.65rem', color: '#94a3b8' }}>1ST PASS</span>
+              </div>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <strong style={{ color: '#38bdf8', fontSize: '0.9rem', marginBottom: '2px' }}>🎯 1st Attempt Cohort</strong>
+              <div style={{ fontSize: '0.8rem', color: '#cbd5e1' }}>
+                <span style={{ color: '#0ea5e9', fontWeight: 'bold' }}>{firstCompleted}</span> passed 7/7 ({firstCompletedPct}%)
+              </div>
+              <div style={{ fontSize: '0.8rem', color: '#94a3b8' }}>
+                <span style={{ color: '#38bdf8', fontWeight: 'bold' }}>{firstInProgress}</span> in progress ({firstInProgressPct}%)
+              </div>
+              <div style={{ fontSize: '0.8rem', color: '#64748b' }}>
+                <span>{firstNotStarted}</span> not started
+              </div>
+            </div>
+          </div>
+
+          {/* Right: Re-Audit Cohort */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '20px', background: 'rgba(234, 88, 12, 0.05)', padding: '16px 24px', borderRadius: '12px', border: '1px solid rgba(234, 88, 12, 0.2)' }}>
+            <div style={{ position: 'relative', width: '130px', height: '130px' }}>
+              <svg viewBox="0 0 36 36" style={{ width: '100%', height: '100%', transform: 'rotate(-90deg)' }}>
+                <circle cx="18" cy="18" r="15.915" fill="transparent" stroke="#1e293b" strokeWidth="4" />
+                <circle
+                  cx="18" cy="18" r="15.915" fill="transparent"
+                  stroke="#ea580c" strokeWidth="4"
+                  strokeDasharray={`${reCompletedPct} ${100 - reCompletedPct}`}
+                  strokeDashoffset="0"
+                />
+                <circle
+                  cx="18" cy="18" r="15.915" fill="transparent"
+                  stroke="#fb923c" strokeWidth="4"
+                  strokeDasharray={`${reInProgressPct} ${100 - reInProgressPct}`}
+                  strokeDashoffset={`${-reCompletedPct}`}
+                />
+              </svg>
+              <div style={{
+                position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+                display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center'
+              }}>
+                <span style={{ fontSize: '1.2rem', fontWeight: 'bold', color: '#fb923c' }}>{reCompleted}/{total}</span>
+                <span style={{ fontSize: '0.65rem', color: '#94a3b8' }}>RE-MASTER</span>
+              </div>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <strong style={{ color: '#fb923c', fontSize: '0.9rem', marginBottom: '2px' }}>↻ Re-Audit Cohort</strong>
+              <div style={{ fontSize: '0.8rem', color: '#cbd5e1' }}>
+                <span style={{ color: '#ea580c', fontWeight: 'bold' }}>{reCompleted}</span> mastered 7/7 ({reCompletedPct}%)
+              </div>
+              <div style={{ fontSize: '0.8rem', color: '#94a3b8' }}>
+                <span style={{ color: '#fb923c', fontWeight: 'bold' }}>{reInProgress}</span> practicing ({reInProgressPct}%)
+              </div>
+              <div style={{ fontSize: '0.8rem', color: '#64748b' }}>
+                <span>{reNotStarted}</span> not re-audited yet
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // Single-stream cohort status
     const completed = displayedStudents.filter(s => s.completedPhases === 7).length;
     const inProgress = displayedStudents.filter(s => s.completedPhases > 0 && s.completedPhases < 7).length;
     const justStarted = displayedStudents.filter(s => s.completedPhases === 0).length;
@@ -715,7 +1171,7 @@ export default function TeacherDashboard({
 
     const completedLabel = auditAttemptMode === 'RE_AUDIT'
       ? 'Mastered Re-Audit (7/7):'
-      : (auditAttemptMode === 'FIRST_ATTEMPT' ? '1st Attempt Passed (7/7):' : 'Fully Passed (7/7):');
+      : '1st Attempt Passed (7/7):';
     const inProgressLabel = auditAttemptMode === 'RE_AUDIT'
       ? 'Re-Auditing (1-6):'
       : 'In Progress (1-6):';
@@ -723,22 +1179,22 @@ export default function TeacherDashboard({
       ? 'No Re-Audit Yet:'
       : 'At Starting Line:';
 
+    const accentColor = auditAttemptMode === 'RE_AUDIT' ? '#fb923c' : '#0ea5e9';
+
     return (
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '40px', flexWrap: 'wrap', padding: '10px 0' }}>
         <div style={{ position: 'relative', width: '160px', height: '160px' }}>
           <svg viewBox="0 0 36 36" style={{ width: '100%', height: '100%', transform: 'rotate(-90deg)' }}>
             <circle cx="18" cy="18" r="15.915" fill="transparent" stroke="#1e293b" strokeWidth="4" />
-            {/* Completed arc */}
             <circle
               cx="18" cy="18" r="15.915" fill="transparent"
-              stroke="#10b981" strokeWidth="4"
+              stroke={accentColor} strokeWidth="4"
               strokeDasharray={`${completedPct} ${100 - completedPct}`}
               strokeDashoffset="0"
             />
-            {/* In Progress arc */}
             <circle
               cx="18" cy="18" r="15.915" fill="transparent"
-              stroke="#3b82f6" strokeWidth="4"
+              stroke="#f59e0b" strokeWidth="4"
               strokeDasharray={`${inProgressPct} ${100 - inProgressPct}`}
               strokeDashoffset={`${-completedPct}`}
             />
@@ -754,14 +1210,14 @@ export default function TeacherDashboard({
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <span style={{ width: '14px', height: '14px', background: '#10b981', borderRadius: '3px' }}></span>
+            <span style={{ width: '14px', height: '14px', background: accentColor, borderRadius: '3px' }}></span>
             <span style={{ color: '#e2e8f0', fontSize: '0.9rem' }}>{completedLabel}</span>
-            <strong style={{ color: '#10b981' }}>{completed} ({completedPct}%)</strong>
+            <strong style={{ color: accentColor }}>{completed} ({completedPct}%)</strong>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <span style={{ width: '14px', height: '14px', background: '#3b82f6', borderRadius: '3px' }}></span>
+            <span style={{ width: '14px', height: '14px', background: '#f59e0b', borderRadius: '3px' }}></span>
             <span style={{ color: '#e2e8f0', fontSize: '0.9rem' }}>{inProgressLabel}</span>
-            <strong style={{ color: '#60a5fa' }}>{inProgress} ({inProgressPct}%)</strong>
+            <strong style={{ color: '#f59e0b' }}>{inProgress} ({inProgressPct}%)</strong>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <span style={{ width: '14px', height: '14px', background: '#1e293b', borderRadius: '3px', border: '1px solid #475569' }}></span>
@@ -1090,11 +1546,11 @@ export default function TeacherDashboard({
                 className="audit-selector-dropdown"
                 value={auditAttemptMode}
                 onChange={(e) => setAuditAttemptMode(e.target.value as any)}
-                title="Filter metrics by First Attempt, Re-Audit practice, or Combined"
+                title="Filter metrics by Comparison Stream (Blue vs. Orange), First Attempt, or Re-Audit practice"
               >
+                <option value="COMPARISON">⚖️ Comparison Stream (1st Attempt vs. Re-Audit)</option>
                 <option value="FIRST_ATTEMPT">🎯 First Attempt (Initial Diagnostic)</option>
                 <option value="RE_AUDIT">↻ Re-Audit Attempt (Practice &amp; Mastery)</option>
-                <option value="ALL">Σ All Attempts (Combined Stream)</option>
               </select>
             </div>
           </div>
@@ -1114,10 +1570,14 @@ export default function TeacherDashboard({
             <span style={{ color: '#64748b', fontSize: '0.85rem' }}>
               Showing {filteredStudents.length} of {students.length} students • Mode:{' '}
               <strong style={{
-                color: auditAttemptMode === 'FIRST_ATTEMPT' ? '#60a5fa' : auditAttemptMode === 'RE_AUDIT' ? '#34d399' : '#fbbf24',
+                color: auditAttemptMode === 'FIRST_ATTEMPT' ? '#60a5fa' : auditAttemptMode === 'RE_AUDIT' ? '#fb923c' : '#38bdf8',
                 letterSpacing: '0.5px'
               }}>
-                {auditAttemptMode === 'FIRST_ATTEMPT' ? 'First Attempt Baseline' : auditAttemptMode === 'RE_AUDIT' ? 'Re-Audit Practice & Mastery' : 'All Combined'}
+                {auditAttemptMode === 'FIRST_ATTEMPT'
+                  ? 'First Attempt Baseline'
+                  : auditAttemptMode === 'RE_AUDIT'
+                  ? 'Re-Audit Practice & Mastery'
+                  : '1st Attempt (Blue) vs. Re-Audit (Orange) Comparison'}
               </strong>
             </span>
           </div>
@@ -1224,7 +1684,7 @@ export default function TeacherDashboard({
                   <div className="progress-bar-container">
                     <div className="progress-header">
                       <span style={{ color: '#94a3b8' }}>
-                        {auditAttemptMode === 'RE_AUDIT' ? 'Re-Audited Phases' : 'Phases Completed'}
+                        {auditAttemptMode === 'RE_AUDIT' ? 'Re-Audited Phases' : auditAttemptMode === 'COMPARISON' ? 'Phases Cleared' : 'Phases Completed'}
                       </span>
                       <strong style={{ color: isCompleted ? '#34d399' : '#60a5fa' }}>
                         {percent}% ({stu.completedPhases} / 7)
@@ -1236,7 +1696,7 @@ export default function TeacherDashboard({
                         style={{
                           width: `${percent}%`,
                           background: auditAttemptMode === 'RE_AUDIT'
-                            ? 'linear-gradient(90deg, #10b981, #059669)'
+                            ? 'linear-gradient(90deg, #fb923c, #ea580c)'
                             : undefined
                         }}
                       ></div>
@@ -1244,18 +1704,39 @@ export default function TeacherDashboard({
                   </div>
 
                   {/* Quick stats: Total Time & Attempts */}
-                  <div className="stu-quick-stats">
-                    <div className="stat-item">
-                      <span>{auditAttemptMode === 'RE_AUDIT' ? 'RE-AUDIT TIME' : 'TOTAL TIME SPENT'}</span>
-                      <strong style={{ color: '#38bdf8' }}>{stu.totalTimeFormatted || '--'}</strong>
+                  {auditAttemptMode === 'COMPARISON' ? (
+                    <div className="stu-quick-stats" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                      <div className="stat-item" style={{ borderLeft: '3px solid #0ea5e9', paddingLeft: '8px' }}>
+                        <span style={{ color: '#38bdf8', fontSize: '0.7rem' }}>1ST ATTEMPT</span>
+                        <strong style={{ color: '#e0f2fe', fontSize: '0.82rem' }}>
+                          ⏱️ {stu.firstAttempt?.totalTimeFormatted || stu.totalTimeFormatted || '--'} • {stu.firstAttempt?.attempts ?? stu.attempts} att
+                        </strong>
+                      </div>
+                      <div className="stat-item" style={{ borderLeft: '3px solid #f97316', paddingLeft: '8px' }}>
+                        <span style={{ color: '#fb923c', fontSize: '0.7rem' }}>RE-AUDIT</span>
+                        <strong style={{ color: '#ffedd5', fontSize: '0.82rem' }}>
+                          {stu.reAudit && stu.reAudit.hasReAudited ? (
+                            <>⏱️ {stu.reAudit.totalTimeFormatted} • {stu.reAudit.attempts} att</>
+                          ) : (
+                            <span style={{ color: '#64748b', fontStyle: 'italic', fontWeight: 'normal' }}>Not Re-Audited</span>
+                          )}
+                        </strong>
+                      </div>
                     </div>
-                    <div className="stat-item">
-                      <span>{auditAttemptMode === 'RE_AUDIT' ? 'RE-AUDIT TRIES' : 'TOTAL ATTEMPTS'}</span>
-                      <strong style={{ color: stu.attempts === 0 ? '#10b981' : stu.attempts >= 3 ? '#f87171' : '#fbbf24' }}>
-                        {stu.attempts} attempt{stu.attempts !== 1 ? 's' : ''}
-                      </strong>
+                  ) : (
+                    <div className="stu-quick-stats">
+                      <div className="stat-item">
+                        <span>{auditAttemptMode === 'RE_AUDIT' ? 'RE-AUDIT TIME' : 'TOTAL TIME SPENT'}</span>
+                        <strong style={{ color: auditAttemptMode === 'RE_AUDIT' ? '#fb923c' : '#38bdf8' }}>{stu.totalTimeFormatted || '--'}</strong>
+                      </div>
+                      <div className="stat-item">
+                        <span>{auditAttemptMode === 'RE_AUDIT' ? 'RE-AUDIT TRIES' : 'TOTAL ATTEMPTS'}</span>
+                        <strong style={{ color: stu.attempts === 0 ? '#10b981' : stu.attempts >= 3 ? '#f87171' : '#fbbf24' }}>
+                          {stu.attempts} attempt{stu.attempts !== 1 ? 's' : ''}
+                        </strong>
+                      </div>
                     </div>
-                  </div>
+                  )}
 
                   {/* Current Objective */}
                   <div style={{
@@ -1386,11 +1867,19 @@ export default function TeacherDashboard({
               <thead>
                 <tr>
                   <th style={{ width: '220px' }}>STUDENT</th>
-                  <th style={{ width: '110px' }}>
-                    {auditAttemptMode === 'RE_AUDIT' ? 'RE-AUDIT TIME' : 'TOTAL TIME'}
+                  <th style={{ width: '130px' }}>
+                    {auditAttemptMode === 'RE_AUDIT'
+                      ? 'RE-AUDIT TIME'
+                      : auditAttemptMode === 'COMPARISON'
+                      ? 'TIME (1st vs Re)'
+                      : 'TOTAL TIME'}
                   </th>
-                  <th style={{ width: '90px' }}>
-                    {auditAttemptMode === 'RE_AUDIT' ? 'RE-AUD TRIES' : 'ATTEMPTS'}
+                  <th style={{ width: '110px' }}>
+                    {auditAttemptMode === 'RE_AUDIT'
+                      ? 'RE-AUD TRIES'
+                      : auditAttemptMode === 'COMPARISON'
+                      ? 'TRIES (1st vs Re)'
+                      : 'ATTEMPTS'}
                   </th>
                   <th style={{ width: '100px' }}>
                     {auditAttemptMode === 'RE_AUDIT' ? 'RE-AUD PASSED' : 'PROGRESS'}
@@ -1416,10 +1905,24 @@ export default function TeacherDashboard({
                         <span style={{ color: '#60a5fa', fontSize: '0.75rem' }}>{stu.studentNumber}</span>
                       </td>
                       <td style={{ color: '#38bdf8', fontWeight: 'bold', fontFamily: 'monospace' }}>
-                        {stu.totalTimeFormatted || '--'}
+                        {auditAttemptMode === 'COMPARISON' ? (
+                          <div style={{ fontSize: '0.75rem', display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                            <span style={{ color: '#38bdf8' }}>1st: {stu.firstAttempt?.totalTimeFormatted || stu.totalTimeFormatted || '--'}</span>
+                            <span style={{ color: '#fb923c' }}>Re: {stu.reAudit?.hasReAudited ? stu.reAudit.totalTimeFormatted : '--'}</span>
+                          </div>
+                        ) : (
+                          stu.totalTimeFormatted || '--'
+                        )}
                       </td>
                       <td style={{ color: stu.attempts > 8 ? '#f87171' : '#cbd5e1' }}>
-                        {stu.attempts}
+                        {auditAttemptMode === 'COMPARISON' ? (
+                          <div style={{ fontSize: '0.75rem', display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                            <span style={{ color: '#38bdf8' }}>1st: {stu.firstAttempt?.attempts ?? stu.attempts}</span>
+                            <span style={{ color: '#fb923c' }}>Re: {stu.reAudit?.hasReAudited ? stu.reAudit.attempts : '--'}</span>
+                          </div>
+                        ) : (
+                          stu.attempts
+                        )}
                       </td>
                       <td>
                         <span style={{
@@ -1435,26 +1938,56 @@ export default function TeacherDashboard({
                       </td>
 
                       {/* 7 Phase Columns with Time & Attempts */}
-                      {(stu.phases || []).map((p) => (
-                        <td key={p.phaseId} className={`matrix-phase-cell ${p.status}`}>
-                          {p.status === 'COMPLETED' || p.status === 'ACTIVE' || p.attempts > 0 || (p.timeSpentSeconds && p.timeSpentSeconds > 0) ? (
-                            <div>
-                              <div style={{ fontWeight: 'bold' }}>
-                                {p.status === 'COMPLETED' ? '✓ ' : '⚡ '}
-                                {p.timeSpentFormatted !== '--' ? p.timeSpentFormatted : '0s'}
+                      {(stu.phases || []).map((p) => {
+                        const first = p.firstAttempt;
+                        const re = p.reAudit;
+
+                        if (auditAttemptMode === 'COMPARISON') {
+                          return (
+                            <td key={p.phaseId} className={`matrix-phase-cell ${p.status}`}>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', fontSize: '0.72rem' }}>
+                                <div style={{ color: '#38bdf8', display: 'flex', justifyContent: 'space-between', gap: '4px' }}>
+                                  <span style={{ fontWeight: 'bold' }}>1st:</span>
+                                  <span>{first?.timeSpentFormatted || p.timeSpentFormatted || '--'}</span>
+                                  <span style={{ color: '#64748b' }}>({first?.attempts ?? p.attempts}a)</span>
+                                </div>
+                                <div style={{ color: '#fb923c', display: 'flex', justifyContent: 'space-between', gap: '4px' }}>
+                                  <span style={{ fontWeight: 'bold' }}>Re:</span>
+                                  {re && re.hasReAudited ? (
+                                    <>
+                                      <span>{re.timeSpentFormatted}</span>
+                                      <span style={{ color: '#fdba74' }}>({re.attempts}a)</span>
+                                    </>
+                                  ) : (
+                                    <span style={{ color: '#475569', fontStyle: 'italic' }}>--</span>
+                                  )}
+                                </div>
                               </div>
-                              <span style={{ fontSize: '0.7rem', color: '#94a3b8' }}>
-                                {p.attempts} att
-                              </span>
-                            </div>
-                          ) : (
-                            <div>
-                              <div style={{ fontWeight: 'bold', color: '#64748b' }}>--</div>
-                              <span style={{ fontSize: '0.7rem', color: '#475569' }}>0 att</span>
-                            </div>
-                          )}
-                        </td>
-                      ))}
+                            </td>
+                          );
+                        }
+
+                        return (
+                          <td key={p.phaseId} className={`matrix-phase-cell ${p.status}`}>
+                            {p.status === 'COMPLETED' || p.status === 'ACTIVE' || p.attempts > 0 || (p.timeSpentSeconds && p.timeSpentSeconds > 0) ? (
+                              <div>
+                                <div style={{ fontWeight: 'bold', color: auditAttemptMode === 'RE_AUDIT' ? '#fb923c' : undefined }}>
+                                  {p.status === 'COMPLETED' ? '✓ ' : '⚡ '}
+                                  {p.timeSpentFormatted !== '--' ? p.timeSpentFormatted : '0s'}
+                                </div>
+                                <span style={{ fontSize: '0.7rem', color: '#94a3b8' }}>
+                                  {p.attempts} att
+                                </span>
+                              </div>
+                            ) : (
+                              <div>
+                                <div style={{ fontWeight: 'bold', color: '#64748b' }}>--</div>
+                                <span style={{ fontSize: '0.7rem', color: '#475569' }}>0 att</span>
+                              </div>
+                            )}
+                          </td>
+                        );
+                      })}
 
                       <td style={{ textAlign: 'center' }}>
                         <button
