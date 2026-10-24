@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import API_BASE_URL from '../config';
+import { authFetch, extractErrorMessage } from '../utils/api';
 import './Auth.css';
 
 interface LoginProps {
@@ -12,6 +12,11 @@ export default function Login({ onLoginSuccess, onTeacherCreateRoom }: LoginProp
   const [authMode, setAuthMode] = useState<'LOGIN' | 'SIGNUP'>('LOGIN');
   const [studentNumber, setStudentNumber] = useState('');
   const [fullName, setFullName] = useState('');
+  const [password, setPassword] = useState('');
+  const [studentEmail, setStudentEmail] = useState('');
+  const [upgradePassword, setUpgradePassword] = useState('');
+  const [upgradeConfirm, setUpgradeConfirm] = useState('');
+  const [upgradePending, setUpgradePending] = useState<{ studentNumber: string; fullName: string } | null>(null);
   const [role, setRole] = useState<'GRADE12-ABM' | 'OM-TEACHER'>('GRADE12-ABM');
   const [teacherSection, setTeacherSection] = useState('');
   const [teacherEmail, setTeacherEmail] = useState('');
@@ -23,6 +28,7 @@ export default function Login({ onLoginSuccess, onTeacherCreateRoom }: LoginProp
   const handleRoleChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const newRole = e.target.value as 'GRADE12-ABM' | 'OM-TEACHER';
     setRole(newRole);
+    setPassword('');
     setError('');
   };
 
@@ -38,48 +44,103 @@ export default function Login({ onLoginSuccess, onTeacherCreateRoom }: LoginProp
       setError('Please enter your Student Number.');
       return;
     }
+    if (!fullName.trim()) {
+      setError('Please enter your Full Name.');
+      return;
+    }
 
     setLoading(true);
     setError('');
 
     try {
-      const trimmedId = studentNumber.trim();
-      const trimmedName = fullName.trim();
-
-      const payload: Record<string, any> = {
-        studentNumber: trimmedId,
-        role: role
+      const payload = {
+        studentNumber: studentNumber.trim(),
+        name: fullName.trim(),
+        fullName: fullName.trim(),
+        role: role,
+        password: password || undefined
       };
 
-      if (trimmedName) {
-        payload.name = trimmedName;
-        payload.fullName = trimmedName;
-      }
-
-      // Primary endpoint /api/auth/login
-      let response = await fetch(`${API_BASE_URL}/api/auth/login`, {
+      const response = await authFetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
 
       if (!response.ok) {
-        let errMessage = 'Login failed.';
-        try {
-          const errData = await response.json();
-          errMessage = errData.error || errMessage;
-        } catch (_) {
-          const errText = await response.text();
-          if (errText) errMessage = errText;
-        }
-        throw new Error(errMessage);
+        throw new Error(await extractErrorMessage(response, 'Login failed.'));
       }
 
       const student = await response.json();
+      if (student.requiresUpgrade) {
+        // Legacy pre-password account: identity verified, but the student must
+        // attach an email + password before regaining access.
+        setUpgradePending({
+          studentNumber: student.studentNumber,
+          fullName: student.fullName
+        });
+        setError('');
+        return;
+      }
       localStorage.setItem('student', JSON.stringify(student));
       onLoginSuccess(student);
     } catch (err: any) {
       console.error('[Auth] Student Login error:', err);
+      setError(err.message || 'Server connection error.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Student: Upgrade handler (legacy account attaching email + password)
+  const handleStudentUpgrade = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!upgradePending) return;
+
+    if (!studentEmail.trim()) {
+      setError('Please enter your email address.');
+      return;
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(studentEmail.trim())) {
+      setError('Please enter a valid email address.');
+      return;
+    }
+    if (upgradePassword.length < 8) {
+      setError('Password must be at least 8 characters.');
+      return;
+    }
+    if (upgradePassword !== upgradeConfirm) {
+      setError('Passwords do not match.');
+      return;
+    }
+
+    setLoading(true);
+    setError('');
+
+    try {
+      const response = await authFetch('/api/auth/upgrade-student', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          studentNumber: upgradePending.studentNumber,
+          fullName: upgradePending.fullName,
+          email: studentEmail.trim(),
+          password: upgradePassword
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(await extractErrorMessage(response, 'Credential update failed.'));
+      }
+
+      const student = await response.json();
+      localStorage.setItem('student', JSON.stringify(student));
+      setUpgradePending(null);
+      setUpgradePassword('');
+      setUpgradeConfirm('');
+      onLoginSuccess(student);
+    } catch (err: any) {
+      console.error('[Auth] Student Upgrade error:', err);
       setError(err.message || 'Server connection error.');
     } finally {
       setLoading(false);
@@ -93,6 +154,18 @@ export default function Login({ onLoginSuccess, onTeacherCreateRoom }: LoginProp
       setError('Please fill in both Student Number and Full Name.');
       return;
     }
+    if (!studentEmail.trim()) {
+      setError('Please enter your email address.');
+      return;
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(studentEmail.trim())) {
+      setError('Please enter a valid email address.');
+      return;
+    }
+    if (password.length < 8) {
+      setError('Password must be at least 8 characters.');
+      return;
+    }
 
     setLoading(true);
     setError('');
@@ -103,25 +176,19 @@ export default function Login({ onLoginSuccess, onTeacherCreateRoom }: LoginProp
         name: fullName.trim(),
         fullName: fullName.trim(),
         role: role,
+        email: studentEmail.trim(),
+        password: password,
         section: '' // Inherited upon joining teacher room
       };
 
-      let response = await fetch(`${API_BASE_URL}/api/auth/register`, {
+      const response = await authFetch('/api/auth/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
 
       if (!response.ok) {
-        let errMessage = 'Sign up failed.';
-        try {
-          const errData = await response.json();
-          errMessage = errData.error || errMessage;
-        } catch (_) {
-          const errText = await response.text();
-          if (errText) errMessage = errText;
-        }
-        throw new Error(errMessage);
+        throw new Error(await extractErrorMessage(response, 'Sign up failed.'));
       }
 
       const student = await response.json();
@@ -146,59 +213,55 @@ export default function Login({ onLoginSuccess, onTeacherCreateRoom }: LoginProp
       setError('Please enter a valid Gmail address ending in @gmail.com (e.g., teacher@gmail.com).');
       return;
     }
+    if (!password) {
+      setError('Please enter your password.');
+      return;
+    }
 
     setLoading(true);
     setError('');
 
     try {
-      // 1. Authenticate Teacher via Master Account endpoint
-      let teacherData: any = null;
-      try {
-        const payload = {
-          email: teacherEmail.trim(),
-          teacherEmail: teacherEmail.trim(),
-          name: fullName.trim(),
-          fullName: fullName.trim(),
-          role: role
-        };
+      const payload = {
+        email: teacherEmail.trim(),
+        teacherEmail: teacherEmail.trim(),
+        name: fullName.trim(),
+        fullName: fullName.trim(),
+        role: role,
+        password: password
+      };
 
-        let loginRes = await fetch(`${API_BASE_URL}/api/auth/login`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
-        });
+      const loginRes = await authFetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
 
-        if (loginRes.status === 404 || loginRes.status === 405) {
-          const cloneRes = loginRes.clone();
-          const errData = await cloneRes.json().catch(() => null);
-          if (errData && errData.error && errData.error.toLowerCase().includes('teacher account not found')) {
-            throw new Error(errData.error);
-          }
-          loginRes = await fetch(`${API_BASE_URL}/api/teachers/login`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-          });
-        }
-
-        if (!loginRes.ok) {
-          const errJson = await loginRes.json().catch(() => ({}));
-          throw new Error(errJson.error || `Teacher account not found for ${teacherEmail.trim()}. Please switch to Sign Up.`);
-        }
-
-        teacherData = await loginRes.json();
-      } catch (authFetchErr: any) {
-        throw authFetchErr;
+      if (!loginRes.ok) {
+        throw new Error(await extractErrorMessage(loginRes, `Teacher account not found for ${teacherEmail.trim()}. Please switch to Sign Up.`));
       }
 
+      const teacherData = await loginRes.json();
       const effectiveName = teacherData?.fullName || fullName.trim() || 'O&M Teacher';
       const effectiveEmail = teacherData?.email || teacherEmail.trim();
+      const token = teacherData?.token || '';
 
-      // 2. Fetch existing rooms for this teacher
+      // Persist the session FIRST so the room lookup below is authenticated.
+      const teacherStorage = {
+        teacherId: teacherData?.id,
+        teacherName: effectiveName,
+        teacherEmail: effectiveEmail,
+        token,
+        section: '',
+        roomCode: ''
+      };
+      localStorage.setItem('teacher', JSON.stringify(teacherStorage));
+
+      // Fetch existing rooms for this teacher (identity comes from the Bearer token)
       let activeCode = '';
       let activeSection = '';
       try {
-        const roomsRes = await fetch(`${API_BASE_URL}/api/teachers/rooms?email=${encodeURIComponent(effectiveEmail)}`);
+        const roomsRes = await authFetch('/api/teachers/rooms');
         if (roomsRes.ok) {
           const rooms = await roomsRes.json();
           if (Array.isArray(rooms) && rooms.length > 0) {
@@ -208,27 +271,8 @@ export default function Login({ onLoginSuccess, onTeacherCreateRoom }: LoginProp
         }
       } catch (_) {}
 
-      // Fallback lookup via /rooms/find-by-teacher if /teachers/rooms was empty
-      if (!activeCode) {
-        try {
-          const findRes = await fetch(`${API_BASE_URL}/api/rooms/find-by-teacher?teacherEmail=${encodeURIComponent(effectiveEmail)}`);
-          if (findRes.ok) {
-            const findData = await findRes.json();
-            if (findData.found && findData.roomCode) {
-              activeCode = findData.roomCode;
-              activeSection = findData.section || '';
-            }
-          }
-        } catch (_) {}
-      }
-
-      const teacherStorage = {
-        teacherId: teacherData?.id,
-        teacherName: effectiveName,
-        teacherEmail: effectiveEmail,
-        section: activeSection,
-        roomCode: activeCode
-      };
+      teacherStorage.section = activeSection;
+      teacherStorage.roomCode = activeCode;
       localStorage.setItem('teacher', JSON.stringify(teacherStorage));
       if (activeCode) {
         localStorage.setItem('teacherRoomStatus', 'ACTIVE');
@@ -258,60 +302,58 @@ export default function Login({ onLoginSuccess, onTeacherCreateRoom }: LoginProp
       setError('Please enter a valid Gmail address ending in @gmail.com (e.g., teacher@gmail.com).');
       return;
     }
+    if (password.length < 8) {
+      setError('Password must be at least 8 characters.');
+      return;
+    }
 
     setLoading(true);
     setError('');
 
     try {
-      // 1. Create or register Master Teacher Account
-      let teacherData: any = null;
-      try {
-        const payload = {
-          email: teacherEmail.trim(),
-          teacherEmail: teacherEmail.trim(),
-          name: fullName.trim(),
-          fullName: fullName.trim(),
-          role: role,
-          section: teacherSection.trim()
-        };
+      const payload = {
+        email: teacherEmail.trim(),
+        teacherEmail: teacherEmail.trim(),
+        name: fullName.trim(),
+        fullName: fullName.trim(),
+        role: role,
+        password: password,
+        section: teacherSection.trim()
+      };
 
-        let regRes = await fetch(`${API_BASE_URL}/api/auth/register`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
-        });
+      const regRes = await authFetch('/api/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
 
-        if (regRes.status === 404 || regRes.status === 405) {
-          regRes = await fetch(`${API_BASE_URL}/api/teachers/register`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-          });
-        }
-
-        if (regRes.ok) {
-          teacherData = await regRes.json();
-        } else {
-          const errJson = await regRes.json().catch(() => ({}));
-          throw new Error(errJson.error || 'Failed to register teacher account.');
-        }
-      } catch (regErr: any) {
-        throw regErr;
+      if (!regRes.ok) {
+        throw new Error(await extractErrorMessage(regRes, 'Failed to register teacher account.'));
       }
 
+      const teacherData = await regRes.json();
       const effectiveName = teacherData?.fullName || fullName.trim();
       const effectiveEmail = teacherData?.email || teacherEmail.trim();
       const initialSectionName = teacherSection.trim() || 'Grade 12 - ABM A';
 
-      // 2. Optionally create the initial classroom room for this teacher
+      const teacherStorage = {
+        teacherId: teacherData?.id,
+        teacherName: effectiveName,
+        teacherEmail: effectiveEmail,
+        token: teacherData?.token || '',
+        section: initialSectionName,
+        roomCode: ''
+      };
+      localStorage.setItem('teacher', JSON.stringify(teacherStorage));
+
+      // Create the initial classroom room (owner derives from the Bearer token)
       let initialRoomCode = '';
       try {
-        const createRes = await fetch(`${API_BASE_URL}/api/rooms/create`, {
+        const createRes = await authFetch('/api/rooms/create', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             teacherName: effectiveName,
-            teacherEmail: effectiveEmail,
             section: initialSectionName
           })
         });
@@ -323,13 +365,7 @@ export default function Login({ onLoginSuccess, onTeacherCreateRoom }: LoginProp
         console.warn('[Auth] Initial room creation error:', createErr);
       }
 
-      const teacherStorage = {
-        teacherId: teacherData?.id,
-        teacherName: effectiveName,
-        teacherEmail: effectiveEmail,
-        section: initialSectionName,
-        roomCode: initialRoomCode
-      };
+      teacherStorage.roomCode = initialRoomCode;
       localStorage.setItem('teacher', JSON.stringify(teacherStorage));
       if (initialRoomCode) {
         localStorage.setItem('teacherRoomStatus', 'ACTIVE');
@@ -382,6 +418,7 @@ export default function Login({ onLoginSuccess, onTeacherCreateRoom }: LoginProp
           </div>
 
           {/* Unmerged Login & Sign Up Navigation Tabs */}
+          {!upgradePending && (
           <div className="auth-tabs" role="tablist">
             <button
               type="button"
@@ -408,7 +445,8 @@ export default function Login({ onLoginSuccess, onTeacherCreateRoom }: LoginProp
               [ SIGN UP ]
             </button>
           </div>
-
+          )}
+          {!upgradePending ? (
           <form onSubmit={handleSubmit} className="auth-form">
             {error && <div className="error-banner">{error}</div>}
 
@@ -442,7 +480,44 @@ export default function Login({ onLoginSuccess, onTeacherCreateRoom }: LoginProp
               </div>
             )}
 
-            {/* Teacher Fields: Gmail & Section */}
+            {/* Student Email — Sign Up only (required for new accounts) */}
+            {!isTeacher && authMode === 'SIGNUP' && (
+              <div className="input-group">
+                <label>EMAIL ADDRESS</label>
+                <input
+                  type="email"
+                  placeholder="e.g., student@gmail.com"
+                  value={studentEmail}
+                  onChange={(e) => setStudentEmail(e.target.value)}
+                  disabled={loading}
+                  className="retro-input"
+                  required
+                />
+              </div>
+            )}
+
+            {/* Student Password — required at Sign Up, optional at Login */}
+            {!isTeacher && (
+              <div className="input-group">
+                <label>
+                  {authMode === 'SIGNUP'
+                    ? 'PASSWORD'
+                    : 'PASSWORD (REQUIRED IF YOU HAVE SET ONE)'}
+                </label>
+                <input
+                  type="password"
+                  placeholder={authMode === 'SIGNUP' ? 'At least 8 characters' : 'Enter your password'}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  disabled={loading}
+                  className="retro-input"
+                  autoComplete={authMode === 'SIGNUP' ? 'new-password' : 'current-password'}
+                  required={authMode === 'SIGNUP'}
+                />
+              </div>
+            )}
+
+            {/* Teacher Fields: Gmail, Password & Section */}
             {isTeacher && (
               <>
                 <div className="input-group">
@@ -459,6 +534,25 @@ export default function Login({ onLoginSuccess, onTeacherCreateRoom }: LoginProp
                   <span style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '4px', display: 'block' }}>
                     Section completion summaries and Excel reports will be sent to this Gmail.
                   </span>
+                </div>
+
+                <div className="input-group">
+                  <label>PASSWORD</label>
+                  <input
+                    type="password"
+                    placeholder={authMode === 'SIGNUP' ? 'At least 8 characters' : 'Enter your password'}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    disabled={loading}
+                    className="retro-input"
+                    autoComplete={authMode === 'SIGNUP' ? 'new-password' : 'current-password'}
+                    required
+                  />
+                  {authMode === 'LOGIN' && (
+                    <span style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '4px', display: 'block' }}>
+                      First time signing in? Your first password claims this teacher account.
+                    </span>
+                  )}
                 </div>
 
                 {authMode === 'SIGNUP' && (
@@ -485,8 +579,6 @@ export default function Login({ onLoginSuccess, onTeacherCreateRoom }: LoginProp
                   ? authMode === 'LOGIN'
                     ? 'TEACHER FULL NAME (OPTIONAL)'
                     : 'TEACHER FULL NAME'
-                  : authMode === 'LOGIN'
-                  ? 'STUDENT FULL NAME (OPTIONAL)'
                   : 'STUDENT FULL NAME'}
               </label>
               <input
@@ -496,15 +588,13 @@ export default function Login({ onLoginSuccess, onTeacherCreateRoom }: LoginProp
                     ? authMode === 'LOGIN'
                       ? 'Optional during login (e.g., Maria Santos)'
                       : 'e.g., Maria Santos'
-                    : authMode === 'LOGIN'
-                    ? 'Optional during login (e.g., Juan Dela Cruz)'
                     : 'e.g., Juan Dela Cruz'
                 }
                 value={fullName}
                 onChange={(e) => setFullName(e.target.value)}
                 disabled={loading}
                 className="retro-input"
-                required={authMode === 'SIGNUP'}
+                required={!isTeacher || authMode === 'SIGNUP'}
               />
             </div>
 
@@ -515,8 +605,108 @@ export default function Login({ onLoginSuccess, onTeacherCreateRoom }: LoginProp
                 : (authMode === 'LOGIN' ? 'LOG IN >' : 'SIGN UP >')}
             </button>
           </form>
+          ) : (
+          <form onSubmit={handleStudentUpgrade} className="auth-form">
+            {error && <div className="error-banner">{error}</div>}
+
+            <div style={{
+              background: 'rgba(251, 191, 36, 0.12)',
+              border: '1px solid #fbbf24',
+              color: '#fbbf24',
+              padding: '12px 14px',
+              borderRadius: '6px',
+              fontSize: '0.85rem',
+              marginBottom: '14px',
+              letterSpacing: '0.5px'
+            }}>
+              ⚠ SECURITY UPDATE REQUIRED — Your account was created before email &amp; password
+              protection was enabled. Add your credentials below to regain access to your account.
+            </div>
+
+            <div className="input-group">
+              <label>STUDENT NUMBER</label>
+              <input
+                type="text"
+                value={upgradePending.studentNumber}
+                disabled
+                className="retro-input"
+              />
+            </div>
+
+            <div className="input-group">
+              <label>FULL NAME</label>
+              <input
+                type="text"
+                value={upgradePending.fullName}
+                disabled
+                className="retro-input"
+              />
+            </div>
+
+            <div className="input-group">
+              <label>EMAIL ADDRESS</label>
+              <input
+                type="email"
+                placeholder="e.g., student@gmail.com"
+                value={studentEmail}
+                onChange={(e) => setStudentEmail(e.target.value)}
+                disabled={loading}
+                className="retro-input"
+                autoComplete="email"
+                required
+              />
+            </div>
+
+            <div className="input-group">
+              <label>NEW PASSWORD</label>
+              <input
+                type="password"
+                placeholder="At least 8 characters"
+                value={upgradePassword}
+                onChange={(e) => setUpgradePassword(e.target.value)}
+                disabled={loading}
+                className="retro-input"
+                autoComplete="new-password"
+                required
+              />
+            </div>
+
+            <div className="input-group">
+              <label>CONFIRM PASSWORD</label>
+              <input
+                type="password"
+                placeholder="Re-enter your password"
+                value={upgradeConfirm}
+                onChange={(e) => setUpgradeConfirm(e.target.value)}
+                disabled={loading}
+                className="retro-input"
+                autoComplete="new-password"
+                required
+              />
+            </div>
+
+            <button type="submit" disabled={loading} className="login-btn">
+              {loading ? 'SECURING ACCOUNT...' : 'UPDATE CREDENTIALS >'}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setUpgradePending(null);
+                setUpgradePassword('');
+                setUpgradeConfirm('');
+                setError('');
+              }}
+              disabled={loading}
+              className="logout-btn"
+              style={{ width: '100%', marginTop: '10px' }}
+            >
+              [ CANCEL ]
+            </button>
+          </form>
+          )}
 
           {/* Quick tab switcher prompt */}
+          {!upgradePending && (
           <div className="auth-switch-prompt">
             {authMode === 'LOGIN' ? (
               <span>
@@ -548,6 +738,7 @@ export default function Login({ onLoginSuccess, onTeacherCreateRoom }: LoginProp
               </span>
             )}
           </div>
+          )}
         </div>
 
         <div className="auth-footer" style={{ borderTop: '1px solid #1e293b' }}>

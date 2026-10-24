@@ -25,12 +25,11 @@ public class HealthController {
         status.put("app", "No Zero Days Backend");
         status.put("status", "UP");
 
-        // Test DB connection
+        // Test DB connection without leaking connection details
         try (Connection conn = dataSource.getConnection()) {
             status.put("database", "CONNECTED");
-            status.put("db_url", conn.getMetaData().getURL());
         } catch (Exception e) {
-            status.put("database", "ERROR: " + e.getMessage());
+            status.put("database", "DOWN");
         }
 
         return ResponseEntity.ok(status);

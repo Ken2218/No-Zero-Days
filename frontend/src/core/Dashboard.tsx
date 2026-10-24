@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import API_BASE_URL from '../config';
+import { authFetch, logout } from '../utils/api';
 import { PHASE_GUIDES } from '../utils/phaseGuides';
 import { clearAllPhaseStorage } from '../utils/storage';
 import OnboardingGuide from '../components/Shared/OnboardingGuide';
@@ -8,7 +8,7 @@ import './Auth.css';
 interface DashboardProps {
   student?: any;
   onSelectPhase: (phaseId: number) => void;
-  onStudentJoinRoom: (code: string, student: any) => void;
+  onStudentJoinRoom: (code: string, student: any, progressReset?: boolean) => void;
   roomCode: string;
   theme?: 'dark' | 'light';
   toggleTheme?: () => void;
@@ -33,6 +33,7 @@ export default function Dashboard({ student: propStudent, onSelectPhase, onStude
   const [joinRoomCode, setJoinRoomCode] = useState('');
   const [joinLoading, setJoinLoading] = useState(false);
   const [joinError, setJoinError] = useState('');
+  const [joinConfirming, setJoinConfirming] = useState(false);
 
   // ── Onboarding guide: strictly auto-opens ONCE per user lifetime ──
   const [isGuideOpen, setIsGuideOpen] = useState(false);
@@ -50,19 +51,19 @@ export default function Dashboard({ student: propStudent, onSelectPhase, onStude
   }, []);
 
   const defaultRoadmap = [
-    { phaseId: 1, title: "Phase 1: Basic Gross Pay", description: "Audit morning Lobby Daily Rate and Shifts worked.", status: "ACTIVE", bestScore: 0, module: "M1_MATH", phaseIndex: 1, hasReAudited: false, reAuditCompleted: false, reAuditScore: 0 },
-    { phaseId: 2, title: "Phase 2: Tardiness Deductions", description: "Audit biometric clock-in logs and raw late minutes.", status: "LOCKED", bestScore: 0, module: "M1_MATH", phaseIndex: 2, hasReAudited: false, reAuditCompleted: false, reAuditScore: 0 },
-    { phaseId: 3, title: "Phase 3: Overtime Premiums", description: "Verify OT multipliers and unpaid lunch breaks.", status: "LOCKED", bestScore: 0, module: "M2_MULTIPLIERS", phaseIndex: 1, hasReAudited: false, reAuditCompleted: false, reAuditScore: 0 },
-    { phaseId: 4, title: "Phase 4: Regular Holiday Pay", description: "Audit Regular Holiday Double Pay rules.", status: "LOCKED", bestScore: 0, module: "M2_MULTIPLIERS", phaseIndex: 2, hasReAudited: false, reAuditCompleted: false, reAuditScore: 0 },
-    { phaseId: 5, title: "Phase 5: SSS Deductions", description: "Verify SSS EE share vs ER share deductions.", status: "LOCKED", bestScore: 0, module: "M3_BUREAUCRACY", phaseIndex: 1, hasReAudited: false, reAuditCompleted: false, reAuditScore: 0 },
-    { phaseId: 6, title: "Phase 6: PhilHealth Premiums", description: "Verify PhilHealth premium percentages.", status: "LOCKED", bestScore: 0, module: "M3_BUREAUCRACY", phaseIndex: 2, hasReAudited: false, reAuditCompleted: false, reAuditScore: 0 },
-    { phaseId: 7, title: "Phase 7: Net Payroll Boardroom", description: "Audit the complete Net Pay ledger unscaffolded.", status: "LOCKED", bestScore: 0, module: "M4_TRIBUNAL", phaseIndex: 1, hasReAudited: false, reAuditCompleted: false, reAuditScore: 0 }
+    { phaseId: 1, title: "Phase 1: Basic Gross Pay", description: "Audit morning Lobby Daily Rate and Shifts worked.", status: "NOT_ATTEMPTED", bestScore: 0, module: "M1_MATH", phaseIndex: 1, hasReAudited: false, reAuditCompleted: false, reAuditScore: 0 },
+    { phaseId: 2, title: "Phase 2: Tardiness Deductions", description: "Audit biometric clock-in logs and raw late minutes.", status: "NOT_ATTEMPTED", bestScore: 0, module: "M1_MATH", phaseIndex: 2, hasReAudited: false, reAuditCompleted: false, reAuditScore: 0 },
+    { phaseId: 3, title: "Phase 3: Overtime Premiums", description: "Verify OT multipliers and unpaid lunch breaks.", status: "NOT_ATTEMPTED", bestScore: 0, module: "M2_MULTIPLIERS", phaseIndex: 1, hasReAudited: false, reAuditCompleted: false, reAuditScore: 0 },
+    { phaseId: 4, title: "Phase 4: Regular Holiday Pay", description: "Audit Regular Holiday Double Pay rules.", status: "NOT_ATTEMPTED", bestScore: 0, module: "M2_MULTIPLIERS", phaseIndex: 2, hasReAudited: false, reAuditCompleted: false, reAuditScore: 0 },
+    { phaseId: 5, title: "Phase 5: SSS Deductions", description: "Verify SSS EE share vs ER share deductions.", status: "NOT_ATTEMPTED", bestScore: 0, module: "M3_BUREAUCRACY", phaseIndex: 1, hasReAudited: false, reAuditCompleted: false, reAuditScore: 0 },
+    { phaseId: 6, title: "Phase 6: PhilHealth Premiums", description: "Verify PhilHealth premium percentages.", status: "NOT_ATTEMPTED", bestScore: 0, module: "M3_BUREAUCRACY", phaseIndex: 2, hasReAudited: false, reAuditCompleted: false, reAuditScore: 0 },
+    { phaseId: 7, title: "Phase 7: Net Payroll Boardroom", description: "Audit the complete Net Pay ledger unscaffolded.", status: "NOT_ATTEMPTED", bestScore: 0, module: "M4_TRIBUNAL", phaseIndex: 1, hasReAudited: false, reAuditCompleted: false, reAuditScore: 0 }
   ];
 
   const fetchProgress = async (studentNum: string, currentRoomCode?: string) => {
     try {
       const codeParam = currentRoomCode ? `&roomCode=${encodeURIComponent(currentRoomCode)}` : '';
-      const res = await fetch(`${API_BASE_URL}/api/progress/status?studentNumber=${encodeURIComponent(studentNum)}${codeParam}`);
+      const res = await authFetch(`/api/progress/status?studentNumber=${encodeURIComponent(studentNum)}${codeParam}`);
       if (res.ok) {
         const data = await res.json();
         if (data && data.length > 0) {
@@ -98,7 +99,7 @@ export default function Dashboard({ student: propStudent, onSelectPhase, onStude
 
     if (roomCode) {
       // Sync section directly from room status to ensure it always matches teacher's room
-      fetch(`${API_BASE_URL}/api/rooms/${roomCode}/status`)
+      authFetch(`/api/rooms/${roomCode}/status`)
         .then(res => res.ok ? res.json() : null)
         .then(data => {
           if (data && data.section) {
@@ -119,38 +120,10 @@ export default function Dashboard({ student: propStudent, onSelectPhase, onStude
     }
   }, [roomCode, propStudent]);
 
-  // When student is viewing Dashboard, guarantee any active phase timer is paused
-  useEffect(() => {
-    const studentNum = student?.studentNumber;
-    if (studentNum) {
-      const exitUrl = roomCode
-        ? `${API_BASE_URL}/api/rooms/${roomCode}/phase-exit`
-        : `${API_BASE_URL}/api/students/phase-exit`;
-      fetch(exitUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ studentNumber: studentNum }),
-        keepalive: true
-      }).catch(() => {});
-    }
-  }, [student?.studentNumber, roomCode]);
-
   const handleLogout = () => {
-    try {
-      const studentNum = student?.studentNumber;
-      if (studentNum) {
-        const payload = JSON.stringify({ studentNumber: studentNum });
-        const exitUrl = roomCode
-          ? `${API_BASE_URL}/api/rooms/${roomCode}/phase-exit`
-          : `${API_BASE_URL}/api/students/phase-exit`;
-        fetch(exitUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: payload,
-          keepalive: true
-        }).catch(() => {});
-      }
-    } catch (_) {}
+    // Kick off server-side token invalidation BEFORE removing local auth keys,
+    // so the request still carries the Bearer token.
+    void logout();
     // Wipe per-phase timers and autosaved progress so the next student who
     // logs in on this device doesn't inherit this student's state.
     clearAllPhaseStorage();
@@ -168,7 +141,7 @@ export default function Dashboard({ student: propStudent, onSelectPhase, onStude
     setJoinError('');
 
     try {
-      const joinRes = await fetch(`${API_BASE_URL}/api/rooms/join`, {
+      const joinRes = await authFetch('/api/rooms/join', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -189,10 +162,13 @@ export default function Dashboard({ student: propStudent, onSelectPhase, onStude
         setShowJoinModal(false);
         setJoinRoomCode('');
 
-        // Reflect section from teacher's room onto student
+        // Reflect section from teacher's room onto student.
+        // The join response serializes the raw profile (sessionToken key),
+        // so always carry the login token forward from the current session.
         const updatedStudent = joinData.student ? {
           ...joinData.student,
-          section: joinData.section || joinData.student.section
+          section: joinData.section || joinData.student.section,
+          token: student.token || joinData.student.token
         } : {
           ...student,
           section: joinData.section || student.section
@@ -203,7 +179,7 @@ export default function Dashboard({ student: propStudent, onSelectPhase, onStude
 
         const targetCode = joinRoomCode.trim().toUpperCase();
         fetchProgress(updatedStudent.studentNumber, targetCode);
-        onStudentJoinRoom(targetCode, updatedStudent);
+        onStudentJoinRoom(targetCode, updatedStudent, !!joinData.progressReset);
       } else {
         throw new Error(joinData.error || 'Could not join the room.');
       }
@@ -227,9 +203,9 @@ export default function Dashboard({ student: propStudent, onSelectPhase, onStude
   const reAuditPercent = Math.round((reAuditCount / 7.0) * 100);
   const hasAnyReAudit = rawRoadmap.some(p => p.hasReAudited || p.reAuditCompleted);
 
-  // Scenario Lock Override: Set all LOCKED phases to ACTIVE for practice accessibility
+  // Scenario Lock Override: Set all un-attempted phases to ACTIVE for practice accessibility
   const activeRoadmap = rawRoadmap.map(p => {
-    if (p.status === 'LOCKED') {
+    if (p.status === 'LOCKED' || p.status === 'NOT_ATTEMPTED') {
       return { ...p, status: 'ACTIVE' };
     }
     return p;
@@ -309,7 +285,7 @@ export default function Dashboard({ student: propStudent, onSelectPhase, onStude
                   ROOM: {roomCode}
                 </div>
               ) : (
-                <button className="join-room-btn" onClick={() => setShowJoinModal(true)} style={{ fontSize: '0.8rem', padding: '5px 15px', backgroundColor: '#10b981', color: '#000', fontWeight: 'bold', border: 'none', cursor: 'pointer' }}>[ JOIN ROOM ]</button>
+                <button className="join-room-btn" onClick={() => { setJoinConfirming(false); setJoinError(''); setShowJoinModal(true); }} style={{ fontSize: '0.8rem', padding: '5px 15px', backgroundColor: '#10b981', color: '#000', fontWeight: 'bold', border: 'none', cursor: 'pointer' }}>[ JOIN ROOM ]</button>
               )}
               <button
                 className="logout-btn"
@@ -716,49 +692,101 @@ export default function Dashboard({ student: propStudent, onSelectPhase, onStude
               <span className="terminal-title">JOIN_ROOM.EXE</span>
             </div>
             <div className="join-modal-body">
-              <h3 className="join-modal-title">🔗 JOIN A CLASSROOM ROOM</h3>
-              <p className="join-modal-subtitle">
-                Enter the room code provided by your O&amp;M Teacher to join their session.
-              </p>
+              {joinConfirming ? (
+                <>
+                  <h3 className="join-modal-title">⚠ PROGRESS RESET WARNING</h3>
+                  <div style={{
+                    background: 'rgba(239, 68, 68, 0.12)',
+                    border: '1px solid #ef4444',
+                    borderRadius: '6px',
+                    padding: '14px',
+                    marginBottom: '15px',
+                    color: '#fca5a5',
+                    fontSize: '0.88rem',
+                    lineHeight: '1.5'
+                  }}>
+                    <p style={{ margin: '0 0 8px', fontWeight: 'bold', color: '#f87171' }}>
+                      ENTERING ROOM {joinRoomCode} WILL RESET YOUR PROGRESS TO ZERO.
+                    </p>
+                    <p style={{ margin: 0 }}>
+                      All progress made in your account <strong>before joining a room</strong> will be
+                      wiped. Once inside, your teacher will track your performance in this room
+                      starting from zero — your previous practice scores will no longer count.
+                    </p>
+                  </div>
+                  {joinError && <div className="error-banner" style={{ marginBottom: '15px' }}>{joinError}</div>}
+                  <div style={{ display: 'flex', gap: '10px', marginTop: '15px' }}>
+                    <button
+                      className="join-modal-cancel"
+                      onClick={() => {
+                        setJoinConfirming(false);
+                        setJoinError('');
+                      }}
+                      disabled={joinLoading}
+                    >
+                      CANCEL
+                    </button>
+                    <button
+                      className="join-modal-confirm"
+                      onClick={handleJoinRoom}
+                      disabled={joinLoading}
+                      style={{ background: '#dc2626', borderColor: '#ef4444' }}
+                    >
+                      {joinLoading ? 'JOINING...' : 'PROCEED & RESET >'}
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <h3 className="join-modal-title">🔗 JOIN A CLASSROOM ROOM</h3>
+                  <p className="join-modal-subtitle">
+                    Enter the room code provided by your O&amp;M Teacher to join their session.
+                  </p>
 
-              {joinError && <div className="error-banner" style={{ marginBottom: '15px' }}>{joinError}</div>}
+                  {joinError && <div className="error-banner" style={{ marginBottom: '15px' }}>{joinError}</div>}
 
-              <div className="input-group">
-                <label>ROOM CODE</label>
-                <input
-                  type="text"
-                  placeholder="e.g., NZD4X9"
-                  value={joinRoomCode}
-                  onChange={(e) => setJoinRoomCode(e.target.value.toUpperCase())}
-                  disabled={joinLoading}
-                  className="retro-input room-code-input"
-                  maxLength={10}
-                  autoFocus
-                  style={{ 
-                    textAlign: 'center', 
-                    fontSize: '1.5rem', 
-                    letterSpacing: '5px',
-                    textTransform: 'uppercase'
-                  }}
-                />
-              </div>
+                  <div className="input-group">
+                    <label>ROOM CODE</label>
+                    <input
+                      type="text"
+                      placeholder="e.g., NZD4X9"
+                      value={joinRoomCode}
+                      onChange={(e) => setJoinRoomCode(e.target.value.toUpperCase())}
+                      disabled={joinLoading}
+                      className="retro-input room-code-input"
+                      maxLength={10}
+                      autoFocus
+                      style={{ 
+                        textAlign: 'center', 
+                        fontSize: '1.5rem', 
+                        letterSpacing: '5px',
+                        textTransform: 'uppercase'
+                      }}
+                    />
+                  </div>
 
-              <div style={{ display: 'flex', gap: '10px', marginTop: '15px' }}>
-                <button
-                  className="join-modal-cancel"
-                  onClick={() => setShowJoinModal(false)}
-                  disabled={joinLoading}
-                >
-                  CANCEL
-                </button>
-                <button
-                  className="join-modal-confirm"
-                  onClick={handleJoinRoom}
-                  disabled={joinLoading || !joinRoomCode.trim()}
-                >
-                  {joinLoading ? 'JOINING...' : 'JOIN >'}
-                </button>
-              </div>
+                  <div style={{ display: 'flex', gap: '10px', marginTop: '15px' }}>
+                    <button
+                      className="join-modal-cancel"
+                      onClick={() => setShowJoinModal(false)}
+                      disabled={joinLoading}
+                    >
+                      CANCEL
+                    </button>
+                    <button
+                      className="join-modal-confirm"
+                      onClick={() => {
+                        if (!joinRoomCode.trim()) return;
+                        setJoinError('');
+                        setJoinConfirming(true);
+                      }}
+                      disabled={joinLoading || !joinRoomCode.trim()}
+                    >
+                      JOIN &gt;
+                    </button>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         </div>

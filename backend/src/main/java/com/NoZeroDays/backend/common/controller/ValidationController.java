@@ -10,6 +10,7 @@ import com.NoZeroDays.backend.common.model.AttemptLog;
 import com.NoZeroDays.backend.common.repository.AttemptLogRepository;
 import com.NoZeroDays.backend.common.model.GameSession;
 import com.NoZeroDays.backend.common.repository.GameSessionRepository;
+import com.NoZeroDays.backend.common.auth.AuthInterceptor;
 import com.NoZeroDays.backend.phase1.service.Phase1ValidationService;
 import com.NoZeroDays.backend.phase2.service.Phase2ValidationService;
 import com.NoZeroDays.backend.phase3.service.Phase3ValidationService;
@@ -17,6 +18,8 @@ import com.NoZeroDays.backend.phase4.service.Phase4ValidationService;
 import com.NoZeroDays.backend.phase5.service.Phase5ValidationService;
 import com.NoZeroDays.backend.phase6.service.Phase6ValidationService;
 import com.NoZeroDays.backend.phase7.service.Phase7ValidationService;
+
+import jakarta.servlet.http.HttpServletRequest;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
@@ -60,7 +63,18 @@ public class ValidationController {
 
     // 1. Unified Validation Endpoint — routes to the correct phase service based on module + phase
     @PostMapping("/validation/submit")
-    public ResponseEntity<ValidationResponse> validate(@RequestBody ValidationRequest request) {
+    public ResponseEntity<ValidationResponse> validate(@RequestBody ValidationRequest request, HttpServletRequest httpRequest) {
+        // The submission must belong to the authenticated student.
+        String authedStudentNumber = (String) httpRequest.getAttribute(AuthInterceptor.ATTR_STUDENT_NUMBER);
+        if (authedStudentNumber == null || authedStudentNumber.isBlank()) {
+            return ResponseEntity.status(401).body(new ValidationResponse(false,
+                    "Student authentication required.", false, false));
+        }
+        if (request.getStudentNumber() == null || !request.getStudentNumber().trim().equalsIgnoreCase(authedStudentNumber)) {
+            return ResponseEntity.status(403).body(new ValidationResponse(false,
+                    "You can only submit answers for your own account.", false, false));
+        }
+
         String module = request.getModule() != null ? request.getModule() : "M1_MATH";
         int phase     = request.getPhase()  != null ? request.getPhase()  : 1;
 
@@ -121,33 +135,49 @@ public class ValidationController {
         if (studentOpt.isEmpty()) return;
         StudentProfile student = studentOpt.get();
 
-        List<GameSession> sessions = gameSessionRepository.findByStudentProfileAndStatus(student, "ACTIVE");
+        Optional<GameSession> sessionOpt =
+                gameSessionRepository.findFirstByStudentProfileAndStatusOrderByIdDesc(student, "ACTIVE");
         java.time.LocalDateTime now = java.time.LocalDateTime.now();
-        if (sessions.isEmpty()) {
+        if (sessionOpt.isEmpty()) {
             GameSession newSession = new GameSession(student);
             newSession.setCurrentModule(module);
             newSession.setCurrentPhase(canonicalPhase);
             newSession.setActivePhase(canonicalPhase);
             newSession.setStatus("ACTIVE");
-            newSession.setStartTime(now);
             newSession.setPhaseEnteredAt(now);
             newSession.setLastHeartbeatAt(now);
-            if (request.getTimerSeconds() != null && request.getTimerSeconds() >= 0) {
-                newSession.setLastRecordedSeconds(request.getTimerSeconds());
+            if (request.getRoomCode() != null && !request.getRoomCode().isBlank()) {
+                newSession.setRoomCode(request.getRoomCode().trim());
             }
+            // startTime is only stamped for a student's genuinely first-ever
+            // session. Re-audit sessions (student already has attempts) must NOT
+            // get a new startTime — that would reset their progress view.
+            boolean hasPriorAttempts = attemptLogRepository.countByStudentProfile(student) > 0;
+            if (!hasPriorAttempts) {
+                newSession.setStartTime(now);
+            }
+            Long clamped = clampTimer(request.getTimerSeconds());
+            if (clamped != null) newSession.setLastRecordedSeconds(clamped);
             gameSessionRepository.save(newSession);
         } else {
-            GameSession session = sessions.get(0);
+            GameSession session = sessionOpt.get();
             boolean dirty = false;
             session.setLastHeartbeatAt(now);
             dirty = true;
-            if (request.getTimerSeconds() != null && request.getTimerSeconds() >= 0) {
-                session.setLastRecordedSeconds(request.getTimerSeconds());
+            Long clamped = clampTimer(request.getTimerSeconds());
+            if (clamped != null) {
+                session.setLastRecordedSeconds(clamped);
                 dirty = true;
             }
+            // startTime only gets stamped once, and only for the first session
+            // (a null startTime here means a re-audit or join-created session —
+            // leave it null so historical progress stays visible).
             if (session.getStartTime() == null) {
-                session.setStartTime(now);
-                dirty = true;
+                boolean hasPriorAttempts = attemptLogRepository.countByStudentProfile(student) > 0;
+                if (!hasPriorAttempts) {
+                    session.setStartTime(now);
+                    dirty = true;
+                }
             }
             // Update active room presence to the phase being submitted
             boolean isDifferentPhase = session.getActivePhase() == null || !session.getActivePhase().equals(canonicalPhase);
@@ -167,6 +197,11 @@ public class ValidationController {
                 gameSessionRepository.save(session);
             }
         }
+    }
+
+    private static Long clampTimer(Long timerSeconds) {
+        if (timerSeconds == null) return null;
+        return Math.min(Math.max(timerSeconds, 0L), 7200L);
     }
 
     // 2. Student Profile Registration & Login
@@ -190,6 +225,8 @@ public class ValidationController {
         } else {
             profile = studentRepository.save(new StudentProfile(studentNumber, fullName, section));
         }
+        profile.setSessionToken(authService.issueSessionToken());
+        profile = studentRepository.save(profile);
 
         // NOTE: Do NOT create a GameSession here.
         // Session creation with a null startTime happens lazily when the student
@@ -211,7 +248,19 @@ public class ValidationController {
         }
 
         try {
-            StudentProfile profile = authService.authenticateStudent(studentNumber, fullName);
+            StudentProfile profile = authService.authenticateStudent(studentNumber, fullName, request.getPassword());
+            if (profile.getPasswordHash() == null) {
+                Map<String, Object> resp = new HashMap<>();
+                resp.put("requiresUpgrade", true);
+                resp.put("id", profile.getId());
+                resp.put("studentNumber", profile.getStudentNumber());
+                resp.put("fullName", profile.getFullName());
+                resp.put("section", profile.getSection());
+                resp.put("role", "STUDENT");
+                return ResponseEntity.ok(resp);
+            }
+            profile.setSessionToken(authService.issueSessionToken());
+            profile = studentRepository.save(profile);
             return ResponseEntity.ok(profile);
         } catch (IllegalArgumentException e) {
             int status = e.getMessage().contains("not found") ? 404 : 400;
@@ -220,8 +269,14 @@ public class ValidationController {
     }
 
     @GetMapping("/progress/status")
-    public ResponseEntity<?> getProgressStatus(@RequestParam String studentNumber) {
-        Optional<StudentProfile> studentOpt = studentRepository.findByStudentNumber(studentNumber);
+    public ResponseEntity<?> getProgressStatus(@RequestParam String studentNumber, HttpServletRequest httpRequest) {
+        String authedStudentNumber = (String) httpRequest.getAttribute(AuthInterceptor.ATTR_STUDENT_NUMBER);
+        if (authedStudentNumber == null || authedStudentNumber.isBlank()
+                || !studentNumber.trim().equalsIgnoreCase(authedStudentNumber)) {
+            return ResponseEntity.status(403).body("You can only view your own progress.");
+        }
+
+        Optional<StudentProfile> studentOpt = studentRepository.findByStudentNumber(studentNumber.trim());
         if (studentOpt.isEmpty()) {
             return ResponseEntity.badRequest().body("Student not found.");
         }
@@ -254,7 +309,6 @@ public class ValidationController {
         };
 
         java.util.List<PhaseProgress> list = new java.util.ArrayList<>();
-        boolean previousCompleted = true;
 
         GameSession activeSession = gameSessionRepository
                 .findFirstByStudentProfileOrderByIdDesc(student)
@@ -282,17 +336,25 @@ public class ValidationController {
             int phaseIndex = phases[i];
             
             boolean completed = isPhaseCompleted(student, module, phaseIndex, sessionStartTime);
-            
-            // Also completed if GameSession has progressed past it or is complete
-            if (isSessionCompleted || phaseId < currentPhase) {
+
+            // A genuinely completed session implies every phase was finished.
+            // (Completion is step-verified before the session can become COMPLETED.)
+            if (isSessionCompleted) {
                 completed = true;
             }
 
-            String status = "LOCKED";
+            // All phases are unlocked: status derives from step-based completion
+            // and real activity, never from sequential gating.
+            boolean hasAttempts = !phaseAttemptsMap
+                    .getOrDefault(module.toUpperCase() + "_" + phaseIndex, Collections.emptyList())
+                    .isEmpty();
+            String status;
             if (completed) {
                 status = "COMPLETED";
-            } else if (previousCompleted) {
+            } else if (hasAttempts) {
                 status = "ACTIVE";
+            } else {
+                status = "NOT_ATTEMPTED";
             }
             
             int completionPercentage = completed ? 100 : calculateCompletionPercentage(student, module, phaseIndex, sessionStartTime);
@@ -365,7 +427,6 @@ public class ValidationController {
             int reAuditScore = isReAuditCompleted ? Math.max(100 - (reAuditFailedCount * 10), 50) : 0;
 
             list.add(new PhaseProgress(phaseId, titles[i], descriptions[i], status, bestScore, completionPercentage, module, phaseIndex, attemptsCount, failedAttempts, hasReAudited, isReAuditCompleted, reAuditAttemptsCount, reAuditScore));
-            previousCompleted = completed;
         }
 
         return ResponseEntity.ok(list);

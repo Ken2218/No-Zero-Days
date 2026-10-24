@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import API_BASE_URL from '../config';
+import { authFetch } from '../utils/api';
 import './Auth.css';
 
 interface StudentWaitingProps {
@@ -19,13 +19,16 @@ export default function StudentWaiting({ roomCode, studentName, studentNumber, o
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const dotsIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const hasInitiallyJoinedRef = useRef(false);
+  const cancelledRef = useRef(false);
 
   // Poll for session status and membership every 2.5 seconds
   useEffect(() => {
+    cancelledRef.current = false;
     const checkStatus = async () => {
       try {
         // 1. Check room status
-        const res = await fetch(`${API_BASE_URL}/api/rooms/${roomCode}/status`);
+        const res = await authFetch(`/api/rooms/${roomCode}/status`);
+        if (cancelledRef.current) return;
         if (!res.ok) {
           if (res.status === 404) {
             handleKickOut();
@@ -47,7 +50,8 @@ export default function StudentWaiting({ roomCode, studentName, studentNumber, o
 
         // 2. Check if student is still in participants list
         if (studentNumber) {
-          const partRes = await fetch(`${API_BASE_URL}/api/rooms/${roomCode}/participants`);
+          const partRes = await authFetch(`/api/rooms/${roomCode}/participants`);
+          if (cancelledRef.current) return;
           if (partRes.ok) {
             const partData = await partRes.json();
             const list = partData.participants || [];
@@ -67,6 +71,7 @@ export default function StudentWaiting({ roomCode, studentName, studentNumber, o
     };
 
     const handleKickOut = () => {
+      if (cancelledRef.current) return;
       if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
       if (dotsIntervalRef.current) clearInterval(dotsIntervalRef.current);
       setKickedOut(true);
@@ -76,6 +81,7 @@ export default function StudentWaiting({ roomCode, studentName, studentNumber, o
     pollIntervalRef.current = setInterval(checkStatus, 2500);
 
     return () => {
+      cancelledRef.current = true;
       if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
     };
   }, [roomCode, studentNumber, onSessionStarted]);

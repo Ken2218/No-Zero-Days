@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import API_BASE_URL from '../config';
+import { authFetch } from '../utils/api';
 import './TeacherLobby.css';
 import './TeacherDashboard.css';
 
@@ -113,11 +113,13 @@ export default function TeacherDashboard({
   const [teacherEmail, setTeacherEmail] = useState(initialTeacherEmail || '');
   const [teacherRooms, setTeacherRooms] = useState<any[]>([]);
   const [sendingEmailReport, setSendingEmailReport] = useState(false);
+  const [downloadingExcel, setDownloadingExcel] = useState(false);
   const [emailReportToast, setEmailReportToast] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [copied, setCopied] = useState(false);
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const activeRoomCodeRef = useRef(activeRoomCode);
 
   // New section room creation modal
   const [showNewSectionModal, setShowNewSectionModal] = useState(false);
@@ -154,16 +156,14 @@ export default function TeacherDashboard({
     }
   }, [initialRoomCode]);
 
+  useEffect(() => {
+    activeRoomCodeRef.current = activeRoomCode;
+  }, [activeRoomCode]);
+
   // Fetch all rooms created by this teacher
   const fetchTeacherRooms = useCallback(async () => {
     try {
-      const emailQuery = (teacherEmail || initialTeacherEmail || '').trim();
-      const nameQuery = (teacherName || '').trim();
-      const params = new URLSearchParams();
-      if (emailQuery) params.append('email', emailQuery);
-      if (nameQuery) params.append('teacherName', nameQuery);
-
-      const res = await fetch(`${API_BASE_URL}/api/teachers/rooms?${params.toString()}`);
+      const res = await authFetch('/api/teachers/rooms');
       if (res.ok) {
         const data = await res.json();
         setTeacherRooms(data);
@@ -177,7 +177,7 @@ export default function TeacherDashboard({
     } catch (err) {
       console.warn('[TeacherDashboard] Failed to fetch teacher rooms:', err);
     }
-  }, [teacherEmail, initialTeacherEmail, teacherName, activeRoomCode, onSwitchRoom]);
+  }, [activeRoomCode, onSwitchRoom]);
 
   // Ensure activeRoomCode is always represented in teacherRooms
   useEffect(() => {
@@ -203,7 +203,10 @@ export default function TeacherDashboard({
   const fetchDashboardStats = useCallback(async (targetCode = activeRoomCode) => {
     if (!targetCode) return;
     try {
-      const res = await fetch(`${API_BASE_URL}/api/rooms/${targetCode}/dashboard`);
+      const res = await authFetch(`/api/rooms/${targetCode}/dashboard`);
+      // Drop stale responses: the teacher may have switched rooms while this
+      // request was in flight.
+      if (targetCode !== activeRoomCodeRef.current) return;
       if (res.ok) {
         const data = await res.json();
         setStudents(data.students || []);
@@ -260,7 +263,7 @@ export default function TeacherDashboard({
         payload.roomCode = newCustomCode.trim().toUpperCase();
       }
 
-      const res = await fetch(`${API_BASE_URL}/api/rooms/create`, {
+      const res = await authFetch('/api/rooms/create', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
@@ -325,16 +328,16 @@ export default function TeacherDashboard({
     setSendingEmailReport(true);
     setEmailReportToast('');
     try {
-      const res = await fetch(`${API_BASE_URL}/api/rooms/${activeRoomCode}/send-report`, {
+      const res = await authFetch(`/api/rooms/${activeRoomCode}/send-report`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ teacherEmail: email })
       });
-      const data = await res.json();
       if (res.ok) {
         setEmailReportToast(`✓ Section report sent to ${email}!`);
         setTimeout(() => setEmailReportToast(''), 5000);
       } else {
+        const data = await res.json().catch(() => ({}));
         setEmailReportToast(`✕ ${data.error || 'Failed to send report.'}`);
         setTimeout(() => setEmailReportToast(''), 6000);
       }
@@ -343,6 +346,32 @@ export default function TeacherDashboard({
       setTimeout(() => setEmailReportToast(''), 6000);
     } finally {
       setSendingEmailReport(false);
+    }
+  };
+
+  const handleDownloadExcel = async () => {
+    if (!activeRoomCode) return;
+    setDownloadingExcel(true);
+    try {
+      const res = await authFetch(`/api/rooms/${activeRoomCode}/report/excel`);
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        alert(data.error || 'Failed to download Excel report.');
+        return;
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `section-report-${activeRoomCode}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err: any) {
+      alert('Excel download error: ' + err.message);
+    } finally {
+      setDownloadingExcel(false);
     }
   };
 
@@ -374,7 +403,7 @@ export default function TeacherDashboard({
     setIsAddingStudent(true);
     setAddError('');
     try {
-      const res = await fetch(`${API_BASE_URL}/api/rooms/${activeRoomCode}/students`, {
+      const res = await authFetch(`/api/rooms/${activeRoomCode}/students`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -404,7 +433,7 @@ export default function TeacherDashboard({
     if (!activeRoomCode) return;
     setStartingRoom(true);
     try {
-      const res = await fetch(`${API_BASE_URL}/api/rooms/${activeRoomCode}/start`, {
+      const res = await authFetch(`/api/rooms/${activeRoomCode}/start`, {
         method: 'POST'
       });
       if (res.ok) {
@@ -429,7 +458,7 @@ export default function TeacherDashboard({
     if (!studentToDelete) return;
     setIsDeleting(true);
     try {
-      const res = await fetch(`${API_BASE_URL}/api/rooms/${activeRoomCode}/students/${studentToDelete.number}`, {
+      const res = await authFetch(`/api/rooms/${activeRoomCode}/students/${studentToDelete.number}`, {
         method: 'DELETE'
       });
       if (res.ok) {
@@ -550,12 +579,12 @@ export default function TeacherDashboard({
 
       const phases = Array.from({ length: 7 }, (_, idx) => {
         const phaseId = idx + 1;
-        const f = firstStats.find(p => p.phaseId === phaseId) || firstStats[idx] || {
+        const f = firstStats.find(p => p.phaseId === phaseId) || {
           phaseId,
           title: PHASE_LABELS[idx],
           completedCount: 0
         };
-        const r = reAuditStats.find(p => p.phaseId === phaseId) || reAuditStats[idx] || {
+        const r = reAuditStats.find(p => p.phaseId === phaseId) || {
           phaseId,
           title: PHASE_LABELS[idx],
           completedCount: 0
@@ -717,7 +746,7 @@ export default function TeacherDashboard({
 
       const phases = Array.from({ length: 7 }, (_, idx) => {
         const phaseId = idx + 1;
-        const f = firstStats.find(p => p.phaseId === phaseId) || firstStats[idx] || {
+        const f = firstStats.find(p => p.phaseId === phaseId) || {
           phaseId,
           title: PHASE_LABELS[idx],
           avgTimeSeconds: 0,
@@ -725,7 +754,7 @@ export default function TeacherDashboard({
           avgAttempts: 0,
           completedCount: 0
         };
-        const r = reAuditStats.find(p => p.phaseId === phaseId) || reAuditStats[idx] || {
+        const r = reAuditStats.find(p => p.phaseId === phaseId) || {
           phaseId,
           title: PHASE_LABELS[idx],
           avgTimeSeconds: 0,
@@ -896,13 +925,13 @@ export default function TeacherDashboard({
 
       const phases = Array.from({ length: 7 }, (_, idx) => {
         const phaseId = idx + 1;
-        const f = firstStats.find(p => p.phaseId === phaseId) || firstStats[idx] || {
+        const f = firstStats.find(p => p.phaseId === phaseId) || {
           phaseId,
           title: PHASE_LABELS[idx],
           avgAttempts: 0,
           completedCount: 0
         };
-        const r = reAuditStats.find(p => p.phaseId === phaseId) || reAuditStats[idx] || {
+        const r = reAuditStats.find(p => p.phaseId === phaseId) || {
           phaseId,
           title: PHASE_LABELS[idx],
           avgAttempts: 0,
@@ -1399,14 +1428,15 @@ export default function TeacherDashboard({
                     >
                       <span>📧</span> {sendingEmailReport ? 'SENDING REPORT...' : 'EMAIL SECTION REPORT'}
                     </button>
-                    <a
-                      href={`${API_BASE_URL}/api/rooms/${activeRoomCode}/report/excel`}
-                      download
+                    <button
+                      type="button"
                       className="section-action-btn excel"
+                      onClick={handleDownloadExcel}
+                      disabled={downloadingExcel || !activeRoomCode}
                       title="Download Excel spreadsheet of this section's performance"
                     >
-                      <span>📊</span> DOWNLOAD EXCEL
-                    </a>
+                      <span>📊</span> {downloadingExcel ? 'DOWNLOADING...' : 'DOWNLOAD EXCEL'}
+                    </button>
                   </div>
                 </div>
               )}

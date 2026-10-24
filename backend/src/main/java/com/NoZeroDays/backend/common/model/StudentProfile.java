@@ -19,6 +19,16 @@ public class StudentProfile {
 
     private String section;
 
+    /** Null for legacy pre-migration accounts; set once the student upgrades. */
+    private String email;
+
+    /** Null for legacy accounts; PBKDF2 hash once the student sets a password. */
+    @Column(name = "password_hash")
+    private String passwordHash;
+
+    @Column(name = "session_token")
+    private String sessionToken;
+
     private LocalDateTime createdAt = LocalDateTime.now();
 
     // Default Constructor
@@ -42,6 +52,15 @@ public class StudentProfile {
 
     public String getSection() { return section; }
     public void setSection(String section) { this.section = section; }
+
+    public String getEmail() { return email; }
+    public void setEmail(String email) { this.email = email; }
+
+    public String getPasswordHash() { return passwordHash; }
+    public void setPasswordHash(String passwordHash) { this.passwordHash = passwordHash; }
+
+    public String getSessionToken() { return sessionToken; }
+    public void setSessionToken(String sessionToken) { this.sessionToken = sessionToken; }
 
     public LocalDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }

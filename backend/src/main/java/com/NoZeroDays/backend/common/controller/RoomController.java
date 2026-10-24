@@ -14,6 +14,10 @@ import com.NoZeroDays.backend.common.repository.StudentProfileRepository;
 import com.NoZeroDays.backend.common.model.Teacher;
 import com.NoZeroDays.backend.common.repository.TeacherRepository;
 
+import com.NoZeroDays.backend.common.auth.AuthInterceptor;
+
+import jakarta.servlet.http.HttpServletRequest;
+
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpHeaders;
@@ -55,6 +59,9 @@ public class RoomController {
     private AttemptLogRepository attemptLogRepository;
 
     @Autowired
+    private com.NoZeroDays.backend.common.repository.ScenarioSnapshotRepository scenarioSnapshotRepository;
+
+    @Autowired
     private com.NoZeroDays.backend.common.service.EmailReportService emailReportService;
 
     @Autowired
@@ -88,29 +95,22 @@ public class RoomController {
     public ResponseEntity<?> registerTeacher(@RequestBody Map<String, String> body) {
         String email = body.getOrDefault("email", body.getOrDefault("teacherEmail", "")).trim();
         String fullName = body.getOrDefault("fullName", body.getOrDefault("teacherName", "")).trim();
+        String password = body.getOrDefault("password", "");
 
-        if (email.isEmpty()) {
-            return ResponseEntity.badRequest().body(Map.of("error", "Email is required."));
+        try {
+            Teacher teacher = authService.registerTeacher(email, password, fullName);
+            Map<String, Object> resp = new HashMap<>();
+            resp.put("id", teacher.getId());
+            resp.put("email", teacher.getEmail());
+            resp.put("fullName", teacher.getFullName());
+            resp.put("teacherName", teacher.getFullName());
+            resp.put("teacherEmail", teacher.getEmail());
+            resp.put("token", teacher.getSessionToken());
+            resp.put("role", "TEACHER");
+            return ResponseEntity.ok(resp);
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
-        if (!email.toLowerCase().endsWith("@gmail.com")) {
-            return ResponseEntity.badRequest().body(Map.of("error", "Email must be a valid @gmail.com address."));
-        }
-        if (fullName.isEmpty()) {
-            return ResponseEntity.badRequest().body(Map.of("error", "Full name is required."));
-        }
-
-        Teacher teacher = teacherRepository.findByEmailIgnoreCase(email)
-                .orElseGet(() -> new Teacher(email, fullName));
-        teacher.setFullName(fullName);
-        teacher = teacherRepository.save(teacher);
-
-        Map<String, Object> resp = new HashMap<>();
-        resp.put("id", teacher.getId());
-        resp.put("email", teacher.getEmail());
-        resp.put("fullName", teacher.getFullName());
-        resp.put("teacherName", teacher.getFullName());
-        resp.put("teacherEmail", teacher.getEmail());
-        return ResponseEntity.ok(resp);
     }
 
     // -------------------------------------------------------------------------
@@ -120,56 +120,39 @@ public class RoomController {
     public ResponseEntity<?> loginTeacher(@RequestBody Map<String, String> body) {
         String email = body.getOrDefault("email", body.getOrDefault("teacherEmail", "")).trim();
         String fullName = body.getOrDefault("fullName", body.getOrDefault("teacherName", "")).trim();
+        String password = body.getOrDefault("password", "");
 
-        if (email.isEmpty()) {
-            return ResponseEntity.badRequest().body(Map.of("error", "Email is required."));
+        try {
+            Teacher teacher = authService.authenticateTeacher(email, password, fullName);
+            Map<String, Object> resp = new HashMap<>();
+            resp.put("id", teacher.getId());
+            resp.put("email", teacher.getEmail());
+            resp.put("fullName", teacher.getFullName());
+            resp.put("teacherName", teacher.getFullName());
+            resp.put("teacherEmail", teacher.getEmail());
+            resp.put("token", teacher.getSessionToken());
+            resp.put("role", "TEACHER");
+            return ResponseEntity.ok(resp);
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.status(404).body(Map.of("error", e.getMessage()));
         }
-        if (!email.toLowerCase().endsWith("@gmail.com")) {
-            return ResponseEntity.badRequest().body(Map.of("error", "Email must be a valid @gmail.com address."));
-        }
-
-        Optional<Teacher> opt = teacherRepository.findByEmailIgnoreCase(email);
-        Teacher teacher;
-        if (opt.isPresent()) {
-            teacher = opt.get();
-            if (!fullName.isEmpty()) {
-                teacher.setFullName(fullName);
-                teacher = teacherRepository.save(teacher);
-            }
-        } else {
-            // Check if any rooms exist with this teacher email to auto-sync
-            List<Room> existingRooms = roomRepository.findByTeacherEmailIgnoreCaseOrderByCreatedAtDesc(email);
-            if (!existingRooms.isEmpty()) {
-                String existingName = !fullName.isEmpty() ? fullName : existingRooms.get(0).getTeacherName();
-                teacher = teacherRepository.save(new Teacher(email, existingName));
-                for (Room r : existingRooms) {
-                    if (r.getTeacher() == null) {
-                        r.setTeacher(teacher);
-                        roomRepository.save(r);
-                    }
-                }
-            } else {
-                return ResponseEntity.status(404).body(Map.of("error", "Teacher account not found for '" + email + "'. Please switch to Sign Up."));
-            }
-        }
-
-        Map<String, Object> resp = new HashMap<>();
-        resp.put("id", teacher.getId());
-        resp.put("email", teacher.getEmail());
-        resp.put("fullName", teacher.getFullName());
-        resp.put("teacherName", teacher.getFullName());
-        resp.put("teacherEmail", teacher.getEmail());
-        return ResponseEntity.ok(resp);
     }
 
     // -------------------------------------------------------------------------
     // 1. CREATE ROOM
     // -------------------------------------------------------------------------
     @PostMapping("/rooms/create")
-    public ResponseEntity<?> createRoom(@RequestBody Map<String, String> body) {
+    public ResponseEntity<?> createRoom(@RequestBody Map<String, String> body, HttpServletRequest request) {
+        String authedEmail = (String) request.getAttribute(AuthInterceptor.ATTR_TEACHER_EMAIL);
+        if (authedEmail == null || authedEmail.isBlank()) {
+            return ResponseEntity.status(401).body(Map.of("error", "Teacher authentication required."));
+        }
+
         String teacherName = body.getOrDefault("teacherName", "Instructor");
         String section = body.getOrDefault("section", "");
-        String teacherEmail = body.getOrDefault("teacherEmail", "");
+        // The room always belongs to the authenticated teacher — a body-supplied
+        // teacherEmail must never claim another teacher's identity.
+        String teacherEmail = authedEmail;
         String customCode = body.get("roomCode");
 
         String roomCode;
@@ -186,14 +169,9 @@ public class RoomController {
             return ResponseEntity.badRequest().body(Map.of("error", "Teacher name is too long (max 255 characters)."));
         }
 
-        // Find or create Teacher entity for master association
-        Teacher teacher = null;
-        if (!teacherEmail.isBlank()) {
-            teacher = teacherRepository.findByEmailIgnoreCase(teacherEmail.trim())
-                    .orElseGet(() -> teacherRepository.save(new Teacher(teacherEmail.trim(), teacherName)));
-        } else if (!teacherName.isBlank()) {
-            teacher = teacherRepository.findByFullNameIgnoreCase(teacherName.trim()).orElse(null);
-        }
+        // Resolve the authenticated teacher's master account
+        Teacher teacher = teacherRepository.findByEmailIgnoreCase(teacherEmail.trim())
+                .orElseGet(() -> teacherRepository.save(new Teacher(teacherEmail.trim(), teacherName)));
 
         // Check if room code already exists
         Optional<Room> existing = roomRepository.findByRoomCodeIgnoreCase(roomCode);
@@ -201,34 +179,22 @@ public class RoomController {
         if (existing.isPresent()) {
             room = existing.get();
             // A room code may only be reclaimed by the teacher who owns it.
-            boolean sameEmail = !teacherEmail.isBlank()
-                    && room.getTeacherEmail() != null
+            boolean sameEmail = room.getTeacherEmail() != null
                     && teacherEmail.trim().equalsIgnoreCase(room.getTeacherEmail().trim());
-            boolean sameNameNoEmail = teacherEmail.isBlank()
-                    && room.getTeacherEmail() == null
-                    && teacherName != null
-                    && room.getTeacherName() != null
-                    && teacherName.trim().equalsIgnoreCase(room.getTeacherName().trim());
-            if (!sameEmail && !sameNameNoEmail) {
+            if (!sameEmail) {
                 return ResponseEntity.status(409).body(Map.of("error",
                         "Room code '" + roomCode + "' is already in use by another teacher."));
             }
             room.setTeacherName(teacherName);
             room.setSection(section);
-            if (!teacherEmail.isBlank()) {
-                room.setTeacherEmail(teacherEmail.trim());
-            }
-            if (teacher != null) {
-                room.setTeacher(teacher);
-            }
+            room.setTeacherEmail(teacherEmail.trim());
+            room.setTeacher(teacher);
             room.setStatus("WAITING");
             room.setCreatedAt(LocalDateTime.now());
             room.setStartedAt(null);
         } else {
             room = new Room(roomCode, teacherName, section, teacherEmail.trim());
-            if (teacher != null) {
-                room.setTeacher(teacher);
-            }
+            room.setTeacher(teacher);
         }
         room = roomRepository.save(room);
 
@@ -239,9 +205,7 @@ public class RoomController {
         resp.put("section", room.getSection());
         resp.put("status", room.getStatus());
         resp.put("createdAt", room.getCreatedAt());
-        if (teacher != null) {
-            resp.put("teacherId", teacher.getId());
-        }
+        resp.put("teacherId", teacher.getId());
 
         return ResponseEntity.ok(resp);
     }
@@ -254,31 +218,21 @@ public class RoomController {
             @RequestParam(required = false) String email,
             @RequestParam(required = false) String teacherEmail,
             @RequestParam(required = false) String teacherName,
-            @RequestParam(required = false) Long teacherId) {
-        String effectiveEmail = (email != null && !email.isBlank()) ? email.trim() :
-                                (teacherEmail != null && !teacherEmail.isBlank()) ? teacherEmail.trim() : null;
+            @RequestParam(required = false) Long teacherId,
+            HttpServletRequest request) {
+        // Identity always comes from the authenticated session, never from query params.
+        String authedEmail = (String) request.getAttribute(AuthInterceptor.ATTR_TEACHER_EMAIL);
+        if (authedEmail == null || authedEmail.isBlank()) {
+            return ResponseEntity.status(401).body(Map.of("error", "Teacher authentication required."));
+        }
 
         List<Room> rooms = Collections.emptyList();
-        if (teacherId != null) {
-            rooms = roomRepository.findByTeacherIdOrderByCreatedAtDesc(teacherId);
+        Optional<Teacher> t = teacherRepository.findByEmailIgnoreCase(authedEmail.trim());
+        if (t.isPresent()) {
+            rooms = roomRepository.findByTeacherOrderByCreatedAtDesc(t.get());
         }
-        if (rooms.isEmpty() && effectiveEmail != null) {
-            Optional<Teacher> t = teacherRepository.findByEmailIgnoreCase(effectiveEmail);
-            if (t.isPresent()) {
-                rooms = roomRepository.findByTeacherOrderByCreatedAtDesc(t.get());
-            }
-            if (rooms.isEmpty()) {
-                rooms = roomRepository.findByTeacherEmailIgnoreCaseOrderByCreatedAtDesc(effectiveEmail);
-            }
-        }
-        if (rooms.isEmpty() && teacherName != null && !teacherName.isBlank()) {
-            Optional<Teacher> t = teacherRepository.findByFullNameIgnoreCase(teacherName.trim());
-            if (t.isPresent()) {
-                rooms = roomRepository.findByTeacherOrderByCreatedAtDesc(t.get());
-            }
-            if (rooms.isEmpty()) {
-                rooms = roomRepository.findByTeacherNameIgnoreCaseOrderByCreatedAtDesc(teacherName.trim());
-            }
+        if (rooms.isEmpty()) {
+            rooms = roomRepository.findByTeacherEmailIgnoreCaseOrderByCreatedAtDesc(authedEmail.trim());
         }
 
         List<Map<String, Object>> result = new ArrayList<>();
@@ -306,17 +260,14 @@ public class RoomController {
             @RequestParam(required = false) String teacherEmail,
             @RequestParam(required = false) String email,
             @RequestParam(required = false) String teacherName,
-            @RequestParam(required = false) String section) {
-        String effectiveEmail = (teacherEmail != null && !teacherEmail.isBlank()) ? teacherEmail.trim() :
-                                (email != null && !email.isBlank()) ? email.trim() : null;
+            @RequestParam(required = false) String section,
+            HttpServletRequest request) {
+        String authedEmail = (String) request.getAttribute(AuthInterceptor.ATTR_TEACHER_EMAIL);
+        if (authedEmail == null || authedEmail.isBlank()) {
+            return ResponseEntity.status(401).body(Map.of("error", "Teacher authentication required."));
+        }
 
-        List<Room> rooms = Collections.emptyList();
-        if (effectiveEmail != null) {
-            rooms = roomRepository.findByTeacherEmailIgnoreCaseOrderByCreatedAtDesc(effectiveEmail);
-        }
-        if (rooms.isEmpty() && teacherName != null && !teacherName.isBlank()) {
-            rooms = roomRepository.findByTeacherNameIgnoreCaseOrderByCreatedAtDesc(teacherName.trim());
-        }
+        List<Room> rooms = roomRepository.findByTeacherEmailIgnoreCaseOrderByCreatedAtDesc(authedEmail.trim());
 
         if (rooms.isEmpty()) {
             return ResponseEntity.ok(Map.of("found", false));
@@ -386,13 +337,16 @@ public class RoomController {
     // 3. GET ROOM PARTICIPANTS (Polled by TeacherLobby)
     // -------------------------------------------------------------------------
     @GetMapping("/rooms/{roomCode}/participants")
-    public ResponseEntity<?> getRoomParticipants(@PathVariable String roomCode) {
+    public ResponseEntity<?> getRoomParticipants(@PathVariable String roomCode, HttpServletRequest request) {
         Optional<Room> roomOpt = roomRepository.findByRoomCodeIgnoreCase(roomCode);
         if (roomOpt.isEmpty()) {
             return ResponseEntity.status(404).body(Map.of("error", "Room not found: " + roomCode));
         }
 
         Room room = roomOpt.get();
+        ResponseEntity<?> ownershipError = requireRoomOwner(room, request);
+        if (ownershipError != null) return ownershipError;
+
         List<RoomParticipant> participants = roomParticipantRepository.findByRoomOrderByJoinedAtAsc(room);
 
         List<Map<String, Object>> participantList = participants.stream().map(p -> {
@@ -418,13 +372,16 @@ public class RoomController {
     // 4. START ROOM SESSION (Triggered by TeacherLobby)
     // -------------------------------------------------------------------------
     @PostMapping("/rooms/{roomCode}/start")
-    public ResponseEntity<?> startRoom(@PathVariable String roomCode) {
+    public ResponseEntity<?> startRoom(@PathVariable String roomCode, HttpServletRequest request) {
         Optional<Room> roomOpt = roomRepository.findByRoomCodeIgnoreCase(roomCode);
         if (roomOpt.isEmpty()) {
             return ResponseEntity.status(404).body(Map.of("error", "Room not found: " + roomCode));
         }
 
         Room room = roomOpt.get();
+        ResponseEntity<?> ownershipError = requireRoomOwner(room, request);
+        if (ownershipError != null) return ownershipError;
+
         if ("COMPLETED".equalsIgnoreCase(room.getStatus())) {
             return ResponseEntity.status(409).body(Map.of("error", "This room session has already been completed."));
         }
@@ -448,12 +405,14 @@ public class RoomController {
         List<RoomParticipant> participants = roomParticipantRepository.findByRoomOrderByJoinedAtAsc(room);
         for (RoomParticipant p : participants) {
             StudentProfile profile = p.getStudentProfile();
-            List<GameSession> activeSessions = gameSessionRepository.findByStudentProfileAndStatus(profile, "ACTIVE");
-            if (activeSessions.isEmpty()) {
+            Optional<GameSession> latest = gameSessionRepository
+                    .findFirstByStudentProfileAndRoomCodeOrderByIdDesc(profile, room.getRoomCode());
+            if (latest.isEmpty() || !"ACTIVE".equalsIgnoreCase(latest.get().getStatus())) {
                 GameSession newSession = new GameSession(profile);
                 newSession.setCurrentModule("M1_MATH");
                 newSession.setCurrentPhase(1);
                 newSession.setStatus("ACTIVE");
+                newSession.setRoomCode(room.getRoomCode());
                 // startTime stays null — set only when student begins Phase 1
                 gameSessionRepository.save(newSession);
             }
@@ -472,23 +431,25 @@ public class RoomController {
     // 5. STUDENT JOINS ROOM
     // -------------------------------------------------------------------------
     @PostMapping("/rooms/join")
-    public ResponseEntity<?> joinRoom(@RequestBody Map<String, String> body) {
+    public ResponseEntity<?> joinRoom(@RequestBody Map<String, String> body, HttpServletRequest request) {
         String roomCode = body.get("roomCode");
         String studentNumber = body.get("studentNumber");
         String fullName = body.get("fullName");
         String section = body.get("section");
 
+        String authedStudentNumber = (String) request.getAttribute(AuthInterceptor.ATTR_STUDENT_NUMBER);
+        if (authedStudentNumber == null || authedStudentNumber.isBlank()) {
+            return ResponseEntity.status(401).body(Map.of("error", "Student authentication required."));
+        }
+        if (studentNumber == null || !studentNumber.trim().equalsIgnoreCase(authedStudentNumber)) {
+            return ResponseEntity.status(403).body(Map.of("error", "You can only join a room with your own student account."));
+        }
+
         if (roomCode == null || roomCode.trim().isEmpty()) {
             return ResponseEntity.badRequest().body(Map.of("error", "Room code is required."));
         }
-        if (studentNumber == null || studentNumber.trim().isEmpty()) {
-            return ResponseEntity.badRequest().body(Map.of("error", "Student number is required."));
-        }
         if (roomCode.trim().length() > 32) {
             return ResponseEntity.badRequest().body(Map.of("error", "Room code must be 32 characters or fewer."));
-        }
-        if (studentNumber.trim().length() > 255) {
-            return ResponseEntity.badRequest().body(Map.of("error", "Student number is too long (max 255 characters)."));
         }
 
         Optional<Room> roomOpt = roomRepository.findByRoomCodeIgnoreCase(roomCode.trim());
@@ -497,11 +458,18 @@ public class RoomController {
         }
         Room room = roomOpt.get();
 
-        StudentProfile profile;
-        try {
-            profile = resolveOrCreateStudent(studentNumber.trim(), fullName, section, room.getSection());
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        StudentProfile profile = studentRepository.findByStudentNumber(authedStudentNumber).orElse(null);
+        if (profile == null) {
+            return ResponseEntity.status(404).body(Map.of("error", "Student account not found. Please sign up first."));
+        }
+
+        boolean alreadyParticipant = roomParticipantRepository
+                .findByRoomAndStudentProfile(room, profile).isPresent();
+
+        // A completed room no longer accepts new participants; existing
+        // participants may still re-join to resume their records.
+        if ("COMPLETED".equalsIgnoreCase(room.getStatus()) && !alreadyParticipant) {
+            return ResponseEntity.status(409).body(Map.of("error", "This room session has already been completed."));
         }
 
         // Add to room participants if not already present
@@ -519,14 +487,20 @@ public class RoomController {
             roomParticipantRepository.save(participant);
         }
 
-        // Initialize active game session if none exists.
+        // Wipe pre-room (free-play) progress BEFORE session lookup so a legacy
+        // untagged ACTIVE session can never be reused for this room.
+        boolean progressReset = resetPreRoomProgress(profile);
+
+        // Initialize active game session if none exists for this room.
         // startTime is left null — it gets stamped on the student's first Phase 1 submission.
-        List<GameSession> activeSessions = gameSessionRepository.findByStudentProfileAndStatus(profile, "ACTIVE");
-        if (activeSessions.isEmpty()) {
+        Optional<GameSession> latest = gameSessionRepository
+                .findFirstByStudentProfileAndRoomCodeOrderByIdDesc(profile, room.getRoomCode());
+        if (latest.isEmpty() || !"ACTIVE".equalsIgnoreCase(latest.get().getStatus())) {
             GameSession newSession = new GameSession(profile);
             newSession.setCurrentModule("M1_MATH");
             newSession.setCurrentPhase(1);
             newSession.setStatus("ACTIVE");
+            newSession.setRoomCode(room.getRoomCode());
             // Do NOT copy room.getStartedAt() — that would start every student's
             // timer at the same instant (room activation), not their individual start.
             gameSessionRepository.save(newSession);
@@ -537,20 +511,42 @@ public class RoomController {
         resp.put("roomCode", room.getRoomCode());
         resp.put("student", profile);
         resp.put("roomStatus", room.getStatus());
+        resp.put("progressReset", progressReset);
 
         return ResponseEntity.ok(resp);
+    }
+
+    /**
+     * Wipes free-play progress (sessions/attempts without a room code, plus
+     * scenario snapshots which regenerate on the next EXTRACT) when a student
+     * enters a room, so the teacher's dashboard only reflects in-room
+     * performance. In-room rows from other rooms are left untouched.
+     * Returns true when anything was actually removed. Snapshots are only
+     * cleared when free-play rows were found so a mid-room re-join never
+     * invalidates the room's own registered scenario.
+     */
+    private boolean resetPreRoomProgress(StudentProfile student) {
+        long deletedSessions = gameSessionRepository.deleteByStudentProfileAndRoomCodeIsNull(student);
+        long deletedAttempts = attemptLogRepository.deleteByStudentProfileAndRoomCodeIsNull(student);
+        boolean wiped = deletedSessions > 0 || deletedAttempts > 0;
+        if (wiped) {
+            scenarioSnapshotRepository.deleteByStudentProfile(student);
+        }
+        return wiped;
     }
 
     // -------------------------------------------------------------------------
     // 6. TEACHER ADDS STUDENT TO ROOM (WITH VALIDATION & INVITATION)
     // -------------------------------------------------------------------------
     @PostMapping("/rooms/{roomCode}/students")
-    public ResponseEntity<?> addStudentToRoom(@PathVariable String roomCode, @RequestBody Map<String, String> body) {
+    public ResponseEntity<?> addStudentToRoom(@PathVariable String roomCode, @RequestBody Map<String, String> body, HttpServletRequest request) {
         Optional<Room> roomOpt = roomRepository.findByRoomCodeIgnoreCase(roomCode);
         if (roomOpt.isEmpty()) {
             return ResponseEntity.status(404).body(Map.of("error", "Room not found: " + roomCode));
         }
         Room room = roomOpt.get();
+        ResponseEntity<?> ownershipError = requireRoomOwner(room, request);
+        if (ownershipError != null) return ownershipError;
 
         String studentNumber = body.get("studentNumber");
         String fullName = body.get("fullName");
@@ -620,7 +616,14 @@ public class RoomController {
     // 6A. CHECK STUDENT INVITATIONS (Polled by Student UI)
     // -------------------------------------------------------------------------
     @GetMapping("/students/{studentNumber}/invitations")
-    public ResponseEntity<?> getStudentInvitations(@PathVariable String studentNumber) {
+    public ResponseEntity<?> getStudentInvitations(@PathVariable String studentNumber, HttpServletRequest request) {
+        // Students may only query their own invitations.
+        String authedStudentNumber = (String) request.getAttribute(AuthInterceptor.ATTR_STUDENT_NUMBER);
+        if (authedStudentNumber != null && !authedStudentNumber.isBlank()
+                && !studentNumber.trim().equalsIgnoreCase(authedStudentNumber)) {
+            return ResponseEntity.status(403).body(Map.of("error", "You can only view your own invitations."));
+        }
+
         Optional<StudentProfile> studentOpt = studentRepository.findByStudentNumber(studentNumber.trim());
         if (studentOpt.isEmpty()) {
             return ResponseEntity.ok(Map.of("hasInvitation", false));
@@ -652,10 +655,14 @@ public class RoomController {
     // 6B. STUDENT ACCEPTS ROOM INVITATION
     // -------------------------------------------------------------------------
     @PostMapping("/rooms/{roomCode}/invitations/accept")
-    public ResponseEntity<?> acceptRoomInvitation(@PathVariable String roomCode, @RequestBody Map<String, String> body) {
+    public ResponseEntity<?> acceptRoomInvitation(@PathVariable String roomCode, @RequestBody Map<String, String> body, HttpServletRequest request) {
         String studentNumber = body.get("studentNumber");
-        if (studentNumber == null || studentNumber.trim().isEmpty()) {
-            return ResponseEntity.badRequest().body(Map.of("error", "Student number is required."));
+        String authedStudentNumber = (String) request.getAttribute(AuthInterceptor.ATTR_STUDENT_NUMBER);
+        if (authedStudentNumber == null || authedStudentNumber.isBlank()) {
+            return ResponseEntity.status(401).body(Map.of("error", "Student authentication required."));
+        }
+        if (studentNumber == null || !studentNumber.trim().equalsIgnoreCase(authedStudentNumber)) {
+            return ResponseEntity.status(403).body(Map.of("error", "You can only accept invitations for your own account."));
         }
 
         Optional<Room> roomOpt = roomRepository.findByRoomCodeIgnoreCase(roomCode.trim());
@@ -664,7 +671,7 @@ public class RoomController {
         }
         Room room = roomOpt.get();
 
-        Optional<StudentProfile> studentOpt = studentRepository.findByStudentNumber(studentNumber.trim());
+        Optional<StudentProfile> studentOpt = studentRepository.findByStudentNumber(authedStudentNumber);
         if (studentOpt.isEmpty()) {
             return ResponseEntity.status(404).body(Map.of("error", "Student not found: " + studentNumber));
         }
@@ -674,20 +681,29 @@ public class RoomController {
         if (partOpt.isEmpty()) {
             return ResponseEntity.status(404).body(Map.of("error", "No invitation found for room " + roomCode));
         }
+        if ("COMPLETED".equalsIgnoreCase(room.getStatus()) && !"ACCEPTED".equalsIgnoreCase(partOpt.get().getStatus())) {
+            return ResponseEntity.status(409).body(Map.of("error", "This room session has already been completed."));
+        }
 
         RoomParticipant participant = partOpt.get();
         participant.setStatus("ACCEPTED");
         participant.setJoinedAt(LocalDateTime.now());
         roomParticipantRepository.save(participant);
 
+        // Wipe pre-room (free-play) progress BEFORE session lookup so a legacy
+        // untagged ACTIVE session can never be reused for this room.
+        boolean progressReset = resetPreRoomProgress(student);
+
         // Ensure active game session exists for the accepting student.
         // startTime is intentionally left null — set only on Phase 1 first attempt.
-        List<GameSession> activeSessions = gameSessionRepository.findByStudentProfileAndStatus(student, "ACTIVE");
-        if (activeSessions.isEmpty()) {
+        Optional<GameSession> latest = gameSessionRepository
+                .findFirstByStudentProfileAndRoomCodeOrderByIdDesc(student, room.getRoomCode());
+        if (latest.isEmpty() || !"ACTIVE".equalsIgnoreCase(latest.get().getStatus())) {
             GameSession newSession = new GameSession(student);
             newSession.setCurrentModule("M1_MATH");
             newSession.setCurrentPhase(1);
             newSession.setStatus("ACTIVE");
+            newSession.setRoomCode(room.getRoomCode());
             // Do NOT copy room.getStartedAt() here — each student's clock must
             // start independently when they open Phase 1, not when they accept.
             gameSessionRepository.save(newSession);
@@ -699,6 +715,7 @@ public class RoomController {
         resp.put("roomCode", room.getRoomCode());
         resp.put("roomStatus", room.getStatus());
         resp.put("student", student);
+        resp.put("progressReset", progressReset);
 
         return ResponseEntity.ok(resp);
     }
@@ -708,10 +725,14 @@ public class RoomController {
     // -------------------------------------------------------------------------
     @PostMapping("/rooms/{roomCode}/invitations/decline")
     @Transactional
-    public ResponseEntity<?> declineRoomInvitation(@PathVariable String roomCode, @RequestBody Map<String, String> body) {
+    public ResponseEntity<?> declineRoomInvitation(@PathVariable String roomCode, @RequestBody Map<String, String> body, HttpServletRequest request) {
         String studentNumber = body.get("studentNumber");
-        if (studentNumber == null || studentNumber.trim().isEmpty()) {
-            return ResponseEntity.badRequest().body(Map.of("error", "Student number is required."));
+        String authedStudentNumber = (String) request.getAttribute(AuthInterceptor.ATTR_STUDENT_NUMBER);
+        if (authedStudentNumber == null || authedStudentNumber.isBlank()) {
+            return ResponseEntity.status(401).body(Map.of("error", "Student authentication required."));
+        }
+        if (studentNumber == null || !studentNumber.trim().equalsIgnoreCase(authedStudentNumber)) {
+            return ResponseEntity.status(403).body(Map.of("error", "You can only decline invitations for your own account."));
         }
 
         Optional<Room> roomOpt = roomRepository.findByRoomCodeIgnoreCase(roomCode.trim());
@@ -720,7 +741,7 @@ public class RoomController {
         }
         Room room = roomOpt.get();
 
-        Optional<StudentProfile> studentOpt = studentRepository.findByStudentNumber(studentNumber.trim());
+        Optional<StudentProfile> studentOpt = studentRepository.findByStudentNumber(authedStudentNumber);
         if (studentOpt.isEmpty()) {
             return ResponseEntity.status(404).body(Map.of("error", "Student not found: " + studentNumber));
         }
@@ -739,12 +760,14 @@ public class RoomController {
     // -------------------------------------------------------------------------
     @DeleteMapping("/rooms/{roomCode}/students/{studentNumber}")
     @Transactional
-    public ResponseEntity<?> removeStudentFromRoom(@PathVariable String roomCode, @PathVariable String studentNumber) {
+    public ResponseEntity<?> removeStudentFromRoom(@PathVariable String roomCode, @PathVariable String studentNumber, HttpServletRequest request) {
         Optional<Room> roomOpt = roomRepository.findByRoomCodeIgnoreCase(roomCode);
         if (roomOpt.isEmpty()) {
             return ResponseEntity.status(404).body(Map.of("error", "Room not found: " + roomCode));
         }
         Room room = roomOpt.get();
+        ResponseEntity<?> ownershipError = requireRoomOwner(room, request);
+        if (ownershipError != null) return ownershipError;
 
         Optional<StudentProfile> studentOpt = studentRepository.findByStudentNumber(studentNumber);
         if (studentOpt.isEmpty()) {
@@ -805,21 +828,26 @@ public class RoomController {
     @PostMapping(value = {"/rooms/{roomCode}/phase-enter", "/students/phase-enter"})
     public ResponseEntity<?> notifyPhaseEnter(
             @PathVariable(name = "roomCode", required = false) String roomCode,
-            @RequestBody Map<String, Object> body) {
+            @RequestBody Map<String, Object> body,
+            HttpServletRequest request) {
 
         String studentNumber = body.get("studentNumber") != null ? body.get("studentNumber").toString() : null;
         if (studentNumber == null || studentNumber.isBlank()) {
             return ResponseEntity.badRequest().body(Map.of("error", "studentNumber required"));
+        }
+        if (studentNotSelf(studentNumber, request)) {
+            return ResponseEntity.status(403).body(Map.of("error", "You can only update your own session."));
         }
 
         Optional<StudentProfile> studentOpt = studentRepository.findByStudentNumber(studentNumber.trim());
         if (studentOpt.isEmpty()) return ResponseEntity.ok(Map.of("ok", true));
 
         StudentProfile student = studentOpt.get();
-        List<GameSession> sessions = gameSessionRepository.findByStudentProfileAndStatus(student, "ACTIVE");
-        if (sessions.isEmpty()) return ResponseEntity.ok(Map.of("ok", true));
+        Optional<GameSession> sessionOpt =
+                gameSessionRepository.findFirstByStudentProfileAndStatusOrderByIdDesc(student, "ACTIVE");
+        if (sessionOpt.isEmpty()) return ResponseEntity.ok(Map.of("ok", true));
 
-        GameSession session = sessions.get(0);
+        GameSession session = sessionOpt.get();
         LocalDateTime now = LocalDateTime.now();
         session.setLastHeartbeatAt(now);
 
@@ -848,25 +876,23 @@ public class RoomController {
             session.setAccumulatedPauseSeconds(
                     session.getAccumulatedPauseSeconds() + Math.max(pauseGap, 0));
             session.setPhaseExitedAt(null); // clear exit marker — student is back
+            if (session.getPhaseEnteredAt() == null) {
+                session.setPhaseEnteredAt(now);
+            }
         } else if (session.getPhaseEnteredAt() == null) {
             session.setPhaseEnteredAt(now);
         }
 
-        if (body != null && body.get("timerSeconds") != null) {
-            try {
-                long s = Long.parseLong(body.get("timerSeconds").toString());
-                if (s >= 0) session.setLastRecordedSeconds(s);
-            } catch (Exception ignored) {}
-        }
+        Long reportedSeconds = parseClampedTimerSeconds(body);
+        if (reportedSeconds != null) session.setLastRecordedSeconds(reportedSeconds);
         gameSessionRepository.save(session);
 
-        System.out.println("[PHASE-ENTER] student=" + studentNumber
-                + " activePhase=" + session.getActivePhase()
-                + " milestone=" + session.getCurrentPhase()
-                + " enteredAt=" + session.getPhaseEnteredAt()
-                + " accPause=" + session.getAccumulatedPauseSeconds() + "s");
-
-        return ResponseEntity.ok(Map.of("ok", true, "enteredAt", session.getPhaseEnteredAt().toString()));
+        Map<String, Object> resp = new HashMap<>();
+        resp.put("ok", true);
+        if (session.getPhaseEnteredAt() != null) {
+            resp.put("enteredAt", session.getPhaseEnteredAt().toString());
+        }
+        return ResponseEntity.ok(resp);
     }
 
     /**
@@ -880,22 +906,34 @@ public class RoomController {
     @PostMapping(value = {"/rooms/{roomCode}/phase-exit", "/students/phase-exit", "/students/logout-session"})
     public ResponseEntity<?> notifyPhaseExit(
             @PathVariable(name = "roomCode", required = false) String roomCode,
-            @RequestBody(required = false) Map<String, Object> body) {
+            @RequestBody(required = false) Map<String, Object> body,
+            HttpServletRequest request) {
 
         String studentNumber = (body != null && body.get("studentNumber") != null) ? body.get("studentNumber").toString() : null;
         if (studentNumber == null || studentNumber.isBlank()) {
             return ResponseEntity.badRequest().body(Map.of("error", "studentNumber required"));
+        }
+        if (studentNotSelf(studentNumber, request)) {
+            return ResponseEntity.status(403).body(Map.of("error", "You can only update your own session."));
         }
 
         Optional<StudentProfile> studentOpt = studentRepository.findByStudentNumber(studentNumber.trim());
         if (studentOpt.isEmpty()) return ResponseEntity.ok(Map.of("ok", true));
 
         StudentProfile student = studentOpt.get();
-        List<GameSession> sessions = gameSessionRepository.findByStudentProfileAndStatus(student, "ACTIVE");
-        if (sessions.isEmpty()) return ResponseEntity.ok(Map.of("ok", true));
+        Optional<GameSession> sessionOpt =
+                gameSessionRepository.findFirstByStudentProfileAndStatusOrderByIdDesc(student, "ACTIVE");
+        if (sessionOpt.isEmpty()) return ResponseEntity.ok(Map.of("ok", true));
 
-        GameSession session = sessions.get(0);
+        GameSession session = sessionOpt.get();
         LocalDateTime now = LocalDateTime.now();
+
+        // Nothing to pause when the student is not inside any phase room.
+        if (session.getActivePhase() == null) {
+            session.setLastHeartbeatAt(now);
+            gameSessionRepository.save(session);
+            return ResponseEntity.ok(Map.of("ok", true, "ignored", true));
+        }
 
         Integer reportedPhase = null;
         if (body != null && body.get("phase") != null) {
@@ -905,11 +943,7 @@ public class RoomController {
         }
 
         // Only ignore if reported phase doesn't match the student's active room
-        if (reportedPhase != null && session.getActivePhase() != null
-                && !reportedPhase.equals(session.getActivePhase())) {
-            System.out.println("[PHASE-EXIT] student=" + studentNumber
-                    + " ignored stale exit for phase " + reportedPhase
-                    + " (active=" + session.getActivePhase() + ")");
+        if (reportedPhase != null && !reportedPhase.equals(session.getActivePhase())) {
             return ResponseEntity.ok(Map.of("ok", true, "ignored", true));
         }
 
@@ -920,15 +954,9 @@ public class RoomController {
         if (reportedPhase != null) {
             session.setActivePhase(reportedPhase);
         }
-        if (body != null && body.get("timerSeconds") != null) {
-            try {
-                long s = Long.parseLong(body.get("timerSeconds").toString());
-                if (s >= 0) session.setLastRecordedSeconds(s);
-            } catch (Exception ignored) {}
-        }
+        Long reportedSeconds = parseClampedTimerSeconds(body);
+        if (reportedSeconds != null) session.setLastRecordedSeconds(reportedSeconds);
         gameSessionRepository.save(session);
-
-        System.out.println("[PHASE-EXIT] student=" + studentNumber + " exitedAt=" + now + " (timer paused)");
 
         return ResponseEntity.ok(Map.of("ok", true, "exitedAt", now.toString()));
     }
@@ -943,25 +971,31 @@ public class RoomController {
     @PostMapping(value = {"/rooms/{roomCode}/heartbeat", "/students/heartbeat"})
     public ResponseEntity<?> studentHeartbeat(
             @PathVariable(name = "roomCode", required = false) String roomCode,
-            @RequestBody(required = false) Map<String, Object> body) {
+            @RequestBody(required = false) Map<String, Object> body,
+            HttpServletRequest request) {
 
         String studentNumber = (body != null && body.get("studentNumber") != null) ? body.get("studentNumber").toString() : null;
         if (studentNumber == null || studentNumber.isBlank()) {
             return ResponseEntity.badRequest().body(Map.of("error", "studentNumber required"));
+        }
+        if (studentNotSelf(studentNumber, request)) {
+            return ResponseEntity.status(403).body(Map.of("error", "You can only update your own session."));
         }
 
         Optional<StudentProfile> studentOpt = studentRepository.findByStudentNumber(studentNumber.trim());
         if (studentOpt.isEmpty()) return ResponseEntity.ok(Map.of("ok", true));
 
         StudentProfile student = studentOpt.get();
-        List<GameSession> sessions = gameSessionRepository.findByStudentProfileAndStatus(student, "ACTIVE");
-        if (sessions.isEmpty()) return ResponseEntity.ok(Map.of("ok", true));
+        Optional<GameSession> sessionOpt =
+                gameSessionRepository.findFirstByStudentProfileAndStatusOrderByIdDesc(student, "ACTIVE");
+        if (sessionOpt.isEmpty()) return ResponseEntity.ok(Map.of("ok", true));
 
-        GameSession session = sessions.get(0);
+        GameSession session = sessionOpt.get();
         LocalDateTime now = LocalDateTime.now();
         session.setLastHeartbeatAt(now);
 
-        if (body != null && body.get("phase") != null) {
+        // Presence updates only count while the session is ACTIVE.
+        if ("ACTIVE".equalsIgnoreCase(session.getStatus()) && body != null && body.get("phase") != null) {
             try {
                 int p = Integer.parseInt(body.get("phase").toString());
                 if (p >= 1 && p <= 7) {
@@ -970,15 +1004,42 @@ public class RoomController {
             } catch (Exception ignored) {}
         }
 
-        if (body != null && body.get("timerSeconds") != null) {
-            try {
-                long s = Long.parseLong(body.get("timerSeconds").toString());
-                if (s >= 0) session.setLastRecordedSeconds(s);
-            } catch (Exception ignored) {}
-        }
+        Long reportedSeconds = parseClampedTimerSeconds(body);
+        if (reportedSeconds != null) session.setLastRecordedSeconds(reportedSeconds);
         gameSessionRepository.save(session);
 
         return ResponseEntity.ok(Map.of("ok", true, "heartbeatAt", now.toString()));
+    }
+
+    /** Parses client timerSeconds, clamping to [0, 7200] (2 hours) and tolerating fractional JSON numbers. */
+    private static Long parseClampedTimerSeconds(Map<String, Object> body) {
+        if (body == null || body.get("timerSeconds") == null) return null;
+        try {
+            double d = Double.parseDouble(body.get("timerSeconds").toString());
+            if (!Double.isFinite(d)) return null;
+            long s = (long) d;
+            return Math.min(Math.max(s, 0L), 7200L);
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    /** True when a student token is present but does not match the given student number. */
+    private boolean studentNotSelf(String studentNumber, HttpServletRequest request) {
+        String authed = (String) request.getAttribute(AuthInterceptor.ATTR_STUDENT_NUMBER);
+        return authed != null && !authed.isBlank() && !studentNumber.trim().equalsIgnoreCase(authed);
+    }
+
+    /** Returns a 403 response when the authenticated teacher does not own the room, or null when OK. */
+    private ResponseEntity<?> requireRoomOwner(Room room, HttpServletRequest request) {
+        String authedEmail = (String) request.getAttribute(AuthInterceptor.ATTR_TEACHER_EMAIL);
+        if (authedEmail == null || authedEmail.isBlank()) {
+            return ResponseEntity.status(401).body(Map.of("error", "Teacher authentication required."));
+        }
+        if (room.getTeacherEmail() == null || !authedEmail.trim().equalsIgnoreCase(room.getTeacherEmail().trim())) {
+            return ResponseEntity.status(403).body(Map.of("error", "You do not own this room."));
+        }
+        return null;
     }
 
     // -------------------------------------------------------------------------
@@ -987,12 +1048,15 @@ public class RoomController {
     @GetMapping("/rooms/{roomCode}/dashboard")
     public ResponseEntity<?> getRoomDashboard(
             @PathVariable String roomCode,
-            @RequestParam(name = "attemptMode", required = false, defaultValue = "ALL") String attemptMode) {
+            @RequestParam(name = "attemptMode", required = false, defaultValue = "ALL") String attemptMode,
+            HttpServletRequest request) {
         Optional<Room> roomOpt = roomRepository.findByRoomCodeIgnoreCase(roomCode);
         if (roomOpt.isEmpty()) {
             return ResponseEntity.status(404).body(Map.of("error", "Room not found: " + roomCode));
         }
         Room room = roomOpt.get();
+        ResponseEntity<?> ownershipError = requireRoomOwner(room, request);
+        if (ownershipError != null) return ownershipError;
 
         List<RoomParticipant> participants = roomParticipantRepository.findByRoomOrderByJoinedAtAsc(room);
         LocalDateTime roomStartedAt = room.getStartedAt() != null ? room.getStartedAt() : room.getCreatedAt();
@@ -1031,14 +1095,15 @@ public class RoomController {
             // Fetch the latest session regardless of status so COMPLETED students
             // are reported with their real phase progression instead of falling back to phase 1
             GameSession session = gameSessionRepository
-                    .findFirstByStudentProfileOrderByIdDesc(student)
+                    .findFirstByStudentProfileAndRoomCodeOrderByIdDesc(student, room.getRoomCode())
                     .orElse(null);
             int currentPhaseIndex = session != null ? session.getCurrentPhase() : 1;
             Integer activePhase = session != null ? session.getActivePhase() : null;
             boolean isSessionCompleted = session != null && "COMPLETED".equalsIgnoreCase(session.getStatus());
 
-            // Fetch all attempts for this student sorted chronologically
-            List<AttemptLog> allAttempts = attemptLogRepository.findByStudentProfileOrderByAttemptTimeAsc(student);
+            // Fetch all attempts for this student in this room, sorted chronologically
+            List<AttemptLog> allAttempts = attemptLogRepository
+                    .findByStudentProfileAndRoomCodeScopeOrderByAttemptTimeAsc(student, room.getRoomCode());
 
             // Group attempts by (module + "_" + phase)
             Map<String, List<AttemptLog>> phaseAttemptsMap = new HashMap<>();
@@ -1119,10 +1184,10 @@ public class RoomController {
                     }
                 }
 
-                int firstAttemptsCount = Math.max(firstDrillResets, firstFailedCount / 3);
-                if (!firstAttempts.isEmpty() && firstAttemptsCount == 0) {
-                    firstAttemptsCount = 1;
-                }
+                // Attempts = real student submissions (DRILL_RESET barriers are not submissions)
+                int firstAttemptsCount = (int) firstAttempts.stream()
+                        .filter(l -> !"system=DRILL_RESET".equals(l.getUserInputData()))
+                        .count();
                 studentFirstTotalAttempts += firstAttemptsCount;
 
                 // Judge completion solely by actual steps completed (not sequential phase index comparison)
@@ -1176,13 +1241,9 @@ public class RoomController {
                         LocalDateTime endRef = firstLastSuccess != null ? firstLastSuccess : (firstEnd != null ? firstEnd : firstStart);
                         long diff = ChronoUnit.SECONDS.between(startRef, endRef);
                         long paused = (session != null && isCurrentActivePhase) ? session.getAccumulatedPauseSeconds() : 0L;
-                        diff = Math.max(diff - paused, 0L);
-                        if (diff <= 0) {
-                            diff = Math.max(firstAttemptsCount * 45L, 30L);
-                        }
-                        firstPhaseSeconds = diff;
+                        firstPhaseSeconds = Math.max(diff - paused, 0L);
                     } else {
-                        firstPhaseSeconds = 30L;
+                        firstPhaseSeconds = 0L;
                     }
                     studentFirstTotalSeconds += firstPhaseSeconds;
                     classFirstTotalSeconds[i] += firstPhaseSeconds;
@@ -1239,9 +1300,9 @@ public class RoomController {
                     classFirstTotalAttempts[i] += firstAttemptsCount;
                     if (firstStart != null && firstEnd != null) {
                         long diff = ChronoUnit.SECONDS.between(firstStart, firstEnd);
-                        firstPhaseSeconds = Math.max(diff, Math.max(firstAttemptsCount * 30L, 20L));
+                        firstPhaseSeconds = Math.max(diff, 0L);
                     } else {
-                        firstPhaseSeconds = Math.max(firstAttemptsCount * 30L, 20L);
+                        firstPhaseSeconds = 0L;
                     }
                     studentFirstTotalSeconds += firstPhaseSeconds;
                 }
@@ -1274,10 +1335,9 @@ public class RoomController {
                     }
                 }
 
-                int reAuditAttemptsCount = Math.max(reAuditDrillResets, reAuditFailedCount / 3);
-                if (!reAuditAttempts.isEmpty() && reAuditAttemptsCount == 0) {
-                    reAuditAttemptsCount = 1;
-                }
+                int reAuditAttemptsCount = (int) reAuditAttempts.stream()
+                        .filter(l -> !"system=DRILL_RESET".equals(l.getUserInputData()))
+                        .count();
                 boolean hasReAudited = !reAuditAttempts.isEmpty();
                 boolean isReAuditCompleted = hasReAudited && isPhaseCompleteBySteps(reAuditAttempts, module, phaseIndex);
 
@@ -1653,16 +1713,18 @@ public class RoomController {
     @PostMapping("/rooms/{roomCode}/send-report")
     public ResponseEntity<?> sendRoomReportEmail(
             @PathVariable String roomCode,
-            @RequestBody(required = false) Map<String, String> body) {
+            @RequestBody(required = false) Map<String, String> body,
+            HttpServletRequest request) {
         Optional<Room> roomOpt = roomRepository.findByRoomCodeIgnoreCase(roomCode);
         if (roomOpt.isEmpty()) {
             return ResponseEntity.status(404).body(Map.of("error", "Room not found: " + roomCode));
         }
         Room room = roomOpt.get();
-        if (body != null && body.containsKey("teacherEmail") && !body.get("teacherEmail").trim().isEmpty()) {
-            room.setTeacherEmail(body.get("teacherEmail").trim());
-            roomRepository.save(room);
-        }
+        ResponseEntity<?> ownershipError = requireRoomOwner(room, request);
+        if (ownershipError != null) return ownershipError;
+
+        // The report always goes to the room's registered owner email — a request
+        // body must never be able to retarget it.
         if (room.getTeacherEmail() == null || room.getTeacherEmail().trim().isEmpty()) {
             return ResponseEntity.badRequest().body(Map.of("error", "No teacher email address configured for room " + roomCode));
         }
@@ -1682,8 +1744,9 @@ public class RoomController {
                 "error", ise.getMessage()
             ));
         } catch (Exception ex) {
+            System.err.println("[RoomController] Failed to send report: " + ex.getMessage());
             return ResponseEntity.status(500).body(Map.of(
-                "error", "Failed to send email to " + room.getTeacherEmail() + ": " + ex.getMessage()
+                "error", "Failed to send email report."
             ));
         }
     }
@@ -1692,12 +1755,17 @@ public class RoomController {
     // 11. HTML REPORT PREVIEW IN BROWSER
     // -------------------------------------------------------------------------
     @GetMapping(value = "/rooms/{roomCode}/report/preview", produces = "text/html;charset=UTF-8")
-    public ResponseEntity<String> previewRoomReport(@PathVariable String roomCode) {
+    public ResponseEntity<String> previewRoomReport(@PathVariable String roomCode, HttpServletRequest request) {
         Optional<Room> roomOpt = roomRepository.findByRoomCodeIgnoreCase(roomCode);
         if (roomOpt.isEmpty()) {
-            return ResponseEntity.status(404).body("<h1>Room not found: " + roomCode + "</h1>");
+            return ResponseEntity.status(404).body("<h1>Room not found</h1>");
         }
         Room room = roomOpt.get();
+        ResponseEntity<?> ownershipError = requireRoomOwner(room, request);
+        if (ownershipError != null) {
+            return ResponseEntity.status(ownershipError.getStatusCode())
+                    .body("<h1>" + ownershipError.getStatusCode().value() + "</h1>");
+        }
         String html = emailReportService.generateClassroomReportHtml(room);
         return ResponseEntity.ok(html);
     }
@@ -1706,12 +1774,16 @@ public class RoomController {
     // 12. EXCEL CLASSROOM REPORT DOWNLOAD (.XLSX)
     // -------------------------------------------------------------------------
     @GetMapping("/rooms/{roomCode}/report/excel")
-    public ResponseEntity<byte[]> downloadRoomReportExcel(@PathVariable String roomCode) {
+    public ResponseEntity<byte[]> downloadRoomReportExcel(@PathVariable String roomCode, HttpServletRequest request) {
         Optional<Room> roomOpt = roomRepository.findByRoomCodeIgnoreCase(roomCode);
         if (roomOpt.isEmpty()) {
             return ResponseEntity.status(404).build();
         }
         Room room = roomOpt.get();
+        ResponseEntity<?> ownershipError = requireRoomOwner(room, request);
+        if (ownershipError != null) {
+            return ResponseEntity.status(ownershipError.getStatusCode()).build();
+        }
         try {
             byte[] excelBytes = emailReportService.generateClassroomReportExcel(room);
             HttpHeaders headers = new HttpHeaders();

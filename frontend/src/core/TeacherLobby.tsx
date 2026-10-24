@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import API_BASE_URL from '../config';
+import { authFetch } from '../utils/api';
 import './TeacherLobby.css';
 
 interface Participant {
@@ -32,6 +32,7 @@ export default function TeacherLobby({ roomCode, teacherName, teacherEmail, sect
   const [sessionActive, setSessionActive] = useState(false);
   const [error, setError] = useState('');
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const cancelledRef = useRef(false);
 
   const [teacherRooms, setTeacherRooms] = useState<any[]>([]);
 
@@ -66,7 +67,8 @@ export default function TeacherLobby({ roomCode, teacherName, teacherEmail, sect
   const fetchParticipants = useCallback(async () => {
     if (!roomCode) return;
     try {
-      const res = await fetch(`${API_BASE_URL}/api/rooms/${roomCode}/participants`);
+      const res = await authFetch(`/api/rooms/${roomCode}/participants`);
+      if (cancelledRef.current) return;
       if (res.ok) {
         const data = await res.json();
         setParticipants(data.participants || []);
@@ -81,7 +83,8 @@ export default function TeacherLobby({ roomCode, teacherName, teacherEmail, sect
   const checkRoomStatus = useCallback(async () => {
     if (!roomCode) return;
     try {
-      const res = await fetch(`${API_BASE_URL}/api/rooms/${roomCode}/status`);
+      const res = await authFetch(`/api/rooms/${roomCode}/status`);
+      if (cancelledRef.current) return;
       if (res.ok) {
         const data = await res.json();
         // Track the authoritative room status in both directions so a room
@@ -97,6 +100,7 @@ export default function TeacherLobby({ roomCode, teacherName, teacherEmail, sect
   // Poll every 3 seconds for new participants & status, but ONLY if a room is active
   useEffect(() => {
     if (roomCode) {
+      cancelledRef.current = false;
       fetchParticipants(); // Initial fetch
       checkRoomStatus();
       pollIntervalRef.current = setInterval(() => {
@@ -105,6 +109,7 @@ export default function TeacherLobby({ roomCode, teacherName, teacherEmail, sect
       }, 3000);
     }
     return () => {
+      cancelledRef.current = true;
       if (pollIntervalRef.current) {
         clearInterval(pollIntervalRef.current);
       }
@@ -113,10 +118,8 @@ export default function TeacherLobby({ roomCode, teacherName, teacherEmail, sect
 
   useEffect(() => {
     const fetchRooms = async () => {
-      const email = currentTeacherEmail || teacherEmail;
-      if (!email) return;
       try {
-        const res = await fetch(`${API_BASE_URL}/api/teachers/rooms?email=${encodeURIComponent(email)}`);
+        const res = await authFetch('/api/teachers/rooms');
         if (res.ok) {
           const rooms = await res.json();
           setTeacherRooms(rooms || []);
@@ -150,7 +153,7 @@ export default function TeacherLobby({ roomCode, teacherName, teacherEmail, sect
       if (customRoomCode.trim()) {
         payload.roomCode = customRoomCode.trim().toUpperCase();
       }
-      const response = await fetch(`${API_BASE_URL}/api/rooms/create`, {
+      const response = await authFetch('/api/rooms/create', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
@@ -209,7 +212,7 @@ export default function TeacherLobby({ roomCode, teacherName, teacherEmail, sect
     setInitiating(true);
     setError('');
     try {
-      const res = await fetch(`${API_BASE_URL}/api/rooms/${roomCode}/start`, {
+      const res = await authFetch(`/api/rooms/${roomCode}/start`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' }
       });
@@ -239,7 +242,7 @@ export default function TeacherLobby({ roomCode, teacherName, teacherEmail, sect
     setIsAddingStudent(true);
     setAddStudentError('');
     try {
-      const res = await fetch(`${API_BASE_URL}/api/rooms/${roomCode}/students`, {
+      const res = await authFetch(`/api/rooms/${roomCode}/students`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -271,7 +274,7 @@ export default function TeacherLobby({ roomCode, teacherName, teacherEmail, sect
     }
     setDeletingStudentNum(studentNum);
     try {
-      const res = await fetch(`${API_BASE_URL}/api/rooms/${roomCode}/students/${studentNum}`, {
+      const res = await authFetch(`/api/rooms/${roomCode}/students/${studentNum}`, {
         method: 'DELETE'
       });
       if (res.ok) {
@@ -304,16 +307,16 @@ export default function TeacherLobby({ roomCode, teacherName, teacherEmail, sect
     setSendingEmailReport(true);
     setEmailReportToast('');
     try {
-      const res = await fetch(`${API_BASE_URL}/api/rooms/${roomCode}/send-report`, {
+      const res = await authFetch(`/api/rooms/${roomCode}/send-report`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ teacherEmail: email })
       });
-      const data = await res.json();
       if (res.ok) {
         setEmailReportToast(`✓ Classroom report sent to ${email}!`);
         setTimeout(() => setEmailReportToast(''), 5000);
       } else {
+        const data = await res.json().catch(() => ({}));
         setEmailReportToast(`✕ ${data.error || 'Failed to send report.'}`);
         setTimeout(() => setEmailReportToast(''), 6000);
       }

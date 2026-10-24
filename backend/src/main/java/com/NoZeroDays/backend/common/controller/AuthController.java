@@ -1,14 +1,17 @@
 package com.NoZeroDays.backend.common.controller;
 
+import com.NoZeroDays.backend.common.auth.AuthInterceptor;
 import com.NoZeroDays.backend.common.dto.LoginRequest;
 import com.NoZeroDays.backend.common.model.GameSession;
-import com.NoZeroDays.backend.common.model.Room;
 import com.NoZeroDays.backend.common.model.StudentProfile;
 import com.NoZeroDays.backend.common.model.Teacher;
 import com.NoZeroDays.backend.common.repository.GameSessionRepository;
-import com.NoZeroDays.backend.common.repository.RoomRepository;
 import com.NoZeroDays.backend.common.repository.StudentProfileRepository;
 import com.NoZeroDays.backend.common.repository.TeacherRepository;
+
+import com.NoZeroDays.backend.common.service.AuthService;
+
+import jakarta.servlet.http.HttpServletRequest;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
@@ -31,18 +34,16 @@ public class AuthController {
     private TeacherRepository teacherRepository;
 
     @Autowired
-    private RoomRepository roomRepository;
-
-    @Autowired
     private GameSessionRepository gameSessionRepository;
 
     @Autowired
-    private com.NoZeroDays.backend.common.service.AuthService authService;
+    private AuthService authService;
 
     /**
      * Unified Login endpoint:
      * POST /api/auth/login
-     * Accepts: studentNumber, name, fullName, role, email (for teachers)
+     * Accepts: studentNumber, name, fullName, role, email + password (teachers)
+     * Returns the profile plus a session token.
      */
     @PostMapping(value = {"/login", "/login/"})
     public ResponseEntity<?> login(@RequestBody LoginRequest request) {
@@ -66,6 +67,50 @@ public class AuthController {
         }
     }
 
+    /**
+     * POST /api/auth/logout — clears the caller's session token.
+     */
+    @PostMapping(value = {"/logout", "/logout/"})
+    public ResponseEntity<?> logout(HttpServletRequest httpRequest) {
+        String role = (String) httpRequest.getAttribute(AuthInterceptor.ATTR_ROLE);
+        if ("TEACHER".equals(role)) {
+            String email = (String) httpRequest.getAttribute(AuthInterceptor.ATTR_TEACHER_EMAIL);
+            teacherRepository.findByEmailIgnoreCase(email).ifPresent(t -> {
+                t.setSessionToken(null);
+                teacherRepository.save(t);
+            });
+        } else if ("STUDENT".equals(role)) {
+            String studentNumber = (String) httpRequest.getAttribute(AuthInterceptor.ATTR_STUDENT_NUMBER);
+            studentRepository.findByStudentNumber(studentNumber).ifPresent(s -> {
+                s.setSessionToken(null);
+                studentRepository.save(s);
+            });
+        }
+        return ResponseEntity.ok(Map.of("success", true));
+    }
+
+    /**
+     * POST /api/auth/upgrade-student — migration path for pre-password student
+     * accounts. Verifies identity (student number + full name, same as login)
+     * and attaches email + password. Issues a session token on success.
+     */
+    @PostMapping(value = {"/upgrade-student", "/upgrade-student/"})
+    public ResponseEntity<?> upgradeStudent(@RequestBody LoginRequest request) {
+        try {
+            StudentProfile profile = authService.upgradeStudentCredentials(
+                    request.getEffectiveStudentNumber(),
+                    request.getEffectiveName(),
+                    request.getEffectiveEmail(),
+                    request.getPassword());
+            profile.setSessionToken(authService.issueSessionToken());
+            profile = studentRepository.save(profile);
+            return ResponseEntity.ok(studentResponse(profile));
+        } catch (IllegalArgumentException e) {
+            int status = e.getMessage().contains("not found") ? 404 : 400;
+            return ResponseEntity.status(status).body(Map.of("error", e.getMessage()));
+        }
+    }
+
     private ResponseEntity<?> authenticateStudent(LoginRequest request) {
         String studentNumber = request.getEffectiveStudentNumber();
         String name = request.getEffectiveName();
@@ -75,8 +120,22 @@ public class AuthController {
         }
 
         try {
-            StudentProfile profile = authService.authenticateStudent(studentNumber, name);
-            return ResponseEntity.ok(profile);
+            StudentProfile profile = authService.authenticateStudent(studentNumber, name, request.getPassword());
+            if (profile.getPasswordHash() == null) {
+                // Legacy pre-migration account: identity verified, but the student
+                // must attach email + password before regaining access.
+                Map<String, Object> resp = new HashMap<>();
+                resp.put("requiresUpgrade", true);
+                resp.put("id", profile.getId());
+                resp.put("studentNumber", profile.getStudentNumber());
+                resp.put("fullName", profile.getFullName());
+                resp.put("section", profile.getSection());
+                resp.put("role", "STUDENT");
+                return ResponseEntity.ok(resp);
+            }
+            profile.setSessionToken(authService.issueSessionToken());
+            profile = studentRepository.save(profile);
+            return ResponseEntity.ok(studentResponse(profile));
         } catch (IllegalArgumentException e) {
             int status = e.getMessage().contains("not found") ? 404 : 400;
             return ResponseEntity.status(status).body(Map.of("error", e.getMessage()));
@@ -87,6 +146,8 @@ public class AuthController {
         String studentNumber = request.getEffectiveStudentNumber();
         String name = request.getEffectiveName();
         String section = request.getSection() != null ? request.getSection().trim() : "";
+        String email = request.getEffectiveEmail();
+        String password = request.getPassword();
 
         if (studentNumber.isEmpty()) {
             return ResponseEntity.badRequest().body(Map.of("error", "Student number cannot be empty."));
@@ -94,11 +155,30 @@ public class AuthController {
         if (name.isEmpty()) {
             return ResponseEntity.badRequest().body(Map.of("error", "Full name cannot be empty."));
         }
+        if (email.isEmpty()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Email is required."));
+        }
+        if (!email.matches("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$")) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Please enter a valid email address."));
+        }
+        if (password == null || password.length() < 8) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Password must be at least 8 characters."));
+        }
+
+        Optional<StudentProfile> emailOwner = studentRepository.findByEmailIgnoreCase(email);
+        if (emailOwner.isPresent() && !emailOwner.get().getStudentNumber().equalsIgnoreCase(studentNumber)) {
+            return ResponseEntity.status(409).body(Map.of("error",
+                    "Email '" + email + "' is already used by another student account."));
+        }
 
         Optional<StudentProfile> existing = studentRepository.findByStudentNumber(studentNumber);
         StudentProfile profile;
         if (existing.isPresent()) {
             profile = existing.get();
+            if (profile.getPasswordHash() != null) {
+                return ResponseEntity.status(409).body(Map.of("error",
+                        "Student number '" + studentNumber + "' is already registered. Please sign in instead."));
+            }
             if (!"Temporary Student".equalsIgnoreCase(profile.getFullName())
                     && !authService.isFlexibleNameMatch(profile.getFullName(), name)) {
                 return ResponseEntity.status(409).body(Map.of("error",
@@ -109,11 +189,17 @@ public class AuthController {
                 if (!section.isEmpty()) {
                     profile.setSection(section);
                 }
-                profile = studentRepository.save(profile);
             }
+            // Existing legacy account: attach the submitted credentials.
+            profile.setEmail(email);
+            profile.setPasswordHash(com.NoZeroDays.backend.common.auth.PasswordHasher.hash(password));
         } else {
-            profile = studentRepository.save(new StudentProfile(studentNumber, name, section));
+            profile = new StudentProfile(studentNumber, name, section);
+            profile.setEmail(email);
+            profile.setPasswordHash(com.NoZeroDays.backend.common.auth.PasswordHasher.hash(password));
         }
+        profile.setSessionToken(authService.issueSessionToken());
+        profile = studentRepository.save(profile);
 
         // Ensure student has an active game session
         List<GameSession> activeSessions = gameSessionRepository.findByStudentProfileAndStatus(profile, "ACTIVE");
@@ -125,87 +211,57 @@ public class AuthController {
             gameSessionRepository.save(newSession);
         }
 
-        return ResponseEntity.ok(profile);
+        return ResponseEntity.ok(studentResponse(profile));
+    }
+
+    private Map<String, Object> studentResponse(StudentProfile profile) {
+        Map<String, Object> resp = new HashMap<>();
+        resp.put("id", profile.getId());
+        resp.put("studentNumber", profile.getStudentNumber());
+        resp.put("fullName", profile.getFullName());
+        resp.put("section", profile.getSection());
+        resp.put("email", profile.getEmail());
+        resp.put("createdAt", profile.getCreatedAt());
+        resp.put("token", profile.getSessionToken());
+        resp.put("role", "STUDENT");
+        return resp;
     }
 
     private ResponseEntity<?> authenticateTeacher(LoginRequest request) {
         String email = request.getEffectiveEmail();
         String fullName = request.getEffectiveName();
 
-        if (email.isEmpty()) {
-            return ResponseEntity.badRequest().body(Map.of("error", "Email is required."));
+        try {
+            Teacher teacher = authService.authenticateTeacher(email, request.getPassword(), fullName);
+            return ResponseEntity.ok(teacherResponse(teacher));
+        } catch (IllegalArgumentException e) {
+            int status = e.getMessage().contains("not found") ? 404 : 400;
+            return ResponseEntity.status(status).body(Map.of("error", e.getMessage()));
         }
-        if (!email.toLowerCase().endsWith("@gmail.com")) {
-            return ResponseEntity.badRequest().body(Map.of("error", "Email must be a valid @gmail.com address."));
-        }
-
-        Optional<Teacher> opt = teacherRepository.findByEmailIgnoreCase(email);
-        Teacher teacher;
-        if (opt.isPresent()) {
-            teacher = opt.get();
-            if (!fullName.isEmpty()) {
-                teacher.setFullName(fullName);
-                teacher = teacherRepository.save(teacher);
-            }
-        } else {
-            // Check if any rooms exist with this teacher email to auto-sync
-            List<Room> existingRooms = roomRepository.findByTeacherEmailIgnoreCaseOrderByCreatedAtDesc(email);
-            if (!existingRooms.isEmpty()) {
-                String existingName = !fullName.isEmpty() ? fullName : existingRooms.get(0).getTeacherName();
-                teacher = teacherRepository.save(new Teacher(email, existingName));
-                for (Room r : existingRooms) {
-                    if (r.getTeacher() == null) {
-                        r.setTeacher(teacher);
-                        roomRepository.save(r);
-                    }
-                }
-            } else {
-                return ResponseEntity.status(404).body(Map.of("error", 
-                    "Teacher account not found for '" + email + "'. Please switch to Sign Up."));
-            }
-        }
-
-        Map<String, Object> resp = new HashMap<>();
-        resp.put("id", teacher.getId());
-        resp.put("email", teacher.getEmail());
-        resp.put("fullName", teacher.getFullName());
-        resp.put("teacherName", teacher.getFullName());
-        resp.put("teacherEmail", teacher.getEmail());
-        resp.put("role", "OM-TEACHER");
-        return ResponseEntity.ok(resp);
     }
 
     private ResponseEntity<?> registerTeacher(LoginRequest request) {
         String email = request.getEffectiveEmail();
         String fullName = request.getEffectiveName();
 
-        if (email.isEmpty()) {
-            return ResponseEntity.badRequest().body(Map.of("error", "Email is required."));
+        try {
+            Teacher teacher = authService.registerTeacher(email, request.getPassword(), fullName);
+            return ResponseEntity.ok(teacherResponse(teacher));
+        } catch (IllegalArgumentException e) {
+            int status = e.getMessage().contains("already registered") ? 409 : 400;
+            return ResponseEntity.status(status).body(Map.of("error", e.getMessage()));
         }
-        if (!email.toLowerCase().endsWith("@gmail.com")) {
-            return ResponseEntity.badRequest().body(Map.of("error", "Email must be a valid @gmail.com address."));
-        }
-        if (fullName.isEmpty()) {
-            return ResponseEntity.badRequest().body(Map.of("error", "Full name is required."));
-        }
+    }
 
-        Optional<Teacher> opt = teacherRepository.findByEmailIgnoreCase(email);
-        Teacher teacher;
-        if (opt.isPresent()) {
-            teacher = opt.get();
-        } else {
-            teacher = new Teacher(email, fullName);
-        }
-        teacher.setFullName(fullName);
-        teacher = teacherRepository.save(teacher);
-
+    private Map<String, Object> teacherResponse(Teacher teacher) {
         Map<String, Object> resp = new HashMap<>();
         resp.put("id", teacher.getId());
         resp.put("email", teacher.getEmail());
         resp.put("fullName", teacher.getFullName());
         resp.put("teacherName", teacher.getFullName());
         resp.put("teacherEmail", teacher.getEmail());
-        resp.put("role", "OM-TEACHER");
-        return ResponseEntity.ok(resp);
+        resp.put("token", teacher.getSessionToken());
+        resp.put("role", "TEACHER");
+        return resp;
     }
 }

@@ -52,7 +52,21 @@ public interface AttemptLogRepository extends JpaRepository<AttemptLog, Long> {
 
     List<AttemptLog> findByStudentProfileOrderByAttemptTimeAsc(StudentProfile studentProfile);
 
+    long countByStudentProfile(StudentProfile studentProfile);
+
+    // Room-scoped attempts: matches rows tagged with the room code, plus legacy
+    // rows with a null room code (pre-scoping data) so old records stay visible.
+    @Query("SELECT a FROM AttemptLog a WHERE a.studentProfile = :student AND (a.roomCode IS NULL OR a.roomCode = :roomCode) ORDER BY a.attemptTime ASC")
+    List<AttemptLog> findByStudentProfileAndRoomCodeScopeOrderByAttemptTimeAsc(
+        @Param("student") StudentProfile student,
+        @Param("roomCode") String roomCode
+    );
+
     void deleteByStudentProfile(StudentProfile studentProfile);
+
+    // Wipes free-play (pre-room) attempt rows when a student enters a room.
+    // Returns the number of rows removed.
+    long deleteByStudentProfileAndRoomCodeIsNull(StudentProfile studentProfile);
 
     @Modifying
     @Transactional

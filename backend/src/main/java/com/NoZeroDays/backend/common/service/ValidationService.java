@@ -255,13 +255,18 @@ public class ValidationService {
         boolean isReAudit = isPhaseAlreadyCompleted(student, module, phase);
 
         // Persist current attempt
+        long clampedTimer = Math.min(Math.max(
+                request.getTimerSeconds() != null ? request.getTimerSeconds() : 0L, 0L), 7200L);
         AttemptLog attempt = new AttemptLog();
         attempt.setStudentProfile(student);
         attempt.setModule(module);
         attempt.setPhase(phase);
         attempt.setStep(step);
         attempt.setAttemptType(isReAudit ? "RE_AUDIT" : "FIRST_ATTEMPT");
-        attempt.setElapsedSeconds(request.getTimerSeconds() != null ? request.getTimerSeconds() : 0L);
+        attempt.setElapsedSeconds(clampedTimer);
+        if (request.getRoomCode() != null && !request.getRoomCode().isBlank()) {
+            attempt.setRoomCode(request.getRoomCode().trim());
+        }
         attempt.setSuccessful(success);
         attempt.setRedHerring(isRedHerring);
         attempt.setFeedbackMessage(message);
@@ -272,7 +277,7 @@ public class ValidationService {
                 request.getSubmittedValueB()  != null ? request.getSubmittedValueB()  : 0.0,
                 request.getSubmittedRule(),
                 request.getSubmittedResult()  != null ? request.getSubmittedResult()  : 0.0,
-                request.getTimerSeconds()     != null ? request.getTimerSeconds()     : 0L));
+                clampedTimer));
 
         attempt.setExpectedData(String.format(
                 "dailyRate=%.2f, daysPresent=%d, hourlyRate=%.2f, lateMinutes=%d, " +
@@ -357,6 +362,9 @@ public class ValidationService {
             resetBarrier.setUserInputData("system=DRILL_RESET");
             resetBarrier.setExpectedData("system=DRILL_RESET");
             resetBarrier.setAttemptType(isReAudit ? "RE_AUDIT" : "FIRST_ATTEMPT");
+            if (request.getRoomCode() != null && !request.getRoomCode().isBlank()) {
+                resetBarrier.setRoomCode(request.getRoomCode().trim());
+            }
             attemptLogRepository.save(resetBarrier);
         }
 
@@ -379,10 +387,10 @@ public class ValidationService {
      */
     public boolean updateProgress(StudentProfile student, String module, int phase) {
         boolean justCompleted = false;
-        List<com.NoZeroDays.backend.common.model.GameSession> activeSessions =
-                gameSessionRepository.findByStudentProfileAndStatus(student, "ACTIVE");
-        if (!activeSessions.isEmpty()) {
-            com.NoZeroDays.backend.common.model.GameSession session = activeSessions.get(0);
+        java.util.Optional<com.NoZeroDays.backend.common.model.GameSession> sessionOpt =
+                gameSessionRepository.findFirstByStudentProfileAndStatusOrderByIdDesc(student, "ACTIVE");
+        if (sessionOpt.isPresent()) {
+            com.NoZeroDays.backend.common.model.GameSession session = sessionOpt.get();
             int currentCompletedPhase = 1;
             if ("M1_MATH".equalsIgnoreCase(module)) {
                 currentCompletedPhase = phase;
@@ -394,7 +402,27 @@ public class ValidationService {
                 currentCompletedPhase = 7;
             }
 
-            if (session.getCurrentPhase() <= currentCompletedPhase) {
+            // The session may only become COMPLETED when phases 1-6 are actually
+            // finished. All phases are unlocked in this game, so a student could
+            // otherwise submit only the Phase 7 boardroom and "complete" everything.
+            boolean allPriorPhasesCompleted = true;
+            if (currentCompletedPhase >= 7) {
+                String[][] priorPhases = {
+                    {"M1_MATH", "1"}, {"M1_MATH", "2"},
+                    {"M2_MULTIPLIERS", "1"}, {"M2_MULTIPLIERS", "2"},
+                    {"M3_BUREAUCRACY", "1"}, {"M3_BUREAUCRACY", "2"}
+                };
+                for (String[] prior : priorPhases) {
+                    if (!isPhaseAlreadyCompleted(student, prior[0], Integer.parseInt(prior[1]))) {
+                        allPriorPhasesCompleted = false;
+                        break;
+                    }
+                }
+            }
+
+            boolean canAdvance = currentCompletedPhase < 7 || allPriorPhasesCompleted;
+
+            if (session.getCurrentPhase() <= currentCompletedPhase && canAdvance) {
                 session.setCurrentPhase(currentCompletedPhase + 1);
 
                 // Reset phase presence timer state so the next phase timer does NOT
@@ -412,7 +440,9 @@ public class ValidationService {
                 }
                 gameSessionRepository.save(session);
             } else {
-                // Re-audit completion: reset active phase room so timer ceases
+                // Phase-7 attempt without prior phases (or re-audit completion):
+                // reset active phase room so the timer ceases, but never mark the
+                // session COMPLETED and never advance the milestone.
                 session.setActivePhase(null);
                 session.setPhaseEnteredAt(null);
                 session.setPhaseExitedAt(null);

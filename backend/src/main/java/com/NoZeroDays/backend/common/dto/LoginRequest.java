@@ -12,6 +12,7 @@ public class LoginRequest {
     private String teacherEmail;
     private String teacherName;
     private String section;
+    private String password;
 
     public LoginRequest() {}
 
@@ -45,6 +46,9 @@ public class LoginRequest {
 
     public String getSection() { return section; }
     public void setSection(String section) { this.section = section; }
+
+    public String getPassword() { return password; }
+    public void setPassword(String password) { this.password = password; }
 
     // Helpers
     public String getEffectiveStudentNumber() {

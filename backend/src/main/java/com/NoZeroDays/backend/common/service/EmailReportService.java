@@ -253,12 +253,14 @@ public class EmailReportService {
         StudentMetrics sm = new StudentMetrics();
         sm.profile = student;
 
-        List<GameSession> activeSessions = gameSessionRepository.findByStudentProfileAndStatus(student, "ACTIVE");
-        GameSession session = activeSessions.isEmpty() ? null : activeSessions.get(0);
+        GameSession session = gameSessionRepository
+                .findFirstByStudentProfileAndRoomCodeOrderByIdDesc(student, room.getRoomCode())
+                .orElse(null);
         int currentPhaseIndex = session != null ? session.getCurrentPhase() : 1;
         boolean isSessionCompleted = session != null && "COMPLETED".equalsIgnoreCase(session.getStatus());
 
-        List<AttemptLog> allAttempts = attemptLogRepository.findByStudentProfileOrderByAttemptTimeAsc(student);
+        List<AttemptLog> allAttempts = attemptLogRepository
+                .findByStudentProfileAndRoomCodeScopeOrderByAttemptTimeAsc(student, room.getRoomCode());
         Map<String, List<AttemptLog>> phaseAttemptsMap = new HashMap<>();
         for (AttemptLog log : allAttempts) {
             String key = (log.getModule() != null ? log.getModule().toUpperCase() : "") + "_" + log.getPhase();
@@ -311,7 +313,10 @@ public class EmailReportService {
             }
 
             // 1. First Attempt Metrics
-            int firstTries = 0;
+            // Tries = real student submissions (DRILL_RESET barriers are not submissions).
+            int firstTries = (int) firstAttempts.stream()
+                    .filter(l -> !"system=DRILL_RESET".equals(l.getUserInputData()))
+                    .count();
             int firstFailedCount = 0;
             LocalDateTime firstAttemptTime = firstAttempts.isEmpty() ? null : firstAttempts.get(0).getAttemptTime();
             LocalDateTime firstLastSuccess = null;
@@ -319,16 +324,13 @@ public class EmailReportService {
 
             for (AttemptLog log : firstAttempts) {
                 if ("system=DRILL_RESET".equals(log.getUserInputData())) {
-                    firstTries++;
+                    // not a submission
                 } else if (!log.isSuccessful()) {
                     firstFailedCount++;
                 } else {
                     firstLastSuccess = log.getAttemptTime();
                 }
                 firstLastAttempt = log.getAttemptTime();
-            }
-            if (firstTries == 0 && firstFailedCount > 0) {
-                firstTries = firstFailedCount / 3;
             }
             firstTotalAttempts += firstTries;
 
@@ -370,13 +372,9 @@ public class EmailReportService {
                     LocalDateTime endRef = firstLastSuccess != null ? firstLastSuccess : (firstLastAttempt != null ? firstLastAttempt : firstAttemptTime);
                     long diff = ChronoUnit.SECONDS.between(startRef, endRef);
                     long paused = (session != null && phaseId == currentPhaseIndex) ? session.getAccumulatedPauseSeconds() : 0L;
-                    diff = Math.max(diff - paused, 0L);
-                    if (diff <= 0) {
-                        diff = Math.max(firstTries * 45L, 30L);
-                    }
-                    firstSec = diff;
+                    firstSec = Math.max(diff - paused, 0L);
                 } else {
-                    firstSec = 30L;
+                    firstSec = 0L;
                 }
                 firstTotalSeconds += firstSec;
             } else if (phaseId == currentPhaseIndex && session != null && session.getPhaseEnteredAt() != null && session.getPhaseExitedAt() == null) {
@@ -397,12 +395,14 @@ public class EmailReportService {
             } else if (!firstAttempts.isEmpty() && firstAttemptTime != null) {
                 LocalDateTime endRef = firstLastAttempt != null ? firstLastAttempt : firstAttemptTime;
                 long diff = ChronoUnit.SECONDS.between(firstAttemptTime, endRef);
-                firstSec = Math.max(diff, Math.max(firstTries * 30L, 20L));
+                firstSec = Math.max(diff, 0L);
                 firstTotalSeconds += firstSec;
             }
 
             // 2. Re-Audit Metrics
-            int reAuditTries = 0;
+            int reAuditTries = (int) reAuditAttempts.stream()
+                    .filter(l -> !"system=DRILL_RESET".equals(l.getUserInputData()))
+                    .count();
             int reAuditFailedCount = 0;
             LocalDateTime reAuditStart = reAuditAttempts.isEmpty() ? null : reAuditAttempts.get(0).getAttemptTime();
             LocalDateTime reAuditLastSuccess = null;
@@ -410,16 +410,13 @@ public class EmailReportService {
 
             for (AttemptLog log : reAuditAttempts) {
                 if ("system=DRILL_RESET".equals(log.getUserInputData())) {
-                    reAuditTries++;
+                    // not a submission
                 } else if (!log.isSuccessful()) {
                     reAuditFailedCount++;
                 } else {
                     reAuditLastSuccess = log.getAttemptTime();
                 }
                 reAuditLastAttempt = log.getAttemptTime();
-            }
-            if (reAuditTries == 0 && reAuditFailedCount > 0) {
-                reAuditTries = reAuditFailedCount / 3;
             }
 
             boolean hasReAudited = !reAuditAttempts.isEmpty();
@@ -429,13 +426,43 @@ public class EmailReportService {
             if (hasReAudited) {
                 hasReAuditedAny = true;
                 reAuditTotalAttempts += reAuditTries;
-                if (reAuditStart != null) {
-                    LocalDateTime endRef = reAuditLastSuccess != null ? reAuditLastSuccess : (reAuditLastAttempt != null ? reAuditLastAttempt : reAuditStart);
-                    long diff = ChronoUnit.SECONDS.between(reAuditStart, endRef);
-                    if (diff <= 0) {
-                        diff = Math.max(reAuditTries * 30L, 25L);
+
+                // Best (least) recorded completion time across replays, matching
+                // the teacher dashboard's calculation.
+                String finalStepName = !requiredSteps.isEmpty() ? requiredSteps.get(requiredSteps.size() - 1) : null;
+                Long bestReAuditSeconds = null;
+                Long latestRecordedSeconds = null;
+                for (AttemptLog log : reAuditAttempts) {
+                    if (log.isSuccessful() && !log.isDrillReset()) {
+                        Long s = null;
+                        if (log.getElapsedSeconds() != null && log.getElapsedSeconds() > 0) {
+                            s = log.getElapsedSeconds();
+                        } else if (log.getUserInputData() != null && log.getUserInputData().contains("timerSeconds=")) {
+                            try {
+                                java.util.regex.Matcher m = java.util.regex.Pattern.compile("timerSeconds=(\\d+)").matcher(log.getUserInputData());
+                                if (m.find()) {
+                                    long val = Long.parseLong(m.group(1));
+                                    if (val > 0) s = val;
+                                }
+                            } catch (Exception ignored) {}
+                        }
+                        if (s != null && s > 0) {
+                            latestRecordedSeconds = s;
+                            if (finalStepName != null && finalStepName.equalsIgnoreCase(log.getStep())) {
+                                if (bestReAuditSeconds == null || s < bestReAuditSeconds) {
+                                    bestReAuditSeconds = s;
+                                }
+                            }
+                        }
                     }
-                    reAuditSec = Math.max(diff, 20L);
+                }
+
+                Long chosenSeconds = (bestReAuditSeconds != null) ? bestReAuditSeconds : latestRecordedSeconds;
+                if (chosenSeconds != null && chosenSeconds > 0) {
+                    reAuditSec = chosenSeconds;
+                } else if (reAuditStart != null) {
+                    LocalDateTime endRef = reAuditLastSuccess != null ? reAuditLastSuccess : (reAuditLastAttempt != null ? reAuditLastAttempt : reAuditStart);
+                    reAuditSec = Math.max(ChronoUnit.SECONDS.between(reAuditStart, endRef), 0L);
                 }
                 reAuditTotalSeconds += reAuditSec;
                 if (isReAuditDone) {
@@ -549,8 +576,8 @@ public class EmailReportService {
         long reAuditCount = list.stream().filter(m -> m.hasReAudited).count();
 
         sb.append("<div style='display:flex;gap:12px;background:#1e293b;padding:15px;border-radius:8px;margin-bottom:20px;'>");
-        sb.append("<div style='flex:1;'><div style='font-size:11px;color:#94a3b8;'>ROOM CODE</div><div style='font-size:17px;font-weight:bold;color:#facc15;letter-spacing:1px;'>").append(room.getRoomCode()).append("</div></div>");
-        sb.append("<div style='flex:1;'><div style='font-size:11px;color:#94a3b8;'>TEACHER</div><div style='font-size:14px;font-weight:bold;color:#fff;'>").append(room.getTeacherName()).append("</div></div>");
+        sb.append("<div style='flex:1;'><div style='font-size:11px;color:#94a3b8;'>ROOM CODE</div><div style='font-size:17px;font-weight:bold;color:#facc15;letter-spacing:1px;'>").append(esc(room.getRoomCode())).append("</div></div>");
+        sb.append("<div style='flex:1;'><div style='font-size:11px;color:#94a3b8;'>TEACHER</div><div style='font-size:14px;font-weight:bold;color:#fff;'>").append(esc(room.getTeacherName())).append("</div></div>");
         sb.append("<div style='flex:1;'><div style='font-size:11px;color:#94a3b8;'>FIRST ATTEMPT PASSED</div><div style='font-size:16px;font-weight:bold;color:#4ade80;'>").append(firstCompletedAllCount).append("/").append(totalEnrolled).append("</div></div>");
         sb.append("<div style='flex:1;'><div style='font-size:11px;color:#94a3b8;'>RE-AUDIT PRACTICE</div><div style='font-size:16px;font-weight:bold;color:#38bdf8;'>").append(reAuditCount).append("/").append(totalEnrolled).append("</div></div>");
         sb.append("</div>");
@@ -558,7 +585,7 @@ public class EmailReportService {
         // Excel Attachment Notice
         sb.append("<div style='background:rgba(16, 185, 129, 0.12);border:1px solid #10b981;border-radius:8px;padding:12px 18px;margin-bottom:25px;'>");
         sb.append("<div style='font-size:14px;font-weight:bold;color:#34d399;'>📊 OFFICIAL EXCEL SPREADSHEET ATTACHED (.XLSX)</div>");
-        sb.append("<div style='font-size:12px;color:#cbd5e1;margin-top:4px;'>A detailed multi-sheet audit workbook (<strong>Classroom_Audit_Report_").append(room.getRoomCode()).append(".xlsx</strong>) is attached to this email featuring dedicated sheets for <strong>First Attempt Audit</strong> (Grading Baseline), <strong>Re-Audit Mastery</strong> (Remediation/Practice), and <strong>Classroom Summary</strong>.</div>");
+        sb.append("<div style='font-size:12px;color:#cbd5e1;margin-top:4px;'>A detailed multi-sheet audit workbook (<strong>Classroom_Audit_Report_").append(esc(room.getRoomCode())).append(".xlsx</strong>) is attached to this email featuring dedicated sheets for <strong>First Attempt Audit</strong> (Grading Baseline), <strong>Re-Audit Mastery</strong> (Remediation/Practice), and <strong>Classroom Summary</strong>.</div>");
         sb.append("</div>");
 
         // SECTION 1: FINISHED STUDENTS (Detailed Breakdown)
@@ -580,8 +607,8 @@ public class EmailReportService {
                 
                 // Student Name Banner
                 sb.append("<div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:15px;'>");
-                sb.append("<div><span style='font-size:18px;font-weight:bold;color:#fff;'>").append(sm.profile.getFullName()).append("</span>");
-                sb.append("<span style='margin-left:10px;color:#94a3b8;font-size:13px;'>(").append(sm.profile.getStudentNumber()).append(")</span></div>");
+                sb.append("<div><span style='font-size:18px;font-weight:bold;color:#fff;'>").append(esc(sm.profile.getFullName())).append("</span>");
+                sb.append("<span style='margin-left:10px;color:#94a3b8;font-size:13px;'>(").append(esc(sm.profile.getStudentNumber())).append(")</span></div>");
                 sb.append("<span style='background:#15803d;color:#dcfce7;font-size:11px;font-weight:bold;padding:4px 10px;border-radius:4px;'>COMPLETED ALL PHASES (7/7)</span>");
                 sb.append("</div>");
 
@@ -640,8 +667,8 @@ public class EmailReportService {
 
             sb.append("<tr>");
             sb.append("<td style='padding:8px 10px;border:1px solid #334155;color:#64748b;'>").append(index++).append("</td>");
-            sb.append("<td style='padding:8px 10px;border:1px solid #334155;font-weight:bold;color:#fff;'>").append(sm.profile.getFullName()).append("</td>");
-            sb.append("<td style='padding:8px 10px;border:1px solid #334155;color:#94a3b8;'>").append(sm.profile.getStudentNumber()).append("</td>");
+            sb.append("<td style='padding:8px 10px;border:1px solid #334155;font-weight:bold;color:#fff;'>").append(esc(sm.profile.getFullName())).append("</td>");
+            sb.append("<td style='padding:8px 10px;border:1px solid #334155;color:#94a3b8;'>").append(esc(sm.profile.getStudentNumber())).append("</td>");
             sb.append("<td style='padding:8px 10px;border:1px solid #334155;text-align:center;'>").append(firstBadge).append("</td>");
             sb.append("<td style='padding:8px 10px;border:1px solid #334155;text-align:center;color:#38bdf8;'>").append(formatSeconds(sm.firstTotalSeconds)).append("</td>");
             sb.append("<td style='padding:8px 10px;border:1px solid #334155;text-align:center;'>").append(reAuditBadge).append("</td>");
@@ -657,6 +684,11 @@ public class EmailReportService {
 
         sb.append("</div></body></html>");
         return sb.toString();
+    }
+
+    private static String esc(String s) {
+        if (s == null) return "";
+        return org.springframework.web.util.HtmlUtils.htmlEscape(s);
     }
 
     private String formatSeconds(long totalSeconds) {

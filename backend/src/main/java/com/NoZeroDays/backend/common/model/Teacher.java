@@ -20,6 +20,12 @@ public class Teacher {
     @Column(nullable = false)
     private String fullName;
 
+    @Column(name = "password_hash")
+    private String passwordHash;
+
+    @Column(name = "session_token")
+    private String sessionToken;
+
     private LocalDateTime createdAt = LocalDateTime.now();
 
     @OneToMany(mappedBy = "teacher", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
@@ -45,6 +51,12 @@ public class Teacher {
 
     public LocalDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
+
+    public String getPasswordHash() { return passwordHash; }
+    public void setPasswordHash(String passwordHash) { this.passwordHash = passwordHash; }
+
+    public String getSessionToken() { return sessionToken; }
+    public void setSessionToken(String sessionToken) { this.sessionToken = sessionToken; }
 
     public List<Room> getRooms() { return rooms; }
     public void setRooms(List<Room> rooms) { this.rooms = rooms; }

@@ -22,6 +22,9 @@ public class AttemptLog {
     @Column(name = "attempt_type")
     private String attemptType = "FIRST_ATTEMPT"; // "FIRST_ATTEMPT" or "RE_AUDIT"
 
+    @Column(name = "room_code")
+    private String roomCode; // null for legacy/free-play attempts
+
     @Column(name = "elapsed_seconds")
     private Long elapsedSeconds = 0L;
 
@@ -87,4 +90,7 @@ public class AttemptLog {
 
     public Long getElapsedSeconds() { return elapsedSeconds; }
     public void setElapsedSeconds(Long elapsedSeconds) { this.elapsedSeconds = elapsedSeconds; }
+
+    public String getRoomCode() { return roomCode; }
+    public void setRoomCode(String roomCode) { this.roomCode = roomCode; }
 }

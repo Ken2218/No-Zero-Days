@@ -90,6 +90,13 @@ public class GameSession {
     @Column(name = "active_phase")
     private Integer activePhase = null;
 
+    /**
+     * Room code this session belongs to. Null for free-play sessions created
+     * before the student joined a room.
+     */
+    @Column(name = "room_code")
+    private String roomCode = null;
+
     // Default Constructor
     public GameSession() {}
 
@@ -136,4 +143,7 @@ public class GameSession {
 
     public Integer getActivePhase() { return activePhase; }
     public void setActivePhase(Integer activePhase) { this.activePhase = activePhase; }
+
+    public String getRoomCode() { return roomCode; }
+    public void setRoomCode(String roomCode) { this.roomCode = roomCode; }
 }

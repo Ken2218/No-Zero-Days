@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import API_BASE_URL from '../config';
+import { authFetch, logout } from '../utils/api';
 import Phase1Room from '../phases/Phase1/Phase1Room';
 import Phase2Room from '../phases/Phase2/Phase2Room';
 import Phase3Room from '../phases/Phase3/Phase3Room';
@@ -51,6 +52,7 @@ function App() {
   } | null>(null);
   const [isAcceptingInvite, setIsAcceptingInvite] = useState(false);
   const [isDecliningInvite, setIsDecliningInvite] = useState(false);
+  const [confirmingInvitation, setConfirmingInvitation] = useState(false);
 
   // --- 2. GAMEPLAY SCENARIO STATE ---
   // NOTE: All fields used by any phase/popup must have safe defaults here to prevent
@@ -137,7 +139,7 @@ function App() {
   const [tribunalStatus, setTribunalStatus] = useState<'ACTIVE' | 'SUCCESS' | 'ERROR'>('ACTIVE'); // ACTIVE, SUCCESS, ERROR
 
   // Reroll toast notification
-  const [rerollToast, setRerollToast] = useState(null); // null | 'MAX_STRIKES' | 'RED_HERRING'
+  const [rerollToast, setRerollToast] = useState(null); // null | 'MAX_STRIKES' | 'RED_HERRING' | 'PROGRESS_RESET'
 
   const [loading, setLoading] = useState(false);
   const [feedback, setFeedback] = useState('Scenario loaded. Extract the variables to begin.');
@@ -311,11 +313,6 @@ function App() {
     } catch (_) {}
   }, [sessionChecked, currentView, student, roomCode]);
 
-  // Debug log to trace narrative intro display gates (resolves ESLint unused var)
-  useEffect(() => {
-    console.log(`[DEBUG INTRO GATE] Student has seen the narrative briefing intro: ${hasSeenIntro}`);
-  }, [hasSeenIntro]);
-
   // --- PHASE PRESENCE & TIMER LIFECYCLE MANAGEMENT ---
   // Tracks active presence inside a phase room so the backend timer strictly
   // pauses when the student navigates away (e.g. to Dashboard) and only resumes
@@ -363,7 +360,7 @@ function App() {
       const enterUrl = currentRoom
         ? `${API_BASE_URL}/api/rooms/${currentRoom}/phase-enter`
         : `${API_BASE_URL}/api/students/phase-enter`;
-      await fetch(enterUrl, {
+      await authFetch(enterUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: payload,
@@ -392,7 +389,7 @@ function App() {
     // Single delivery attempt: fetch with keepalive survives page teardown,
     // so a duplicate sendBeacon is unnecessary (and doubles backend writes).
     try {
-      await fetch(exitUrl, {
+      await authFetch(exitUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: payload,
@@ -404,7 +401,6 @@ function App() {
   };
 
   const handleReturnToDashboard = () => {
-    notifyPhaseExit();
     if (isCurrentPhaseComplete) {
       try {
         const studentNum = (student as any)?.studentNumber;
@@ -417,7 +413,7 @@ function App() {
     setCurrentView('DASHBOARD');
   };
 
-  const handleStudentJoinedRoom = (code: string, stu: any) => {
+  const handleStudentJoinedRoom = (code: string, stu: any, progressReset?: boolean) => {
     // Joining a room starts a fresh gameplay record: clear any local timers,
     // autosaved progress, or remembered view scoped to this room so pre-join
     // (free-play or prior-room) time never bleeds into the room's reports.
@@ -430,11 +426,56 @@ function App() {
       localStorage.removeItem(currentViewKey(roomNamespace));
     }
 
+    // Reset the in-memory gameplay state so the new room starts clean:
+    // no leftover scenario, timers, step statuses, or strike counter.
+    setScenario(null);
+    setPhaseTimers({ 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0, 7: 0 });
+    setExtractedA('');
+    setExtractedB('');
+    setStep1Status('ACTIVE');
+    setExtractionAttempts(0);
+    setSelectedRule('');
+    setStep2Status('LOCKED');
+    setCalculatedValue('');
+    setStep3Status('LOCKED');
+    setNetPayValue('');
+    setStep4Status('LOCKED');
+    setGrossPayValue('');
+    setGrossPayStatus('LOCKED');
+    setNetPayFormula('');
+    setNetFormulaStatus('LOCKED');
+    setPagIbigDeductionValue('');
+    setPagIbigDeductionStatus('LOCKED');
+    setPhilhealthErValue('');
+    setPhilhealthSssEeValue('');
+    setPhilhealthErStatus('LOCKED');
+    setTrueOtHoursValue('');
+    setTrueOtHoursStatus('LOCKED');
+    setOtMultiplierValue('');
+    setOtMultiplierStatus('LOCKED');
+    setOtFormulaValue('');
+    setOtFormulaStatus('LOCKED');
+    setHolidayTypeValue('');
+    setHolidayMultiplierValue('');
+    setHolidayFormulaValue('');
+    setHolidayFormulaStatus('LOCKED');
+    setTribunalGross('');
+    setTribunalDeductions('');
+    setTribunalNet('');
+    setTribunalStatus('ACTIVE');
+    setFeedback('Scenario loaded. Extract the variables to begin.');
+
     setRoomCode(code);
     setStudent(stu);
     localStorage.setItem('studentRoomCode', code);
     localStorage.setItem('student', JSON.stringify(stu));
     setCurrentView('DASHBOARD');
+
+    // Notify the student that their pre-room progress was wiped so the teacher
+    // only tracks performance inside this room.
+    if (progressReset) {
+      triggerRerollToast('PROGRESS_RESET');
+    }
   };
 
   const isCurrentPhaseComplete = activePhaseIndex === 1
@@ -452,6 +493,10 @@ function App() {
     const namespace = getStorageNamespace(studentNum, currentRoom);
 
     const timerInterval = setInterval(() => {
+      // Do not accrue time while the tab is hidden — the backend pauses the
+      // phase on the visibilitychange exit beacon, so the client clock must
+      // stay in lockstep.
+      if (document.visibilityState !== 'visible') return;
       setPhaseTimers(prev => {
         const nextVal = (prev[activePhaseIndex] || 0) + 1;
         try {
@@ -587,8 +632,9 @@ function App() {
       : `${API_BASE_URL}/api/students/heartbeat`;
 
     const heartbeatInterval = setInterval(() => {
+      if (document.visibilityState !== 'visible') return;
       const currentTimer = phaseTimersRef.current[activePhaseIndex] ?? 0;
-      fetch(heartbeatUrl, {
+      authFetch(heartbeatUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -623,13 +669,6 @@ function App() {
     };
   }, [isStudentInPhase, activePhaseIndex, isCurrentPhaseComplete]);
 
-  // 4. Guarantee that leaving a phase (e.g. to DASHBOARD or LOGIN) freezes the phase timer
-  useEffect(() => {
-    if (!isStudentInPhase && (student as any)?.studentNumber) {
-      notifyPhaseExit();
-    }
-  }, [isStudentInPhase]);
-
   // 5. Beacon on page close / unload to freeze timer even if window or tab is closed
   useEffect(() => {
     const handleBeforeUnload = () => {
@@ -640,10 +679,13 @@ function App() {
           ? `${API_BASE_URL}/api/rooms/${currentRoom}/phase-exit`
           : `${API_BASE_URL}/api/students/phase-exit`;
         const payload = JSON.stringify({ studentNumber: studentNum, phase: activePhaseIndex });
-        if (navigator.sendBeacon) {
-          const blob = new Blob([payload], { type: 'application/json' });
-          navigator.sendBeacon(exitUrl, blob);
-        }
+        // keepalive fetch (not sendBeacon) so the Bearer token is attached.
+        authFetch(exitUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: payload,
+          keepalive: true
+        }).catch(() => {});
       }
     };
 
@@ -668,11 +710,15 @@ function App() {
       return;
     }
 
+    let cancelled = false;
+
     const checkInvitations = async () => {
       try {
-        const res = await fetch(`${API_BASE_URL}/api/students/${currentStudentNumber}/invitations`);
+        const res = await authFetch(`/api/students/${currentStudentNumber}/invitations`);
+        if (cancelled) return;
         if (res.ok) {
           const data = await res.json();
+          if (cancelled) return;
           if (data.hasInvitation && data.roomCode) {
             setRoomInvitation({
               roomCode: data.roomCode,
@@ -686,20 +732,25 @@ function App() {
           }
         }
       } catch (err) {
-        console.error('[App] Invitation polling error:', err);
+        if (!cancelled) {
+          console.error('[App] Invitation polling error:', err);
+        }
       }
     };
 
     checkInvitations();
     const interval = setInterval(checkInvitations, 6000);
-    return () => clearInterval(interval);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
   }, [student, currentView, roomCode]);
 
   const handleAcceptInvitation = async () => {
     if (!roomInvitation || !(student as any)?.studentNumber) return;
     setIsAcceptingInvite(true);
     try {
-      const res = await fetch(`${API_BASE_URL}/api/rooms/${roomInvitation.roomCode}/invitations/accept`, {
+      const res = await authFetch(`/api/rooms/${roomInvitation.roomCode}/invitations/accept`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -711,17 +762,17 @@ function App() {
         const targetCode = roomInvitation.roomCode;
         const updatedStudent = data.student ? {
           ...data.student,
-          section: data.section || data.student.section
+          section: data.section || data.student.section,
+          token: (student as any).token || data.student.token
         } : {
           ...(student as any),
           section: roomInvitation.section || (student as any).section
         };
-        setStudent(updatedStudent);
-        localStorage.setItem('student', JSON.stringify(updatedStudent));
-        setRoomCode(targetCode);
-        localStorage.setItem('studentRoomCode', targetCode);
         setRoomInvitation(null);
-        setCurrentView('DASHBOARD');
+        setConfirmingInvitation(false);
+        // Shared join path: clears stale gameplay state, persists the room,
+        // and shows the progress-reset notice when pre-room progress was wiped.
+        handleStudentJoinedRoom(targetCode, updatedStudent, !!data.progressReset);
       } else {
         const errData = await res.json().catch(() => ({}));
         alert(errData.error || 'Failed to accept invitation.');
@@ -737,7 +788,7 @@ function App() {
     if (!roomInvitation || !(student as any)?.studentNumber) return;
     setIsDecliningInvite(true);
     try {
-      await fetch(`${API_BASE_URL}/api/rooms/${roomInvitation.roomCode}/invitations/decline`, {
+      await authFetch(`/api/rooms/${roomInvitation.roomCode}/invitations/decline`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -861,7 +912,73 @@ function App() {
             </div>
           </div>
 
-          {/* Buttons: ACCEPT & DECLINE */}
+          {/* Buttons: ACCEPT & DECLINE — ACCEPT routes through a reset warning first */}
+          {confirmingInvitation ? (
+            <div>
+              <div style={{
+                background: 'rgba(239, 68, 68, 0.12)',
+                border: '1px solid #ef4444',
+                borderRadius: '8px',
+                padding: '16px 18px',
+                marginBottom: '18px',
+                color: '#fca5a5',
+                fontSize: '0.88rem',
+                lineHeight: '1.55',
+                textAlign: 'left'
+              }}>
+                <p style={{ margin: '0 0 8px', fontWeight: 'bold', color: '#f87171', letterSpacing: '0.5px' }}>
+                  ⚠ PROGRESS RESET WARNING
+                </p>
+                <p style={{ margin: 0 }}>
+                  Accepting this invitation will <strong>reset all progress you made
+                  before joining a room to zero</strong>. Once inside, your teacher will
+                  track your performance in this room starting from zero — your previous
+                  practice scores will no longer count.
+                </p>
+              </div>
+              <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+                <button
+                  type="button"
+                  disabled={isAcceptingInvite || isDecliningInvite}
+                  onClick={() => setConfirmingInvitation(false)}
+                  style={{
+                    flex: 1,
+                    background: 'rgba(100, 116, 139, 0.15)',
+                    border: '1px solid #64748b',
+                    color: '#cbd5e1',
+                    padding: '12px 18px',
+                    borderRadius: '6px',
+                    fontSize: '0.9rem',
+                    fontWeight: 'bold',
+                    letterSpacing: '1px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  [ CANCEL ]
+                </button>
+                <button
+                  type="button"
+                  disabled={isAcceptingInvite || isDecliningInvite}
+                  onClick={handleAcceptInvitation}
+                  style={{
+                    flex: 1.4,
+                    background: '#b91c1c',
+                    border: '1px solid #ef4444',
+                    color: '#ffffff',
+                    padding: '12px 18px',
+                    borderRadius: '6px',
+                    fontSize: '0.9rem',
+                    fontWeight: 'bold',
+                    letterSpacing: '1px',
+                    cursor: 'pointer',
+                    boxShadow: '0 0 16px rgba(239, 68, 68, 0.4)'
+                  }}
+                >
+                  {isAcceptingInvite ? 'CONNECTING...' : '[ PROCEED & RESET ]'}
+                </button>
+              </div>
+            </div>
+          ) : (
           <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
             <button
               type="button"
@@ -886,7 +1003,7 @@ function App() {
             <button
               type="button"
               disabled={isAcceptingInvite || isDecliningInvite}
-              onClick={handleAcceptInvitation}
+              onClick={() => setConfirmingInvitation(true)}
               style={{
                 flex: 1.4,
                 background: '#059669',
@@ -904,6 +1021,7 @@ function App() {
               {isAcceptingInvite ? 'CONNECTING...' : '[ ACCEPT ]'}
             </button>
           </div>
+          )}
         </div>
       </div>
     );
@@ -1136,6 +1254,7 @@ function App() {
       const { module: mod, phase: ph } = getModuleAndPhase();
       const bodyPayload: any = {
         studentNumber: student?.studentNumber || 'STU-UNKNOWN',
+        roomCode: roomCode || localStorage.getItem('studentRoomCode') || '',
         module: mod,
         phase: ph,
         step: 'EXTRACT',
@@ -1167,7 +1286,7 @@ function App() {
         bodyPayload.submittedValueB = extractedB ? parseFloat(extractedB) : 0.0;
       }
 
-      const response = await fetch(`${API_BASE_URL}/api/validation/submit`, {
+      const response = await authFetch('/api/validation/submit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(bodyPayload)
@@ -1211,7 +1330,7 @@ function App() {
         // The local counter serves as a safety net (reroll if backend is unreachable / state drifts),
         // but must NOT fire before the backend confirms 3 strikes to prevent off-by-one errors.
         const newAttempts = extractionAttempts + 1;
-        setExtractionAttempts(newAttempts);
+        setExtractionAttempts(prev => prev + 1);
 
         if (data.drillTriggered) {
           // Backend confirmed: 3 strikes reached. Execute reroll.
@@ -1242,11 +1361,12 @@ function App() {
     setFeedback('Filtering unpaid lunch hours...');
     try {
       const { module: mod, phase: ph } = getModuleAndPhase();
-      const response = await fetch(`${API_BASE_URL}/api/validation/submit`, {
+      const response = await authFetch('/api/validation/submit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           studentNumber: student?.studentNumber || 'STU-UNKNOWN',
+          roomCode: roomCode || localStorage.getItem('studentRoomCode') || '',
           module: mod,
           phase: ph,
           step: 'FILTER_LUNCH',
@@ -1301,11 +1421,12 @@ function App() {
     setFeedback('Validating DOLE overtime premium multiplier...');
     try {
       const { module: mod, phase: ph } = getModuleAndPhase();
-      const response = await fetch(`${API_BASE_URL}/api/validation/submit`, {
+      const response = await authFetch('/api/validation/submit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           studentNumber: student?.studentNumber || 'STU-UNKNOWN',
+          roomCode: roomCode || localStorage.getItem('studentRoomCode') || '',
           module: mod,
           phase: ph,
           step: 'ESTABLISH_PREMIUM',
@@ -1354,11 +1475,12 @@ function App() {
     setFeedback('Validating Overtime formula...');
     try {
       const { module: mod, phase: ph } = getModuleAndPhase();
-      const response = await fetch(`${API_BASE_URL}/api/validation/submit`, {
+      const response = await authFetch('/api/validation/submit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           studentNumber: student?.studentNumber || 'STU-UNKNOWN',
+          roomCode: roomCode || localStorage.getItem('studentRoomCode') || '',
           module: mod,
           phase: ph,
           step: 'ESTABLISH_FORMULA',
@@ -1407,11 +1529,12 @@ function App() {
     setFeedback('Validating DOLE holiday premium multiplier...');
     try {
       const { module: mod, phase: ph } = getModuleAndPhase();
-      const response = await fetch(`${API_BASE_URL}/api/validation/submit`, {
+      const response = await authFetch('/api/validation/submit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           studentNumber: student?.studentNumber || 'STU-UNKNOWN',
+          roomCode: roomCode || localStorage.getItem('studentRoomCode') || '',
           module: mod,
           phase: ph,
           step: 'ESTABLISH_PREMIUM',
@@ -1460,11 +1583,12 @@ function App() {
     setFeedback('Validating Holiday formula logic...');
     try {
       const { module: mod, phase: ph } = getModuleAndPhase();
-      const response = await fetch(`${API_BASE_URL}/api/validation/submit`, {
+      const response = await authFetch('/api/validation/submit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           studentNumber: student?.studentNumber || 'STU-UNKNOWN',
+          roomCode: roomCode || localStorage.getItem('studentRoomCode') || '',
           module: mod,
           phase: ph,
           step: 'ESTABLISH_FORMULA',
@@ -1513,11 +1637,12 @@ function App() {
     setFeedback('Verifying Pag-IBIG contribution cap...');
     try {
       const { module: mod, phase: ph } = getModuleAndPhase();
-      const response = await fetch(`${API_BASE_URL}/api/validation/submit`, {
+      const response = await authFetch('/api/validation/submit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           studentNumber: student?.studentNumber || 'STU-UNKNOWN',
+          roomCode: roomCode || localStorage.getItem('studentRoomCode') || '',
           module: mod,
           phase: ph,
           step: 'PAGIBIG_DEDUCTION',
@@ -1572,11 +1697,12 @@ function App() {
     setFeedback('Verifying Basic Salary...');
     try {
       const { module: mod, phase: ph } = getModuleAndPhase();
-      const response = await fetch(`${API_BASE_URL}/api/validation/submit`, {
+      const response = await authFetch('/api/validation/submit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           studentNumber: student?.studentNumber || 'STU-UNKNOWN',
+          roomCode: roomCode || localStorage.getItem('studentRoomCode') || '',
           module: mod,
           phase: ph,
           step: 'BASIC_SALARY',
@@ -1625,11 +1751,12 @@ function App() {
     setFeedback('Verifying statutory Employee (EE) share deductions...');
     try {
       const { module: mod, phase: ph } = getModuleAndPhase();
-      const response = await fetch(`${API_BASE_URL}/api/validation/submit`, {
+      const response = await authFetch('/api/validation/submit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           studentNumber: student?.studentNumber || 'STU-UNKNOWN',
+          roomCode: roomCode || localStorage.getItem('studentRoomCode') || '',
           module: mod,
           phase: ph,
           step: 'PHILHEALTH_EE',
@@ -1688,11 +1815,12 @@ function App() {
 
     try {
       const { module: mod, phase: ph } = getModuleAndPhase();
-      const response = await fetch(`${API_BASE_URL}/api/validation/submit`, {
+      const response = await authFetch('/api/validation/submit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           studentNumber: student?.studentNumber || 'STU-UNKNOWN',
+          roomCode: roomCode || localStorage.getItem('studentRoomCode') || '',
           module: mod,
           phase: ph,
           step: activePhaseIndex === 6 ? 'TAX_BRACKET' : 'IDENTIFY_RULE',
@@ -1754,6 +1882,7 @@ function App() {
       const { module: mod, phase: ph } = getModuleAndPhase();
       const requestPayload = {
         studentNumber: student?.studentNumber || 'STU-UNKNOWN',
+        roomCode: roomCode || localStorage.getItem('studentRoomCode') || '',
         module: mod,
         phase: ph,
         step: activePhaseIndex === 6 ? 'WITHHOLDING_TAX' : 'EXECUTE',
@@ -1774,16 +1903,13 @@ function App() {
         submittedResult: calculatedValue ? parseFloat(calculatedValue) : 0.0
       };
 
-      console.log("[DEBUG EXECUTE PAYLOAD SENT]:", requestPayload);
-
-      const response = await fetch(`${API_BASE_URL}/api/validation/submit`, {
+      const response = await authFetch('/api/validation/submit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(requestPayload)
       });
 
       const data = await response.json();
-      console.log("[DEBUG EXECUTE BACKEND RESPONSE]:", data);
 
       if (data.success) {
         setStep3Status('SUCCESS');
@@ -1827,11 +1953,12 @@ function App() {
     setFeedback('Verifying Gross Basic Pay computation...');
     try {
       const { module: mod, phase: ph } = getModuleAndPhase();
-      const response = await fetch(`${API_BASE_URL}/api/validation/submit`, {
+      const response = await authFetch('/api/validation/submit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           studentNumber: student?.studentNumber || 'STU-UNKNOWN',
+          roomCode: roomCode || localStorage.getItem('studentRoomCode') || '',
           module: mod,
           phase: ph,
           step: 'COMPUTE_GROSS',
@@ -1845,7 +1972,6 @@ function App() {
         })
       });
       const data = await response.json();
-      console.log('[DEBUG COMPUTE_GROSS RESPONSE]:', data);
       if (data.success) {
         setGrossPayStatus('SUCCESS');
         setNetFormulaStatus('ACTIVE');
@@ -1873,11 +1999,12 @@ function App() {
     setFeedback('Validating Net Pay formula logic...');
     try {
       const { module: mod, phase: ph } = getModuleAndPhase();
-      const response = await fetch(`${API_BASE_URL}/api/validation/submit`, {
+      const response = await authFetch('/api/validation/submit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           studentNumber: student?.studentNumber || 'STU-UNKNOWN',
+          roomCode: roomCode || localStorage.getItem('studentRoomCode') || '',
           module: mod,
           phase: ph,
           step: 'NET_PAY_FORMULA',
@@ -1886,7 +2013,6 @@ function App() {
         })
       });
       const data = await response.json();
-      console.log('[DEBUG NET_PAY_FORMULA RESPONSE]:', data);
       if (data.success) {
         setNetFormulaStatus('SUCCESS');
         setStep4Status('ACTIVE'); // Unlock final net pay (Step 6)
@@ -1929,6 +2055,7 @@ function App() {
 
       const requestPayload = {
         studentNumber: student?.studentNumber || 'STU-UNKNOWN',
+        roomCode: roomCode || localStorage.getItem('studentRoomCode') || '',
         module: mod,
         phase: ph,
         step: 'SYNTHESIS',
@@ -1951,16 +2078,13 @@ function App() {
         submittedResult: netPayValue ? parseFloat(netPayValue) : 0.0
       };
 
-      console.log('[DEBUG SYNTHESIS PAYLOAD SENT]:', requestPayload);
-
-      const response = await fetch(`${API_BASE_URL}/api/validation/submit`, {
+      const response = await authFetch('/api/validation/submit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(requestPayload)
       });
 
       const data = await response.json();
-      console.log('[DEBUG SYNTHESIS BACKEND RESPONSE]:', data);
 
       if (data.success) {
         setStep4Status('SUCCESS');
@@ -1994,11 +2118,12 @@ function App() {
     setFeedback('Submitting final Net Payroll audit to Board of Trustees...');
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/validation/submit`, {
+      const response = await authFetch('/api/validation/submit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           studentNumber: student?.studentNumber || 'STU-UNKNOWN',
+          roomCode: roomCode || localStorage.getItem('studentRoomCode') || '',
           module: 'M4_TRIBUNAL',
           phase: 1,
           step: 'SUBMIT',
@@ -2039,10 +2164,23 @@ function App() {
         setFeedback(data.message);
         // Regenerate scenario and clear inputs on every failed attempt
         const newScenario = generatePhase7Scenario();
+        (newScenario as any).phaseId = 7;
         setScenario(newScenario as any);
         setTribunalGross('');
         setTribunalDeductions('');
         setTribunalNet('');
+        setTribunalStatus('ACTIVE');
+        const studentNum = (student as any)?.studentNumber;
+        const currentRoom = roomCode || localStorage.getItem('studentRoomCode') || '';
+        const namespace = getStorageNamespace(studentNum, currentRoom);
+        setPhaseTimers(prev => {
+          const updated = { ...prev, 7: 0 };
+          try {
+            localStorage.setItem(phaseTimerKey(7, namespace), '0');
+            sessionStorage.removeItem(phaseProgressKey(7, namespace));
+          } catch (_) {}
+          return updated;
+        });
       }
     } catch (err) {
       console.error(err);
@@ -2110,6 +2248,7 @@ function App() {
         }
       }}
       onBack={() => {
+        void logout();
         localStorage.removeItem('teacher');
         localStorage.removeItem('teacherRoomStatus');
         setRoomCode('');
@@ -2152,6 +2291,7 @@ function App() {
       }}
       onExit={() => {
         // Teacher exits room / logs out back to LOGIN
+        void logout();
         localStorage.removeItem('teacher');
         localStorage.removeItem('teacherRoomStatus');
         setRoomCode('');
@@ -2521,17 +2661,21 @@ function App() {
           alignItems: 'center',
           gap: '10px',
           animation: 'fadeInDown 0.3s ease',
-          backgroundColor: rerollToast === 'RED_HERRING' ? '#450a0a' : '#1c1400',
-          border: `1px solid ${rerollToast === 'RED_HERRING' ? '#ef4444' : '#f59e0b'}`,
-          color: rerollToast === 'RED_HERRING' ? '#f87171' : '#fbbf24',
+          backgroundColor: rerollToast === 'RED_HERRING' ? '#450a0a' : (rerollToast === 'PROGRESS_RESET' ? '#052e16' : '#1c1400'),
+          border: `1px solid ${rerollToast === 'RED_HERRING' ? '#ef4444' : (rerollToast === 'PROGRESS_RESET' ? '#10b981' : '#f59e0b')}`,
+          color: rerollToast === 'RED_HERRING' ? '#f87171' : (rerollToast === 'PROGRESS_RESET' ? '#6ee7b7' : '#fbbf24'),
           maxWidth: '520px',
           textAlign: 'center'
         }}>
-          <span style={{ fontSize: '1.3rem' }}>{rerollToast === 'RED_HERRING' ? '🚨' : '🔄'}</span>
+          <span style={{ fontSize: '1.3rem' }}>
+            {rerollToast === 'RED_HERRING' ? '🚨' : (rerollToast === 'PROGRESS_RESET' ? '🧾' : '🔄')}
+          </span>
           <span>
             {rerollToast === 'RED_HERRING'
               ? 'RED HERRING DETECTED — Critical audit failure. A new Audit Case has been generated.'
-              : 'Maximum attempts reached. A new Audit Case has been generated.'
+              : rerollToast === 'PROGRESS_RESET'
+                ? 'PROGRESS RESET — All progress made before joining this room was set to zero. Your teacher now tracks your performance inside this room.'
+                : 'Maximum attempts reached. A new Audit Case has been generated.'
             }
           </span>
         </div>
