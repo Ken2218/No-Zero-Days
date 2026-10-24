@@ -1287,31 +1287,42 @@ public class RoomController {
                     studentReAuditTotalAttempts += reAuditAttemptsCount;
                     classReAuditTotalAttempts[i] += reAuditAttemptsCount;
 
-                    Long recordedReAuditSeconds = null;
-                    for (int k = reAuditAttempts.size() - 1; k >= 0; k--) {
-                        AttemptLog log = reAuditAttempts.get(k);
-                        if (log.isSuccessful()) {
+                    // Calculate best (least) recorded re-audit completion time among all replay attempts
+                    Long bestReAuditSeconds = null;
+                    Long latestRecordedSeconds = null;
+                    String finalStepName = !requiredSteps.isEmpty() ? requiredSteps.get(requiredSteps.size() - 1) : null;
+
+                    for (AttemptLog log : reAuditAttempts) {
+                        if (log.isSuccessful() && !log.isDrillReset()) {
+                            Long s = null;
                             if (log.getElapsedSeconds() != null && log.getElapsedSeconds() > 0) {
-                                recordedReAuditSeconds = log.getElapsedSeconds();
-                                break;
-                            }
-                            if (log.getUserInputData() != null && log.getUserInputData().contains("timerSeconds=")) {
+                                s = log.getElapsedSeconds();
+                            } else if (log.getUserInputData() != null && log.getUserInputData().contains("timerSeconds=")) {
                                 try {
                                     java.util.regex.Matcher m = java.util.regex.Pattern.compile("timerSeconds=(\\d+)").matcher(log.getUserInputData());
                                     if (m.find()) {
-                                        long s = Long.parseLong(m.group(1));
-                                        if (s > 0) {
-                                            recordedReAuditSeconds = s;
-                                            break;
-                                        }
+                                        long val = Long.parseLong(m.group(1));
+                                        if (val > 0) s = val;
                                     }
                                 } catch (Exception ignored) {}
+                            }
+
+                            if (s != null && s > 0) {
+                                latestRecordedSeconds = s;
+                                boolean isCompletionStep = (finalStepName != null && finalStepName.equalsIgnoreCase(log.getStep()));
+                                if (isCompletionStep) {
+                                    if (bestReAuditSeconds == null || s < bestReAuditSeconds) {
+                                        bestReAuditSeconds = s;
+                                    }
+                                }
                             }
                         }
                     }
 
-                    if (recordedReAuditSeconds != null && recordedReAuditSeconds > 0) {
-                        reAuditPhaseSeconds = recordedReAuditSeconds;
+                    Long chosenSeconds = (bestReAuditSeconds != null) ? bestReAuditSeconds : latestRecordedSeconds;
+
+                    if (chosenSeconds != null && chosenSeconds > 0) {
+                        reAuditPhaseSeconds = chosenSeconds;
                     } else if (reAuditStart != null) {
                         LocalDateTime endRef = reAuditLastSuccess != null ? reAuditLastSuccess : (reAuditEnd != null ? reAuditEnd : reAuditStart);
                         long diff = ChronoUnit.SECONDS.between(reAuditStart, endRef);

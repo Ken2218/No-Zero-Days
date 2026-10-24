@@ -175,6 +175,19 @@ function App() {
       const parsed = JSON.parse(stored);
       if (!parsed || parsed.phaseId !== phase || !parsed.scenario) return false;
 
+      // Completed phases must never be reloaded as an ongoing in-progress session
+      const isStoredComplete = phase === 1
+        ? parsed.step3Status === 'SUCCESS'
+        : phase === 7
+          ? parsed.tribunalStatus === 'SUCCESS'
+          : parsed.step4Status === 'SUCCESS';
+      if (isStoredComplete) {
+        try {
+          sessionStorage.removeItem(phaseProgressKey(phase, getStorageNamespace(studentNum, room)));
+        } catch (_) {}
+        return false;
+      }
+
       setScenario(parsed.scenario);
       setExtractedA(parsed.extractedA || '');
       setExtractedB(parsed.extractedB || '');
@@ -392,6 +405,15 @@ function App() {
 
   const handleReturnToDashboard = () => {
     notifyPhaseExit();
+    if (isCurrentPhaseComplete) {
+      try {
+        const studentNum = (student as any)?.studentNumber;
+        const currentRoom = roomCode || localStorage.getItem('studentRoomCode') || '';
+        sessionStorage.removeItem(phaseProgressKey(activePhaseIndex, getStorageNamespace(studentNum, currentRoom)));
+      } catch (_) {}
+      // Clear completed scenario state so re-auditing from dashboard generates a fresh scenario
+      setScenario(null);
+    }
     setCurrentView('DASHBOARD');
   };
 
@@ -445,6 +467,19 @@ function App() {
   // Auto-persist active phase progress to sessionStorage so leaving to dashboard or reloading doesn't wipe progress
   useEffect(() => {
     if (!isStudentInPhase || !scenario || !(scenario as any).phaseId) return;
+
+    const studentNum = (student as any)?.studentNumber;
+    const currentRoom = roomCode || localStorage.getItem('studentRoomCode') || '';
+    const namespace = getStorageNamespace(studentNum, currentRoom);
+
+    // If the phase is completed, do NOT store it as an in-progress autosaved session
+    if (isCurrentPhaseComplete) {
+      try {
+        sessionStorage.removeItem(phaseProgressKey(activePhaseIndex, namespace));
+      } catch (_) {}
+      return;
+    }
+
     try {
       const stateToSave = {
         phaseId: activePhaseIndex,
@@ -483,14 +518,12 @@ function App() {
         tribunalNet,
         tribunalStatus
       };
-      const studentNum = (student as any)?.studentNumber;
-      const currentRoom = roomCode || localStorage.getItem('studentRoomCode') || '';
-      const namespace = getStorageNamespace(studentNum, currentRoom);
       sessionStorage.setItem(phaseProgressKey(activePhaseIndex, namespace), JSON.stringify(stateToSave));
     } catch (_) {}
   }, [
     isStudentInPhase,
     activePhaseIndex,
+    isCurrentPhaseComplete,
     scenario,
     extractedA,
     extractedB,
@@ -1754,6 +1787,13 @@ function App() {
 
       if (data.success) {
         setStep3Status('SUCCESS');
+        if (activePhaseIndex === 1) {
+          try {
+            const studentNum = (student as any)?.studentNumber;
+            const currentRoom = roomCode || localStorage.getItem('studentRoomCode') || '';
+            sessionStorage.removeItem(phaseProgressKey(1, getStorageNamespace(studentNum, currentRoom)));
+          } catch (_) {}
+        }
         // Phase 2, 3, and 4 chain to Gross Pay step; all others chain to synthesis
         if (activePhaseIndex === 2 || activePhaseIndex === 3 || activePhaseIndex === 4) {
           setGrossPayStatus('ACTIVE');
@@ -1924,6 +1964,11 @@ function App() {
 
       if (data.success) {
         setStep4Status('SUCCESS');
+        try {
+          const studentNum = (student as any)?.studentNumber;
+          const currentRoom = roomCode || localStorage.getItem('studentRoomCode') || '';
+          sessionStorage.removeItem(phaseProgressKey(activePhaseIndex, getStorageNamespace(studentNum, currentRoom)));
+        } catch (_) {}
         setFeedback(data.message);
       } else {
         setStep4Status('ERROR');
@@ -1983,6 +2028,11 @@ function App() {
 
       if (data.success) {
         setTribunalStatus('SUCCESS');
+        try {
+          const studentNum = (student as any)?.studentNumber;
+          const currentRoom = roomCode || localStorage.getItem('studentRoomCode') || '';
+          sessionStorage.removeItem(phaseProgressKey(7, getStorageNamespace(studentNum, currentRoom)));
+        } catch (_) {}
         setFeedback(data.message);
       } else {
         setTribunalStatus('ERROR');
@@ -2127,7 +2177,14 @@ function App() {
           theme={theme}
           toggleTheme={toggleTheme}
           onSelectPhase={(phase) => {
-            const hasOngoingState = (scenario as any)?.phaseId === phase;
+            const isMemoryStateComplete = (scenario as any)?.phaseId === phase && (
+              phase === 1
+                ? step3Status === 'SUCCESS'
+                : phase === 7
+                  ? tribunalStatus === 'SUCCESS'
+                  : step4Status === 'SUCCESS'
+            );
+            const hasOngoingState = (scenario as any)?.phaseId === phase && !isMemoryStateComplete;
             const studentNum = (student as any)?.studentNumber;
             const currentRoom = roomCode || localStorage.getItem('studentRoomCode') || '';
             const loadedFromStorage = !hasOngoingState
