@@ -74,8 +74,14 @@ public class AuthInterceptor implements HandlerInterceptor {
 
         Optional<StudentProfile> studentOpt = studentProfileRepository.findBySessionToken(token);
         if (studentOpt.isPresent()) {
+            StudentProfile student = studentOpt.get();
+            // Legacy pre-password accounts must upgrade before ANY access is
+            // granted — even a valid pre-upgrade token cannot bypass this.
+            if (student.getPasswordHash() == null) {
+                return reject(response, "This account must be upgraded with an email and password. Please sign in again to update your credentials.");
+            }
             request.setAttribute(ATTR_ROLE, "STUDENT");
-            request.setAttribute(ATTR_STUDENT_NUMBER, studentOpt.get().getStudentNumber());
+            request.setAttribute(ATTR_STUDENT_NUMBER, student.getStudentNumber());
             if (isTeacherOnlyPath(path, method)) {
                 return reject(response, "Teacher access required.");
             }
@@ -89,6 +95,9 @@ public class AuthInterceptor implements HandlerInterceptor {
         if (path.equals("/health")) return true;
         // Logout requires a token (it clears the caller's session)
         if (path.equals("/auth/logout") || path.equals("/auth/logout/")) return false;
+        // Session probe requires a token (used by the frontend to validate
+        // restored sessions before rendering)
+        if (path.equals("/auth/me") || path.equals("/auth/me/")) return false;
         if (path.startsWith("/auth/")) return true;
         // Legacy auth endpoints
         if (path.equals("/students/login") || path.equals("/students/login/")) return true;

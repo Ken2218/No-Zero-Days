@@ -90,6 +90,41 @@ public class AuthController {
     }
 
     /**
+     * GET /api/auth/me — session probe for the frontend's localStorage restore
+     * flow. Returns the caller's identity when their Bearer token is valid.
+     */
+    @GetMapping(value = {"/me", "/me/"})
+    public ResponseEntity<?> me(HttpServletRequest httpRequest) {
+        String role = (String) httpRequest.getAttribute(AuthInterceptor.ATTR_ROLE);
+        if ("TEACHER".equals(role)) {
+            String email = (String) httpRequest.getAttribute(AuthInterceptor.ATTR_TEACHER_EMAIL);
+            Optional<Teacher> teacher = teacherRepository.findByEmailIgnoreCase(email);
+            if (teacher.isEmpty()) {
+                return ResponseEntity.status(401).body(Map.of("error", "Session not found."));
+            }
+            Map<String, Object> resp = new HashMap<>();
+            resp.put("role", "TEACHER");
+            resp.put("email", teacher.get().getEmail());
+            resp.put("fullName", teacher.get().getFullName());
+            return ResponseEntity.ok(resp);
+        }
+        if ("STUDENT".equals(role)) {
+            String studentNumber = (String) httpRequest.getAttribute(AuthInterceptor.ATTR_STUDENT_NUMBER);
+            Optional<StudentProfile> student = studentRepository.findByStudentNumber(studentNumber);
+            if (student.isEmpty()) {
+                return ResponseEntity.status(401).body(Map.of("error", "Session not found."));
+            }
+            Map<String, Object> resp = new HashMap<>();
+            resp.put("role", "STUDENT");
+            resp.put("studentNumber", student.get().getStudentNumber());
+            resp.put("fullName", student.get().getFullName());
+            resp.put("section", student.get().getSection());
+            return ResponseEntity.ok(resp);
+        }
+        return ResponseEntity.status(401).body(Map.of("error", "Not authenticated."));
+    }
+
+    /**
      * POST /api/auth/upgrade-student — migration path for pre-password student
      * accounts. Verifies identity (student number + full name, same as login)
      * and attaches email + password. Issues a session token on success.
@@ -123,7 +158,12 @@ public class AuthController {
             StudentProfile profile = authService.authenticateStudent(studentNumber, name, request.getPassword());
             if (profile.getPasswordHash() == null) {
                 // Legacy pre-migration account: identity verified, but the student
-                // must attach email + password before regaining access.
+                // must attach email + password before regaining access. Kill any
+                // lingering pre-upgrade session token so it cannot be replayed.
+                if (profile.getSessionToken() != null) {
+                    profile.setSessionToken(null);
+                    studentRepository.save(profile);
+                }
                 Map<String, Object> resp = new HashMap<>();
                 resp.put("requiresUpgrade", true);
                 resp.put("id", profile.getId());

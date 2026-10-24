@@ -213,10 +213,6 @@ export default function Login({ onLoginSuccess, onTeacherCreateRoom }: LoginProp
       setError('Please enter a valid Gmail address ending in @gmail.com (e.g., teacher@gmail.com).');
       return;
     }
-    if (!password) {
-      setError('Please enter your password.');
-      return;
-    }
 
     setLoading(true);
     setError('');
@@ -228,7 +224,7 @@ export default function Login({ onLoginSuccess, onTeacherCreateRoom }: LoginProp
         name: fullName.trim(),
         fullName: fullName.trim(),
         role: role,
-        password: password
+        password: password || undefined
       };
 
       const loginRes = await authFetch('/api/auth/login', {
@@ -537,20 +533,24 @@ export default function Login({ onLoginSuccess, onTeacherCreateRoom }: LoginProp
                 </div>
 
                 <div className="input-group">
-                  <label>PASSWORD</label>
+                  <label>
+                    {authMode === 'SIGNUP'
+                      ? 'PASSWORD'
+                      : 'PASSWORD (REQUIRED IF YOU HAVE SET ONE)'}
+                  </label>
                   <input
                     type="password"
-                    placeholder={authMode === 'SIGNUP' ? 'At least 8 characters' : 'Enter your password'}
+                    placeholder={authMode === 'SIGNUP' ? 'At least 8 characters' : 'Leave blank if you never set one'}
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     disabled={loading}
                     className="retro-input"
                     autoComplete={authMode === 'SIGNUP' ? 'new-password' : 'current-password'}
-                    required
+                    required={authMode === 'SIGNUP'}
                   />
                   {authMode === 'LOGIN' && (
                     <span style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '4px', display: 'block' }}>
-                      First time signing in? Your first password claims this teacher account.
+                      No password yet? Leave this blank to sign in. Entering one here secures and claims your account.
                     </span>
                   )}
                 </div>

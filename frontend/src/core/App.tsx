@@ -233,13 +233,48 @@ function App() {
   // Restore a previously authenticated session from localStorage.
   // The `sessionChecked` flag ensures nothing is rendered until this effect completes,
   // guaranteeing that unauthenticated visits to "/" always land on the Login screen.
+  //
+  // The stored Bearer token is re-verified against the server first so stale or
+  // pre-upgrade sessions (accounts that never set a password) are bounced back
+  // to the Login screen instead of silently restoring.
   useEffect(() => {
-    const savedStudent = localStorage.getItem('student');
-    const savedTeacher = localStorage.getItem('teacher');
+    let cancelled = false;
 
-    if (savedTeacher) {
-      try {
-        const parsedTeacher = JSON.parse(savedTeacher);
+    const clearTeacherSession = () => {
+      localStorage.removeItem('teacher');
+      localStorage.removeItem('teacherRoomStatus');
+    };
+    const clearStudentSession = () => {
+      localStorage.removeItem('student');
+      localStorage.removeItem('studentRoomCode');
+    };
+
+    const verifyAndRestore = async () => {
+      const savedStudent = localStorage.getItem('student');
+      const savedTeacher = localStorage.getItem('teacher');
+
+      if (savedTeacher) {
+        let parsedTeacher: any = null;
+        try { parsedTeacher = JSON.parse(savedTeacher); } catch (_) {}
+        if (!parsedTeacher?.token) {
+          clearTeacherSession();
+          if (!cancelled) { setCurrentView('LOGIN'); setSessionChecked(true); }
+          return;
+        }
+        try {
+          const res = await authFetch('/api/auth/me');
+          if (cancelled) return;
+          if (!res.ok) {
+            clearTeacherSession();
+            setCurrentView('LOGIN');
+            setSessionChecked(true);
+            return;
+          }
+        } catch (_) {
+          // Network failure — restore optimistically so offline sessions still open.
+        }
+
+        if (cancelled) return;
         setTeacherName(parsedTeacher.teacherName || '');
         setTeacherSection(parsedTeacher.section || '');
         setTeacherEmail(parsedTeacher.teacherEmail || '');
@@ -247,15 +282,28 @@ function App() {
           setRoomCode(parsedTeacher.roomCode);
         }
         setCurrentView('TEACHER_DASHBOARD');
-      } catch (_) {
-        // Corrupted data — clear it and show Login
-        localStorage.removeItem('teacher');
-        localStorage.removeItem('teacherRoomStatus');
-        setCurrentView('LOGIN');
-      }
-    } else if (savedStudent) {
-      try {
-        const parsedStudent = JSON.parse(savedStudent);
+      } else if (savedStudent) {
+        let parsedStudent: any = null;
+        try { parsedStudent = JSON.parse(savedStudent); } catch (_) {}
+        if (!parsedStudent?.token) {
+          clearStudentSession();
+          if (!cancelled) { setCurrentView('LOGIN'); setSessionChecked(true); }
+          return;
+        }
+        try {
+          const res = await authFetch('/api/auth/me');
+          if (cancelled) return;
+          if (!res.ok) {
+            clearStudentSession();
+            setCurrentView('LOGIN');
+            setSessionChecked(true);
+            return;
+          }
+        } catch (_) {
+          // Network failure — restore optimistically so offline sessions still open.
+        }
+
+        if (cancelled) return;
         setStudent(parsedStudent);
         const savedRoomCode = localStorage.getItem('studentRoomCode');
         if (savedRoomCode) {
@@ -280,19 +328,17 @@ function App() {
         if (!restoredPhase) {
           setCurrentView('DASHBOARD');
         }
-      } catch (_) {
-        // Corrupted data — clear it and show Login
-        localStorage.removeItem('student');
-        localStorage.removeItem('studentRoomCode');
-        setCurrentView('LOGIN');
+      } else {
+        // No saved session: always show Login
+        if (!cancelled) setCurrentView('LOGIN');
       }
-    } else {
-      // No saved session: always show Login
-      setCurrentView('LOGIN');
-    }
 
-    // Mark the session check as complete so the app can render
-    setSessionChecked(true);
+      // Mark the session check as complete so the app can render
+      if (!cancelled) setSessionChecked(true);
+    };
+
+    verifyAndRestore();
+    return () => { cancelled = true; };
   }, []);
 
   // Remember the student's current view so a page refresh mid-phase re-enters

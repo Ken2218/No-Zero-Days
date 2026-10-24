@@ -158,20 +158,32 @@ public class AuthService {
         if (!email.toLowerCase().endsWith("@gmail.com")) {
             throw new IllegalArgumentException("Email must be a valid @gmail.com address.");
         }
-        if (password == null || password.trim().isEmpty()) {
-            throw new IllegalArgumentException("Password is required.");
-        }
+
+        boolean passwordProvided = password != null && !password.trim().isEmpty();
+        String trimmedPassword = passwordProvided ? password.trim() : null;
 
         Optional<Teacher> opt = teacherRepository.findByEmailIgnoreCase(email);
         Teacher teacher;
         if (opt.isPresent()) {
             teacher = opt.get();
             if (teacher.getPasswordHash() == null) {
-                teacher.setPasswordHash(PasswordHasher.hash(password));
-            } else if (!PasswordHasher.verify(password, teacher.getPasswordHash())) {
-                throw new IllegalArgumentException("Incorrect password for '" + email + "'.");
+                // Legacy pre-password account: signing in without a password
+                // stays allowed. Supplying one claims and secures the account.
+                if (passwordProvided) {
+                    teacher.setPasswordHash(PasswordHasher.hash(trimmedPassword));
+                }
+            } else {
+                if (!passwordProvided) {
+                    throw new IllegalArgumentException("This account has a password. Please enter it to sign in.");
+                }
+                if (!PasswordHasher.verify(trimmedPassword, teacher.getPasswordHash())) {
+                    throw new IllegalArgumentException("Incorrect password for '" + email + "'.");
+                }
             }
         } else {
+            if (!passwordProvided) {
+                throw new IllegalArgumentException("Teacher account not found for '" + email + "'. Please switch to Sign Up.");
+            }
             // Legacy rooms: rooms created before teacher accounts existed only
             // carry a teacherEmail. Claiming them now requires a password, which
             // is set on the newly created teacher account.
@@ -183,7 +195,7 @@ public class AuthService {
                     ? rawName.trim()
                     : existingRooms.get(0).getTeacherName();
             teacher = teacherRepository.save(new Teacher(email, existingName));
-            teacher.setPasswordHash(PasswordHasher.hash(password));
+            teacher.setPasswordHash(PasswordHasher.hash(trimmedPassword));
             for (Room r : existingRooms) {
                 if (r.getTeacher() == null) {
                     r.setTeacher(teacher);

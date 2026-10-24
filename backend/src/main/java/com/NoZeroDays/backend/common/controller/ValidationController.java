@@ -250,6 +250,11 @@ public class ValidationController {
         try {
             StudentProfile profile = authService.authenticateStudent(studentNumber, fullName, request.getPassword());
             if (profile.getPasswordHash() == null) {
+                // Kill any lingering pre-upgrade session token so it cannot be replayed.
+                if (profile.getSessionToken() != null) {
+                    profile.setSessionToken(null);
+                    studentRepository.save(profile);
+                }
                 Map<String, Object> resp = new HashMap<>();
                 resp.put("requiresUpgrade", true);
                 resp.put("id", profile.getId());
