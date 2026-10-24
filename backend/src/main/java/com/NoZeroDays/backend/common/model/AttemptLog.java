@@ -22,6 +22,9 @@ public class AttemptLog {
     @Column(name = "attempt_type")
     private String attemptType = "FIRST_ATTEMPT"; // "FIRST_ATTEMPT" or "RE_AUDIT"
 
+    @Column(name = "elapsed_seconds")
+    private Long elapsedSeconds = 0L;
+
     @Column(columnDefinition = "TEXT")
     private String userInputData; // JSON representation of user submissions
 
@@ -73,4 +76,7 @@ public class AttemptLog {
 
     public String getAttemptType() { return attemptType; }
     public void setAttemptType(String attemptType) { this.attemptType = attemptType; }
+
+    public Long getElapsedSeconds() { return elapsedSeconds; }
+    public void setElapsedSeconds(Long elapsedSeconds) { this.elapsedSeconds = elapsedSeconds; }
 }

@@ -297,20 +297,14 @@ public class EmailReportService {
             boolean firstCompletedFound = false;
 
             for (AttemptLog log : phaseAttempts) {
-                if ("RE_AUDIT".equalsIgnoreCase(log.getAttemptType())) {
+                if (firstCompletedFound) {
                     reAuditAttempts.add(log);
-                } else if ("FIRST_ATTEMPT".equalsIgnoreCase(log.getAttemptType())) {
-                    firstAttempts.add(log);
                 } else {
-                    if (firstCompletedFound) {
-                        reAuditAttempts.add(log);
-                    } else {
-                        firstAttempts.add(log);
-                        if (log.isSuccessful() && log.getStep() != null) {
-                            stepsCompletedSoFar.add(log.getStep().toUpperCase());
-                            if (!requiredSteps.isEmpty() && requiredSteps.stream().allMatch(stepsCompletedSoFar::contains)) {
-                                firstCompletedFound = true;
-                            }
+                    firstAttempts.add(log);
+                    if (log.isSuccessful() && log.getStep() != null) {
+                        stepsCompletedSoFar.add(log.getStep().toUpperCase());
+                        if (!requiredSteps.isEmpty() && requiredSteps.stream().allMatch(stepsCompletedSoFar::contains)) {
+                            firstCompletedFound = true;
                         }
                     }
                 }
@@ -343,9 +337,38 @@ public class EmailReportService {
 
             if (isFirstDone) {
                 firstCompletedCount++;
-                if (firstAttemptTime != null) {
+
+                Long recordedSeconds = null;
+                for (int k = firstAttempts.size() - 1; k >= 0; k--) {
+                    AttemptLog log = firstAttempts.get(k);
+                    if (log.isSuccessful()) {
+                        if (log.getElapsedSeconds() != null && log.getElapsedSeconds() > 0) {
+                            recordedSeconds = log.getElapsedSeconds();
+                            break;
+                        }
+                        if (log.getUserInputData() != null && log.getUserInputData().contains("timerSeconds=")) {
+                            try {
+                                java.util.regex.Matcher m = java.util.regex.Pattern.compile("timerSeconds=(\\d+)").matcher(log.getUserInputData());
+                                if (m.find()) {
+                                    long s = Long.parseLong(m.group(1));
+                                    if (s > 0) {
+                                        recordedSeconds = s;
+                                        break;
+                                    }
+                                }
+                            } catch (Exception ignored) {}
+                        }
+                    }
+                }
+
+                if (recordedSeconds != null && recordedSeconds > 0) {
+                    firstSec = recordedSeconds;
+                } else if (firstAttemptTime != null) {
+                    LocalDateTime startRef = (phaseId == 1 && session != null && session.getStartTime() != null)
+                            ? session.getStartTime()
+                            : firstAttemptTime;
                     LocalDateTime endRef = firstLastSuccess != null ? firstLastSuccess : (firstLastAttempt != null ? firstLastAttempt : firstAttemptTime);
-                    long diff = ChronoUnit.SECONDS.between(firstAttemptTime, endRef);
+                    long diff = ChronoUnit.SECONDS.between(startRef, endRef);
                     long paused = (session != null && phaseId == currentPhaseIndex) ? session.getAccumulatedPauseSeconds() : 0L;
                     diff = Math.max(diff - paused, 0L);
                     if (diff <= 0) {
@@ -356,24 +379,20 @@ public class EmailReportService {
                     firstSec = 30L;
                 }
                 firstTotalSeconds += firstSec;
-            } else if (phaseId == currentPhaseIndex && session != null && session.getPhaseEnteredAt() != null) {
+            } else if (phaseId == currentPhaseIndex && session != null && session.getPhaseEnteredAt() != null && session.getPhaseExitedAt() == null) {
                 LocalDateTime activeStart = session.getPhaseEnteredAt();
                 LocalDateTime activeEnd;
-                if (session.getPhaseExitedAt() != null) {
-                    activeEnd = session.getPhaseExitedAt();
+                LocalDateTime now = LocalDateTime.now();
+                if (session.getLastHeartbeatAt() != null) {
+                    long heartbeatAge = ChronoUnit.SECONDS.between(session.getLastHeartbeatAt(), now);
+                    activeEnd = (heartbeatAge > 30) ? session.getLastHeartbeatAt() : now;
                 } else {
-                    LocalDateTime now = LocalDateTime.now();
-                    if (session.getLastHeartbeatAt() != null) {
-                        long heartbeatAge = ChronoUnit.SECONDS.between(session.getLastHeartbeatAt(), now);
-                        activeEnd = (heartbeatAge > 30) ? session.getLastHeartbeatAt() : now;
-                    } else {
-                        long ageSinceEnter = ChronoUnit.SECONDS.between(activeStart, now);
-                        activeEnd = (ageSinceEnter > 45) ? activeStart.plusSeconds(30) : now;
-                    }
+                    long ageSinceEnter = ChronoUnit.SECONDS.between(activeStart, now);
+                    activeEnd = (ageSinceEnter > 45) ? activeStart.plusSeconds(30) : now;
                 }
                 long diff = ChronoUnit.SECONDS.between(activeStart, activeEnd);
                 long paused = session.getAccumulatedPauseSeconds();
-                firstSec = Math.max(diff - paused, 0L);
+                firstSec = Math.min(Math.max(diff - paused, 0L), 7200L);
                 firstTotalSeconds += firstSec;
             } else if (!firstAttempts.isEmpty() && firstAttemptTime != null) {
                 LocalDateTime endRef = firstLastAttempt != null ? firstLastAttempt : firstAttemptTime;

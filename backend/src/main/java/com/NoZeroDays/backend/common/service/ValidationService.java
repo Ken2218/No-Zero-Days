@@ -137,22 +137,9 @@ public class ValidationService {
             }
         }
 
-        // Check if this submission is part of a RE_AUDIT (student has already completed this phase)
-        boolean isReAudit = false;
-        List<com.NoZeroDays.backend.common.model.GameSession> activeSessions =
-                gameSessionRepository.findByStudentProfileAndStatus(student, "ACTIVE");
-        if (!activeSessions.isEmpty()) {
-            com.NoZeroDays.backend.common.model.GameSession session = activeSessions.get(0);
-            int canonicalPhase = 1;
-            if ("M1_MATH".equalsIgnoreCase(module)) canonicalPhase = phase;
-            else if ("M2_MULTIPLIERS".equalsIgnoreCase(module)) canonicalPhase = 2 + phase;
-            else if ("M3_BUREAUCRACY".equalsIgnoreCase(module)) canonicalPhase = 4 + phase;
-            else if ("M4_TRIBUNAL".equalsIgnoreCase(module)) canonicalPhase = 7;
-
-            if ("COMPLETED".equalsIgnoreCase(session.getStatus()) || session.getCurrentPhase() > canonicalPhase) {
-                isReAudit = true;
-            }
-        }
+        // Check if this submission is part of a RE_AUDIT:
+        // An attempt is ONLY a re-audit if the student has ALREADY completed this phase previously.
+        boolean isReAudit = isPhaseAlreadyCompleted(student, module, phase);
 
         // Persist current attempt
         AttemptLog attempt = new AttemptLog();
@@ -161,16 +148,18 @@ public class ValidationService {
         attempt.setPhase(phase);
         attempt.setStep(step);
         attempt.setAttemptType(isReAudit ? "RE_AUDIT" : "FIRST_ATTEMPT");
+        attempt.setElapsedSeconds(request.getTimerSeconds() != null ? request.getTimerSeconds() : 0L);
         attempt.setSuccessful(success);
         attempt.setRedHerring(isRedHerring);
         attempt.setFeedbackMessage(message);
 
         attempt.setUserInputData(String.format(
-                "submittedValueA=%.2f, submittedValueB=%.2f, submittedRule=%s, submittedResult=%.2f",
+                "submittedValueA=%.2f, submittedValueB=%.2f, submittedRule=%s, submittedResult=%.2f, timerSeconds=%d",
                 request.getSubmittedValueA()  != null ? request.getSubmittedValueA()  : 0.0,
                 request.getSubmittedValueB()  != null ? request.getSubmittedValueB()  : 0.0,
                 request.getSubmittedRule(),
-                request.getSubmittedResult()  != null ? request.getSubmittedResult()  : 0.0));
+                request.getSubmittedResult()  != null ? request.getSubmittedResult()  : 0.0,
+                request.getTimerSeconds()     != null ? request.getTimerSeconds()     : 0L));
 
         attempt.setExpectedData(String.format(
                 "dailyRate=%.2f, daysPresent=%d, hourlyRate=%.2f, lateMinutes=%d, " +
@@ -295,5 +284,47 @@ public class ValidationService {
                 gameSessionRepository.save(session);
             }
         }
+    }
+
+    public boolean isPhaseAlreadyCompleted(StudentProfile student, String module, int phase) {
+        if (student == null) return false;
+        List<AttemptLog> phaseAttempts = attemptLogRepository.findLatestAttempts(student, module, phase);
+        if (phaseAttempts == null || phaseAttempts.isEmpty()) return false;
+        return isPhaseCompleteBySteps(phaseAttempts, module, phase);
+    }
+
+    private boolean isPhaseCompleteBySteps(List<AttemptLog> attempts, String module, int phase) {
+        List<String> requiredSteps = getRequiredStepsForPhase(module, phase);
+        if (requiredSteps.isEmpty()) return false;
+
+        java.util.Set<String> successfulSteps = attempts.stream()
+                .filter(AttemptLog::isSuccessful)
+                .map(a -> a.getStep() != null ? a.getStep().toUpperCase() : "")
+                .collect(java.util.stream.Collectors.toSet());
+
+        return requiredSteps.stream().allMatch(step -> successfulSteps.contains(step.toUpperCase()));
+    }
+
+    private List<String> getRequiredStepsForPhase(String module, int phase) {
+        if ("M1_MATH".equalsIgnoreCase(module) && phase == 1) {
+            return java.util.Arrays.asList("EXTRACT", "IDENTIFY_RULE", "EXECUTE");
+        } else if ("M1_MATH".equalsIgnoreCase(module) && phase == 2) {
+            return java.util.Arrays.asList("EXTRACT", "IDENTIFY_RULE", "EXECUTE", "COMPUTE_GROSS", "NET_PAY_FORMULA", "SYNTHESIS");
+        } else if ("M2_MULTIPLIERS".equalsIgnoreCase(module)) {
+            if (phase == 1) {
+                return java.util.Arrays.asList("EXTRACT", "FILTER_LUNCH", "ESTABLISH_PREMIUM", "ESTABLISH_FORMULA", "EXECUTE", "COMPUTE_GROSS", "NET_PAY_FORMULA", "SYNTHESIS");
+            } else {
+                return java.util.Arrays.asList("EXTRACT", "ESTABLISH_PREMIUM", "ESTABLISH_FORMULA", "EXECUTE", "COMPUTE_GROSS", "NET_PAY_FORMULA", "SYNTHESIS");
+            }
+        } else if ("M3_BUREAUCRACY".equalsIgnoreCase(module)) {
+            if (phase == 1) {
+                return java.util.Arrays.asList("EXTRACT", "PAGIBIG_DEDUCTION", "BASIC_SALARY", "IDENTIFY_RULE", "SYNTHESIS");
+            } else {
+                return java.util.Arrays.asList("EXTRACT", "PHILHEALTH_EE", "TAX_BRACKET", "WITHHOLDING_TAX", "SYNTHESIS");
+            }
+        } else if ("M4_TRIBUNAL".equalsIgnoreCase(module)) {
+            return java.util.Collections.singletonList("SUBMIT");
+        }
+        return java.util.Collections.emptyList();
     }
 }

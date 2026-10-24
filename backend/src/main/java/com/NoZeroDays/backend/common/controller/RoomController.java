@@ -993,21 +993,16 @@ public class RoomController {
                 boolean firstCompletedFound = false;
 
                 for (AttemptLog log : attempts) {
-                    if ("RE_AUDIT".equalsIgnoreCase(log.getAttemptType())) {
+                    if (firstCompletedFound) {
+                        // All required steps were already satisfied in a previous attempt -> genuine re-audit
                         reAuditAttempts.add(log);
-                    } else if ("FIRST_ATTEMPT".equalsIgnoreCase(log.getAttemptType())) {
-                        firstAttempts.add(log);
                     } else {
-                        // Chronological fallback for historical rows
-                        if (firstCompletedFound) {
-                            reAuditAttempts.add(log);
-                        } else {
-                            firstAttempts.add(log);
-                            if (log.isSuccessful() && log.getStep() != null) {
-                                stepsCompletedSoFar.add(log.getStep().toUpperCase());
-                                if (!requiredSteps.isEmpty() && requiredSteps.stream().allMatch(stepsCompletedSoFar::contains)) {
-                                    firstCompletedFound = true;
-                                }
+                        // Phase has not yet been completed -> must belong to the first completion attempt stream
+                        firstAttempts.add(log);
+                        if (log.isSuccessful() && log.getStep() != null) {
+                            stepsCompletedSoFar.add(log.getStep().toUpperCase());
+                            if (!requiredSteps.isEmpty() && requiredSteps.stream().allMatch(stepsCompletedSoFar::contains)) {
+                                firstCompletedFound = true;
                             }
                         }
                     }
@@ -1041,6 +1036,8 @@ public class RoomController {
                         || (firstLastSuccess != null && isPhaseCompleteBySteps(firstAttempts, module, phaseIndex));
 
                 boolean isCurrentActivePhase = (session != null && session.getCurrentPhase() == phaseId);
+                boolean isStudentActivelyInPhase = isCurrentActivePhase && session != null
+                        && session.getPhaseEnteredAt() != null && session.getPhaseExitedAt() == null;
 
                 long firstPhaseSeconds = 0;
                 if (isFirstCompleted) {
@@ -1048,9 +1045,38 @@ public class RoomController {
                     classFirstCompletedCounts[i]++;
                     classFirstTotalAttempts[i] += firstAttemptsCount;
 
-                    if (firstStart != null) {
+                    // Check if completion attempt log recorded real-time timerSeconds
+                    Long recordedSeconds = null;
+                    for (int k = firstAttempts.size() - 1; k >= 0; k--) {
+                        AttemptLog log = firstAttempts.get(k);
+                        if (log.isSuccessful()) {
+                            if (log.getElapsedSeconds() != null && log.getElapsedSeconds() > 0) {
+                                recordedSeconds = log.getElapsedSeconds();
+                                break;
+                            }
+                            if (log.getUserInputData() != null && log.getUserInputData().contains("timerSeconds=")) {
+                                try {
+                                    java.util.regex.Matcher m = java.util.regex.Pattern.compile("timerSeconds=(\\d+)").matcher(log.getUserInputData());
+                                    if (m.find()) {
+                                        long s = Long.parseLong(m.group(1));
+                                        if (s > 0) {
+                                            recordedSeconds = s;
+                                            break;
+                                        }
+                                    }
+                                } catch (Exception ignored) {}
+                            }
+                        }
+                    }
+
+                    if (recordedSeconds != null && recordedSeconds > 0) {
+                        firstPhaseSeconds = recordedSeconds;
+                    } else if (firstStart != null) {
+                        LocalDateTime startRef = (phaseId == 1 && session != null && session.getStartTime() != null)
+                                ? session.getStartTime()
+                                : firstStart;
                         LocalDateTime endRef = firstLastSuccess != null ? firstLastSuccess : (firstEnd != null ? firstEnd : firstStart);
-                        long diff = ChronoUnit.SECONDS.between(firstStart, endRef);
+                        long diff = ChronoUnit.SECONDS.between(startRef, endRef);
                         long paused = (session != null && isCurrentActivePhase) ? session.getAccumulatedPauseSeconds() : 0L;
                         diff = Math.max(diff - paused, 0L);
                         if (diff <= 0) {
@@ -1063,33 +1089,25 @@ public class RoomController {
                     studentFirstTotalSeconds += firstPhaseSeconds;
                     classFirstTotalSeconds[i] += firstPhaseSeconds;
                     classFirstTimeContributors[i]++;
-                } else if (isCurrentActivePhase) {
+                } else if (isStudentActivelyInPhase) {
                     classFirstActiveCounts[i]++;
                     classFirstTotalAttempts[i] += firstAttemptsCount;
-                    if (session != null && session.getPhaseEnteredAt() != null) {
-                        LocalDateTime activeStart = session.getPhaseEnteredAt();
-                        LocalDateTime activeEnd;
-                        if (session.getPhaseExitedAt() != null) {
-                            // Student is explicitly out of phase / logged out / paused
-                            activeEnd = session.getPhaseExitedAt();
-                        } else {
-                            LocalDateTime now = LocalDateTime.now();
-                            // Inactivity / disconnect safeguard: if no heartbeat received for > 30s, freeze at last heartbeat
-                            if (session.getLastHeartbeatAt() != null) {
-                                long heartbeatAge = ChronoUnit.SECONDS.between(session.getLastHeartbeatAt(), now);
-                                activeEnd = (heartbeatAge > 30) ? session.getLastHeartbeatAt() : now;
-                            } else {
-                                long ageSinceEnter = ChronoUnit.SECONDS.between(activeStart, now);
-                                activeEnd = (ageSinceEnter > 45) ? activeStart.plusSeconds(30) : now;
-                            }
-                        }
-                        long diff = ChronoUnit.SECONDS.between(activeStart, activeEnd);
-                        long paused = session.getAccumulatedPauseSeconds();
-                        firstPhaseSeconds = Math.max(diff - paused, 0L);
-                    } else if (firstStart != null && firstEnd != null) {
-                        long diff = ChronoUnit.SECONDS.between(firstStart, firstEnd);
-                        firstPhaseSeconds = Math.max(diff, Math.max(firstAttemptsCount * 30L, 20L));
+                    LocalDateTime activeStart = session.getPhaseEnteredAt();
+                    LocalDateTime activeEnd;
+                    LocalDateTime now = LocalDateTime.now();
+                    // Inactivity / disconnect safeguard: if no heartbeat received for > 30s, freeze at last heartbeat
+                    if (session.getLastHeartbeatAt() != null) {
+                        long heartbeatAge = ChronoUnit.SECONDS.between(session.getLastHeartbeatAt(), now);
+                        activeEnd = (heartbeatAge > 30) ? session.getLastHeartbeatAt() : now;
+                    } else {
+                        long ageSinceEnter = ChronoUnit.SECONDS.between(activeStart, now);
+                        activeEnd = (ageSinceEnter > 45) ? activeStart.plusSeconds(30) : now;
                     }
+                    long diff = ChronoUnit.SECONDS.between(activeStart, activeEnd);
+                    long paused = session.getAccumulatedPauseSeconds();
+                    // Hard cap runaway timer if student abandoned without logging out (max 2 hours)
+                    diff = Math.min(Math.max(diff - paused, 0L), 7200L);
+                    firstPhaseSeconds = diff;
                     studentFirstTotalSeconds += firstPhaseSeconds;
                 } else if (!firstAttempts.isEmpty()) {
                     // Non-consecutive phase previously attempted by student!
@@ -1108,7 +1126,7 @@ public class RoomController {
                 String firstStatus;
                 if (isFirstCompleted) {
                     firstStatus = "COMPLETED";
-                } else if (isCurrentActivePhase || !firstAttempts.isEmpty()) {
+                } else if (isStudentActivelyInPhase || !firstAttempts.isEmpty()) {
                     firstStatus = "ACTIVE";
                 } else {
                     firstStatus = "NOT_ATTEMPTED";
@@ -1141,12 +1159,39 @@ public class RoomController {
                     studentReAuditTotalAttempts += reAuditAttemptsCount;
                     classReAuditTotalAttempts[i] += reAuditAttemptsCount;
 
-                    LocalDateTime endRef = reAuditLastSuccess != null ? reAuditLastSuccess : (reAuditEnd != null ? reAuditEnd : reAuditStart);
-                    long diff = ChronoUnit.SECONDS.between(reAuditStart, endRef);
-                    if (diff <= 0) {
-                        diff = Math.max(reAuditAttemptsCount * 30L, 25L);
+                    Long recordedReAuditSeconds = null;
+                    for (int k = reAuditAttempts.size() - 1; k >= 0; k--) {
+                        AttemptLog log = reAuditAttempts.get(k);
+                        if (log.isSuccessful()) {
+                            if (log.getElapsedSeconds() != null && log.getElapsedSeconds() > 0) {
+                                recordedReAuditSeconds = log.getElapsedSeconds();
+                                break;
+                            }
+                            if (log.getUserInputData() != null && log.getUserInputData().contains("timerSeconds=")) {
+                                try {
+                                    java.util.regex.Matcher m = java.util.regex.Pattern.compile("timerSeconds=(\\d+)").matcher(log.getUserInputData());
+                                    if (m.find()) {
+                                        long s = Long.parseLong(m.group(1));
+                                        if (s > 0) {
+                                            recordedReAuditSeconds = s;
+                                            break;
+                                        }
+                                    }
+                                } catch (Exception ignored) {}
+                            }
+                        }
                     }
-                    reAuditPhaseSeconds = Math.max(diff, 20L);
+
+                    if (recordedReAuditSeconds != null && recordedReAuditSeconds > 0) {
+                        reAuditPhaseSeconds = recordedReAuditSeconds;
+                    } else {
+                        LocalDateTime endRef = reAuditLastSuccess != null ? reAuditLastSuccess : (reAuditEnd != null ? reAuditEnd : reAuditStart);
+                        long diff = ChronoUnit.SECONDS.between(reAuditStart, endRef);
+                        if (diff <= 0) {
+                            diff = Math.max(reAuditAttemptsCount * 30L, 25L);
+                        }
+                        reAuditPhaseSeconds = Math.max(diff, 20L);
+                    }
                     studentReAuditTotalSeconds += reAuditPhaseSeconds;
 
                     if (isReAuditCompleted) {

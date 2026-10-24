@@ -316,20 +316,14 @@ public class ValidationController {
             boolean firstCompletedFound = false;
 
             for (AttemptLog log : phaseAttempts) {
-                if ("RE_AUDIT".equalsIgnoreCase(log.getAttemptType())) {
+                if (firstCompletedFound) {
                     reAuditAttempts.add(log);
-                } else if ("FIRST_ATTEMPT".equalsIgnoreCase(log.getAttemptType())) {
-                    firstAttempts.add(log);
                 } else {
-                    if (firstCompletedFound) {
-                        reAuditAttempts.add(log);
-                    } else {
-                        firstAttempts.add(log);
-                        if (log.isSuccessful() && log.getStep() != null) {
-                            stepsCompletedSoFar.add(log.getStep().toUpperCase());
-                            if (!requiredSteps.isEmpty() && requiredSteps.stream().allMatch(stepsCompletedSoFar::contains)) {
-                                firstCompletedFound = true;
-                            }
+                    firstAttempts.add(log);
+                    if (log.isSuccessful() && log.getStep() != null) {
+                        stepsCompletedSoFar.add(log.getStep().toUpperCase());
+                        if (!requiredSteps.isEmpty() && requiredSteps.stream().allMatch(stepsCompletedSoFar::contains)) {
+                            firstCompletedFound = true;
                         }
                     }
                 }

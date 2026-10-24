@@ -33,8 +33,12 @@ public class ValidationRequest {
     private Double submittedValueB; // e.g. extracted value B
     private String submittedRule;   // e.g. operator or formula identifier
     private Double submittedResult; // e.g. final calculated value
+    private Long timerSeconds;      // Real-time elapsed timer from student client
 
     // Getters and Setters
+    public Long getTimerSeconds() { return timerSeconds; }
+    public void setTimerSeconds(Long timerSeconds) { this.timerSeconds = timerSeconds; }
+
     public String getStudentNumber() { return studentNumber; }
     public void setStudentNumber(String studentNumber) { this.studentNumber = studentNumber; }
 
