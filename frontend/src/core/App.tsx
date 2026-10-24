@@ -321,11 +321,7 @@ function App() {
     const namespace = getStorageNamespace(restoredNumber, restoredRoom);
     for (let p = 1; p <= 7; p++) {
       try {
-        let saved = localStorage.getItem(phaseTimerKey(p, namespace));
-        if (!saved && restoredRoom) {
-          const soloNamespace = getStorageNamespace(restoredNumber, '');
-          saved = localStorage.getItem(phaseTimerKey(p, soloNamespace));
-        }
+        const saved = localStorage.getItem(phaseTimerKey(p, namespace));
         initial[p] = saved ? parseInt(saved, 10) : 0;
       } catch (_) {
         initial[p] = 0;
@@ -400,26 +396,22 @@ function App() {
   };
 
   const handleStudentJoinedRoom = (code: string, stu: any) => {
+    // Joining a room starts a fresh gameplay record: clear any local timers,
+    // autosaved progress, or remembered view scoped to this room so pre-join
+    // (free-play or prior-room) time never bleeds into the room's reports.
+    if (code && stu?.studentNumber) {
+      const roomNamespace = getStorageNamespace(stu.studentNumber, code);
+      for (let p = 1; p <= 7; p++) {
+        localStorage.removeItem(phaseTimerKey(p, roomNamespace));
+        sessionStorage.removeItem(phaseProgressKey(p, roomNamespace));
+      }
+      localStorage.removeItem(currentViewKey(roomNamespace));
+    }
+
     setRoomCode(code);
     setStudent(stu);
     localStorage.setItem('studentRoomCode', code);
     localStorage.setItem('student', JSON.stringify(stu));
-
-    // Preserve solo timers and autosaved progress across the namespace transition
-    if (code && stu?.studentNumber) {
-      const soloNamespace = getStorageNamespace(stu.studentNumber, '');
-      const roomNamespace = getStorageNamespace(stu.studentNumber, code);
-      for (let p = 1; p <= 7; p++) {
-        const soloTimer = localStorage.getItem(phaseTimerKey(p, soloNamespace));
-        if (soloTimer && !localStorage.getItem(phaseTimerKey(p, roomNamespace))) {
-          localStorage.setItem(phaseTimerKey(p, roomNamespace), soloTimer);
-        }
-        const soloProgress = sessionStorage.getItem(phaseProgressKey(p, soloNamespace));
-        if (soloProgress && !sessionStorage.getItem(phaseProgressKey(p, roomNamespace))) {
-          sessionStorage.setItem(phaseProgressKey(p, roomNamespace), soloProgress);
-        }
-      }
-    }
     setCurrentView('DASHBOARD');
   };
 
