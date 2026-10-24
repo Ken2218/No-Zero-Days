@@ -83,6 +83,13 @@ public class GameSession {
     @Column(name = "last_recorded_seconds")
     private Long lastRecordedSeconds = 0L;
 
+    /**
+     * The specific phase room (1-7) the student is currently inside right now.
+     * Null if the student is on the Dashboard or outside a phase room.
+     */
+    @Column(name = "active_phase")
+    private Integer activePhase = null;
+
     // Default Constructor
     public GameSession() {}
 
@@ -126,4 +133,7 @@ public class GameSession {
 
     public Long getLastRecordedSeconds() { return lastRecordedSeconds != null ? lastRecordedSeconds : 0L; }
     public void setLastRecordedSeconds(Long lastRecordedSeconds) { this.lastRecordedSeconds = lastRecordedSeconds; }
+
+    public Integer getActivePhase() { return activePhase; }
+    public void setActivePhase(Integer activePhase) { this.activePhase = activePhase; }
 }

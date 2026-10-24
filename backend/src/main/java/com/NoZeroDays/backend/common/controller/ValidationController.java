@@ -127,6 +127,7 @@ public class ValidationController {
             GameSession newSession = new GameSession(student);
             newSession.setCurrentModule(module);
             newSession.setCurrentPhase(canonicalPhase);
+            newSession.setActivePhase(canonicalPhase);
             newSession.setStatus("ACTIVE");
             newSession.setStartTime(now);
             newSession.setPhaseEnteredAt(now);
@@ -148,16 +149,18 @@ public class ValidationController {
                 session.setStartTime(now);
                 dirty = true;
             }
-            if (session.getCurrentPhase() != canonicalPhase) {
-                session.setCurrentPhase(canonicalPhase);
+            // Update active room presence to the phase being submitted
+            boolean isDifferentPhase = session.getActivePhase() == null || !session.getActivePhase().equals(canonicalPhase);
+            session.setActivePhase(canonicalPhase);
+            if (isDifferentPhase || session.getPhaseEnteredAt() == null) {
                 session.setPhaseEnteredAt(now);
                 session.setPhaseExitedAt(null);
                 session.setAccumulatedPauseSeconds(0L);
                 dirty = true;
-            } else if (session.getPhaseEnteredAt() == null) {
-                session.setPhaseEnteredAt(now);
-                session.setPhaseExitedAt(null);
-                session.setAccumulatedPauseSeconds(0L);
+            }
+            // Milestone currentPhase should only advance forward, never rewind
+            if (canonicalPhase > session.getCurrentPhase()) {
+                session.setCurrentPhase(canonicalPhase);
                 dirty = true;
             }
             if (dirty) {

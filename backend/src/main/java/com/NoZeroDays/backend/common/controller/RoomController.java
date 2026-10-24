@@ -823,20 +823,35 @@ public class RoomController {
         LocalDateTime now = LocalDateTime.now();
         session.setLastHeartbeatAt(now);
 
-        // currentPhase is authoritative and advanced only by successful phase
-        // completion (ValidationService.updateProgress). Presence pings from stale
-        // tabs must never rewind it, so the client-reported phase is ignored here.
-        if (session.getPhaseExitedAt() != null) {
+        Integer reportedPhase = null;
+        if (body != null && body.get("phase") != null) {
+            try {
+                reportedPhase = Integer.parseInt(body.get("phase").toString());
+            } catch (Exception ignored) {}
+        }
+        if (reportedPhase == null || reportedPhase < 1 || reportedPhase > 7) {
+            reportedPhase = session.getCurrentPhase();
+        }
+
+        // Track the specific phase room the student entered
+        boolean isDifferentPhase = session.getActivePhase() == null || !session.getActivePhase().equals(reportedPhase);
+        session.setActivePhase(reportedPhase);
+
+        if (isDifferentPhase) {
+            // New presence window for this specific phase room
+            session.setPhaseEnteredAt(now);
+            session.setPhaseExitedAt(null);
+            session.setAccumulatedPauseSeconds(0L);
+        } else if (session.getPhaseExitedAt() != null) {
+            // Resuming the same phase room after a pause
             long pauseGap = ChronoUnit.SECONDS.between(session.getPhaseExitedAt(), now);
             session.setAccumulatedPauseSeconds(
                     session.getAccumulatedPauseSeconds() + Math.max(pauseGap, 0));
             session.setPhaseExitedAt(null); // clear exit marker — student is back
-        }
-
-        // Only set phaseEnteredAt if not already in an active window
-        if (session.getPhaseEnteredAt() == null) {
+        } else if (session.getPhaseEnteredAt() == null) {
             session.setPhaseEnteredAt(now);
         }
+
         if (body != null && body.get("timerSeconds") != null) {
             try {
                 long s = Long.parseLong(body.get("timerSeconds").toString());
@@ -846,7 +861,8 @@ public class RoomController {
         gameSessionRepository.save(session);
 
         System.out.println("[PHASE-ENTER] student=" + studentNumber
-                + " phase=" + session.getCurrentPhase()
+                + " activePhase=" + session.getActivePhase()
+                + " milestone=" + session.getCurrentPhase()
                 + " enteredAt=" + session.getPhaseEnteredAt()
                 + " accPause=" + session.getAccumulatedPauseSeconds() + "s");
 
@@ -881,24 +897,29 @@ public class RoomController {
         GameSession session = sessions.get(0);
         LocalDateTime now = LocalDateTime.now();
 
-        // Ignore exit pings from stale tabs: if the reported phase doesn't match the
-        // session's authoritative current phase, this exit belongs to a phase the
-        // student already left and must not pause the current phase's timer.
+        Integer reportedPhase = null;
         if (body != null && body.get("phase") != null) {
             try {
-                int reportedPhase = Integer.parseInt(body.get("phase").toString());
-                if (session.getCurrentPhase() != reportedPhase) {
-                    System.out.println("[PHASE-EXIT] student=" + studentNumber
-                            + " ignored stale exit for phase " + reportedPhase
-                            + " (current=" + session.getCurrentPhase() + ")");
-                    return ResponseEntity.ok(Map.of("ok", true, "ignored", true));
-                }
+                reportedPhase = Integer.parseInt(body.get("phase").toString());
             } catch (Exception ignored) {}
         }
 
-        // Freeze/pause the active timer at this moment
+        // Only ignore if reported phase doesn't match the student's active room
+        if (reportedPhase != null && session.getActivePhase() != null
+                && !reportedPhase.equals(session.getActivePhase())) {
+            System.out.println("[PHASE-EXIT] student=" + studentNumber
+                    + " ignored stale exit for phase " + reportedPhase
+                    + " (active=" + session.getActivePhase() + ")");
+            return ResponseEntity.ok(Map.of("ok", true, "ignored", true));
+        }
+
+        // Freeze/pause the active timer at this moment while preserving active room presence
+        // so the teacher dashboard shows THIS specific phase as paused (not leaked into milestone phase)
         session.setPhaseExitedAt(now);
         session.setLastHeartbeatAt(now);
+        if (reportedPhase != null) {
+            session.setActivePhase(reportedPhase);
+        }
         if (body != null && body.get("timerSeconds") != null) {
             try {
                 long s = Long.parseLong(body.get("timerSeconds").toString());
@@ -939,14 +960,22 @@ public class RoomController {
         GameSession session = sessions.get(0);
         LocalDateTime now = LocalDateTime.now();
         session.setLastHeartbeatAt(now);
+
+        if (body != null && body.get("phase") != null) {
+            try {
+                int p = Integer.parseInt(body.get("phase").toString());
+                if (p >= 1 && p <= 7) {
+                    session.setActivePhase(p);
+                }
+            } catch (Exception ignored) {}
+        }
+
         if (body != null && body.get("timerSeconds") != null) {
             try {
                 long s = Long.parseLong(body.get("timerSeconds").toString());
                 if (s >= 0) session.setLastRecordedSeconds(s);
             } catch (Exception ignored) {}
         }
-        // Heartbeats must never mutate currentPhase — stale tabs ping with outdated
-        // phase numbers and would rewind the authoritative progression.
         gameSessionRepository.save(session);
 
         return ResponseEntity.ok(Map.of("ok", true, "heartbeatAt", now.toString()));
@@ -1005,6 +1034,7 @@ public class RoomController {
                     .findFirstByStudentProfileOrderByIdDesc(student)
                     .orElse(null);
             int currentPhaseIndex = session != null ? session.getCurrentPhase() : 1;
+            Integer activePhase = session != null ? session.getActivePhase() : null;
             boolean isSessionCompleted = session != null && "COMPLETED".equalsIgnoreCase(session.getStatus());
 
             // Fetch all attempts for this student sorted chronologically
@@ -1099,7 +1129,9 @@ public class RoomController {
                 boolean isFirstCompleted = isSessionCompleted || firstCompletedFound
                         || (firstLastSuccess != null && isPhaseCompleteBySteps(firstAttempts, module, phaseIndex));
 
-                boolean isCurrentActivePhase = (session != null && session.getCurrentPhase() == phaseId);
+                // Active phase is the specific room the student is currently inside (session.getActivePhase()).
+                // If activePhase is null, the student has not entered any phase room (e.g. on Dashboard).
+                boolean isCurrentActivePhase = (activePhase != null && activePhase == phaseId);
                 boolean isStudentActivelyInPhase = isCurrentActivePhase && session != null
                         && session.getPhaseEnteredAt() != null && session.getPhaseExitedAt() == null;
                 boolean isStudentPausedInPhase = isCurrentActivePhase && session != null
@@ -1372,8 +1404,11 @@ public class RoomController {
             }
             totalRoomAttempts += studentTotalAttempts;
 
-            String currentPhaseTitle = (currentPhaseIndex <= 7)
-                    ? PHASE_TITLES[currentPhaseIndex - 1]
+            int displayPhaseIndex = (activePhase != null)
+                    ? activePhase
+                    : (currentPhaseIndex <= 7 ? currentPhaseIndex : 7);
+            String currentPhaseTitle = (displayPhaseIndex <= 7)
+                    ? PHASE_TITLES[displayPhaseIndex - 1]
                     : "Final Audit Complete";
 
             Map<String, Object> stuMap = new HashMap<>();
@@ -1381,7 +1416,7 @@ public class RoomController {
             stuMap.put("fullName", student.getFullName());
             stuMap.put("section", student.getSection() != null ? student.getSection() : room.getSection());
             stuMap.put("completedPhases", studentCompletedPhases);
-            stuMap.put("currentPhase", currentPhaseIndex);
+            stuMap.put("currentPhase", displayPhaseIndex);
             stuMap.put("currentPhaseTitle", currentPhaseTitle);
             stuMap.put("attempts", studentTotalAttempts);
             stuMap.put("status", (studentCompletedPhases >= 7 || isSessionCompleted) ? "COMPLETED" : "ACTIVE");

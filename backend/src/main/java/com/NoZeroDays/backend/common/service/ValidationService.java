@@ -399,6 +399,7 @@ public class ValidationService {
 
                 // Reset phase presence timer state so the next phase timer does NOT
                 // start until the student explicitly navigates into that phase room.
+                session.setActivePhase(null);
                 session.setPhaseEnteredAt(null);
                 session.setPhaseExitedAt(null);
                 session.setAccumulatedPauseSeconds(0L);
@@ -409,6 +410,15 @@ public class ValidationService {
                     session.setStatus("COMPLETED");
                     justCompleted = true;
                 }
+                gameSessionRepository.save(session);
+            } else {
+                // Re-audit completion: reset active phase room so timer ceases
+                session.setActivePhase(null);
+                session.setPhaseEnteredAt(null);
+                session.setPhaseExitedAt(null);
+                session.setAccumulatedPauseSeconds(0L);
+                session.setLastHeartbeatAt(null);
+                session.setLastRecordedSeconds(0L);
                 gameSessionRepository.save(session);
             }
         }
