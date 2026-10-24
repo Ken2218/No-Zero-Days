@@ -45,8 +45,8 @@ public class AuthService {
     /**
      * Flexible Student Login verification:
      * - Identifier must exist as a student number OR email.
-     * - Full name is REQUIRED and must plausibly match the registered record
-     *   (case-insensitive, whitespace-insensitive, token-based).
+     * - Full name is OPTIONAL; when supplied it must plausibly match the
+     *   registered record (case-insensitive, whitespace-insensitive, token-based).
      * - Accounts upgraded with a password must supply it; legacy accounts
      *   (passwordHash == null) ignore the password and are flagged for the
      *   controller to return requiresUpgrade.
@@ -54,9 +54,6 @@ public class AuthService {
     public StudentProfile authenticateStudent(String rawIdentifier, String rawName, String password) {
         if (rawIdentifier == null || rawIdentifier.trim().isEmpty()) {
             throw new IllegalArgumentException("Student number or email cannot be empty.");
-        }
-        if (rawName == null || rawName.trim().isEmpty()) {
-            throw new IllegalArgumentException("Full name is required to sign in.");
         }
 
         String identifier = rawIdentifier.trim();
@@ -72,7 +69,8 @@ public class AuthService {
 
         StudentProfile profile = existing.get();
 
-        if (!isFlexibleNameMatch(profile.getFullName(), rawName)) {
+        if (rawName != null && !rawName.trim().isEmpty()
+                && !isFlexibleNameMatch(profile.getFullName(), rawName)) {
             throw new IllegalArgumentException("Entered name '" + rawName.trim()
                 + "' does not match registered record for '" + identifier
                 + "'. Please check your credentials or sign up first.");
@@ -107,9 +105,6 @@ public class AuthService {
         if (rawIdentifier == null || rawIdentifier.trim().isEmpty()) {
             throw new IllegalArgumentException("Student number or email cannot be empty.");
         }
-        if (rawName == null || rawName.trim().isEmpty()) {
-            throw new IllegalArgumentException("Full name is required.");
-        }
 
         String email = (rawEmail != null) ? rawEmail.trim() : "";
         if (email.isEmpty()) {
@@ -132,7 +127,8 @@ public class AuthService {
         }
         StudentProfile profile = existing.get();
 
-        if (!isFlexibleNameMatch(profile.getFullName(), rawName)) {
+        if (rawName != null && !rawName.trim().isEmpty()
+                && !isFlexibleNameMatch(profile.getFullName(), rawName)) {
             throw new IllegalArgumentException("Entered name '" + rawName.trim()
                 + "' does not match registered record for '" + identifier
                 + "'. Please check your credentials.");

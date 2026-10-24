@@ -44,10 +44,6 @@ export default function Login({ onLoginSuccess, onTeacherCreateRoom }: LoginProp
       setError('Please enter your Student Number or Email.');
       return;
     }
-    if (!fullName.trim()) {
-      setError('Please enter your Full Name.');
-      return;
-    }
 
     setLoading(true);
     setError('');
@@ -574,7 +570,8 @@ export default function Login({ onLoginSuccess, onTeacherCreateRoom }: LoginProp
               </>
             )}
 
-            {/* Full Name Field */}
+            {/* Full Name Field — student Sign Up only; teachers keep it at both modes */}
+            {(isTeacher || authMode === 'SIGNUP') && (
             <div className="input-group">
               <label>
                 {isTeacher
@@ -596,9 +593,10 @@ export default function Login({ onLoginSuccess, onTeacherCreateRoom }: LoginProp
                 onChange={(e) => setFullName(e.target.value)}
                 disabled={loading}
                 className="retro-input"
-                required={!isTeacher || authMode === 'SIGNUP'}
+                required
               />
             </div>
+            )}
 
             {/* Action Submit Button */}
             <button type="submit" disabled={loading} className="login-btn">
