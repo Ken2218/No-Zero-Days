@@ -41,7 +41,7 @@ export default function Login({ onLoginSuccess, onTeacherCreateRoom }: LoginProp
   const handleStudentLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!studentNumber.trim()) {
-      setError('Please enter your Student Number.');
+      setError('Please enter your Student Number or Email.');
       return;
     }
     if (!fullName.trim()) {
@@ -460,13 +460,15 @@ export default function Login({ onLoginSuccess, onTeacherCreateRoom }: LoginProp
               </select>
             </div>
 
-            {/* Student ID Field — Only for Students */}
+            {/* Student Identifier — ID or Email at Login; ID only at Sign Up */}
             {!isTeacher && (
               <div className="input-group">
-                <label>STUDENT NUMBER</label>
+                <label>
+                  {authMode === 'SIGNUP' ? 'STUDENT NUMBER' : 'STUDENT NUMBER OR EMAIL'}
+                </label>
                 <input
                   type="text"
-                  placeholder="e.g., 2026-1002"
+                  placeholder={authMode === 'SIGNUP' ? 'e.g., 2026-1002' : 'e.g., 2026-1002 or student@gmail.com'}
                   value={studentNumber}
                   onChange={(e) => setStudentNumber(e.target.value)}
                   disabled={loading}

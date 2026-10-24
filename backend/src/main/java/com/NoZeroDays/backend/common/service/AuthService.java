@@ -44,32 +44,37 @@ public class AuthService {
 
     /**
      * Flexible Student Login verification:
-     * - Student number must exist.
+     * - Identifier must exist as a student number OR email.
      * - Full name is REQUIRED and must plausibly match the registered record
      *   (case-insensitive, whitespace-insensitive, token-based).
      * - Accounts upgraded with a password must supply it; legacy accounts
      *   (passwordHash == null) ignore the password and are flagged for the
      *   controller to return requiresUpgrade.
      */
-    public StudentProfile authenticateStudent(String rawStudentNumber, String rawName, String password) {
-        if (rawStudentNumber == null || rawStudentNumber.trim().isEmpty()) {
-            throw new IllegalArgumentException("Student number cannot be empty.");
+    public StudentProfile authenticateStudent(String rawIdentifier, String rawName, String password) {
+        if (rawIdentifier == null || rawIdentifier.trim().isEmpty()) {
+            throw new IllegalArgumentException("Student number or email cannot be empty.");
         }
         if (rawName == null || rawName.trim().isEmpty()) {
             throw new IllegalArgumentException("Full name is required to sign in.");
         }
 
-        String studentNumber = rawStudentNumber.trim();
-        Optional<StudentProfile> existing = studentRepository.findByStudentNumber(studentNumber);
+        String identifier = rawIdentifier.trim();
+        boolean isEmail = identifier.contains("@");
+        Optional<StudentProfile> existing = isEmail
+                ? studentRepository.findByEmailIgnoreCase(identifier)
+                : studentRepository.findByStudentNumber(identifier);
         if (existing.isEmpty()) {
-            throw new IllegalArgumentException("Student account not found with ID '" + studentNumber + "'. Please sign up first.");
+            throw new IllegalArgumentException(isEmail
+                    ? "Student account not found with email '" + identifier + "'. Please sign up first."
+                    : "Student account not found with ID '" + identifier + "'. Please sign up first.");
         }
 
         StudentProfile profile = existing.get();
 
         if (!isFlexibleNameMatch(profile.getFullName(), rawName)) {
             throw new IllegalArgumentException("Entered name '" + rawName.trim()
-                + "' does not match registered record for Student ID '" + studentNumber
+                + "' does not match registered record for '" + identifier
                 + "'. Please check your credentials or sign up first.");
         }
 
@@ -78,7 +83,7 @@ public class AuthService {
                 throw new IllegalArgumentException("Password is required. This account was upgraded with a password.");
             }
             if (!PasswordHasher.verify(password, profile.getPasswordHash())) {
-                throw new IllegalArgumentException("Incorrect password for Student ID '" + studentNumber + "'.");
+                throw new IllegalArgumentException("Incorrect password for '" + identifier + "'.");
             }
         }
 
@@ -93,14 +98,14 @@ public class AuthService {
 
     /**
      * Migration path for pre-password student accounts: verifies identity the
-     * same way login does (student number + flexible name match), then attaches
-     * the student's email and password. Accounts that already have a password
-     * cannot be re-claimed here — they must sign in normally.
+     * same way login does (student number OR email + flexible name match), then
+     * attaches the student's email and password. Accounts that already have a
+     * password cannot be re-claimed here — they must sign in normally.
      */
-    public StudentProfile upgradeStudentCredentials(String rawStudentNumber, String rawName,
+    public StudentProfile upgradeStudentCredentials(String rawIdentifier, String rawName,
                                                     String rawEmail, String password) {
-        if (rawStudentNumber == null || rawStudentNumber.trim().isEmpty()) {
-            throw new IllegalArgumentException("Student number cannot be empty.");
+        if (rawIdentifier == null || rawIdentifier.trim().isEmpty()) {
+            throw new IllegalArgumentException("Student number or email cannot be empty.");
         }
         if (rawName == null || rawName.trim().isEmpty()) {
             throw new IllegalArgumentException("Full name is required.");
@@ -117,24 +122,27 @@ public class AuthService {
             throw new IllegalArgumentException("Password must be at least 8 characters.");
         }
 
-        String studentNumber = rawStudentNumber.trim();
-        Optional<StudentProfile> existing = studentRepository.findByStudentNumber(studentNumber);
+        String identifier = rawIdentifier.trim();
+        boolean isEmail = identifier.contains("@");
+        Optional<StudentProfile> existing = isEmail
+                ? studentRepository.findByEmailIgnoreCase(identifier)
+                : studentRepository.findByStudentNumber(identifier);
         if (existing.isEmpty()) {
-            throw new IllegalArgumentException("Student account not found with ID '" + studentNumber + "'. Please sign up first.");
+            throw new IllegalArgumentException("Student account not found. Please sign up first.");
         }
         StudentProfile profile = existing.get();
 
         if (!isFlexibleNameMatch(profile.getFullName(), rawName)) {
             throw new IllegalArgumentException("Entered name '" + rawName.trim()
-                + "' does not match registered record for Student ID '" + studentNumber
+                + "' does not match registered record for '" + identifier
                 + "'. Please check your credentials.");
         }
         if (profile.getPasswordHash() != null) {
-            throw new IllegalArgumentException("Student ID '" + studentNumber + "' already has a password. Please sign in instead.");
+            throw new IllegalArgumentException("Account '" + identifier + "' already has a password. Please sign in instead.");
         }
 
         Optional<StudentProfile> emailOwner = studentRepository.findByEmailIgnoreCase(email);
-        if (emailOwner.isPresent() && !emailOwner.get().getStudentNumber().equalsIgnoreCase(studentNumber)) {
+        if (emailOwner.isPresent() && !emailOwner.get().getStudentNumber().equalsIgnoreCase(profile.getStudentNumber())) {
             throw new IllegalArgumentException("Email '" + email + "' is already used by another student account.");
         }
 

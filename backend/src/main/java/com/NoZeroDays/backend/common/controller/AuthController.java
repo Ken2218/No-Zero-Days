@@ -147,15 +147,15 @@ public class AuthController {
     }
 
     private ResponseEntity<?> authenticateStudent(LoginRequest request) {
-        String studentNumber = request.getEffectiveStudentNumber();
+        String identifier = request.getEffectiveStudentNumber();
         String name = request.getEffectiveName();
 
-        if (studentNumber.isEmpty()) {
-            return ResponseEntity.badRequest().body(Map.of("error", "Student number cannot be empty."));
+        if (identifier.isEmpty()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Student number or email cannot be empty."));
         }
 
         try {
-            StudentProfile profile = authService.authenticateStudent(studentNumber, name, request.getPassword());
+            StudentProfile profile = authService.authenticateStudent(identifier, name, request.getPassword());
             if (profile.getPasswordHash() == null) {
                 // Legacy pre-migration account: identity verified, but the student
                 // must attach email + password before regaining access. Kill any

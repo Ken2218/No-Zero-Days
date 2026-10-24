@@ -244,7 +244,7 @@ public class ValidationController {
         String fullName = request.getEffectiveName();
 
         if (studentNumber.isEmpty()) {
-            return ResponseEntity.badRequest().body(Map.of("error", "Student number cannot be empty."));
+            return ResponseEntity.badRequest().body(Map.of("error", "Student number or email cannot be empty."));
         }
 
         try {
