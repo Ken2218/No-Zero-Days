@@ -309,13 +309,46 @@ function App() {
   // when actively inside the phase room.
   const isStudentInPhase = currentView.startsWith('PHASE');
 
+  // Real-time per-phase elapsed timer (seconds)
+  const [phaseTimers, setPhaseTimers] = useState<{ [phase: number]: number }>(() => {
+    const initial: { [phase: number]: number } = {};
+    let restoredNumber = '';
+    try {
+      const parsedStudent = JSON.parse(localStorage.getItem('student') || 'null');
+      restoredNumber = (parsedStudent as any)?.studentNumber || '';
+    } catch (_) {}
+    const restoredRoom = localStorage.getItem('studentRoomCode') || '';
+    const namespace = getStorageNamespace(restoredNumber, restoredRoom);
+    for (let p = 1; p <= 7; p++) {
+      try {
+        let saved = localStorage.getItem(phaseTimerKey(p, namespace));
+        if (!saved && restoredRoom) {
+          const soloNamespace = getStorageNamespace(restoredNumber, '');
+          saved = localStorage.getItem(phaseTimerKey(p, soloNamespace));
+        }
+        initial[p] = saved ? parseInt(saved, 10) : 0;
+      } catch (_) {
+        initial[p] = 0;
+      }
+    }
+    return initial;
+  });
+
+  const phaseTimersRef = useRef(phaseTimers);
+  useEffect(() => {
+    phaseTimersRef.current = phaseTimers;
+  }, [phaseTimers]);
+
   const notifyPhaseEnter = async (phaseIndex?: number) => {
     const studentNum = (student as any)?.studentNumber;
     if (!studentNum) return;
+    const targetPhase = phaseIndex || activePhaseIndex;
     const currentRoom = roomCode || localStorage.getItem('studentRoomCode') || '';
+    const currentTimer = phaseTimersRef.current[targetPhase] ?? phaseTimers[targetPhase] ?? 0;
     const payload = JSON.stringify({
       studentNumber: studentNum,
-      phase: phaseIndex || activePhaseIndex
+      phase: targetPhase,
+      timerSeconds: currentTimer
     });
     try {
       const enterUrl = currentRoom
@@ -336,7 +369,12 @@ function App() {
     const studentNum = (student as any)?.studentNumber;
     if (!studentNum) return;
     const currentRoom = roomCode || localStorage.getItem('studentRoomCode') || '';
-    const payload = JSON.stringify({ studentNumber: studentNum, phase: activePhaseIndex });
+    const currentTimer = phaseTimersRef.current[activePhaseIndex] ?? phaseTimers[activePhaseIndex] ?? 0;
+    const payload = JSON.stringify({
+      studentNumber: studentNum,
+      phase: activePhaseIndex,
+      timerSeconds: currentTimer
+    });
 
     const exitUrl = currentRoom
       ? `${API_BASE_URL}/api/rooms/${currentRoom}/phase-exit`
@@ -361,26 +399,29 @@ function App() {
     setCurrentView('DASHBOARD');
   };
 
-  // Real-time per-phase elapsed timer (seconds)
-  const [phaseTimers, setPhaseTimers] = useState<{ [phase: number]: number }>(() => {
-    const initial: { [phase: number]: number } = {};
-    let restoredNumber = '';
-    try {
-      const parsedStudent = JSON.parse(localStorage.getItem('student') || 'null');
-      restoredNumber = (parsedStudent as any)?.studentNumber || '';
-    } catch (_) {}
-    const restoredRoom = localStorage.getItem('studentRoomCode') || '';
-    const namespace = getStorageNamespace(restoredNumber, restoredRoom);
-    for (let p = 1; p <= 7; p++) {
-      try {
-        const saved = localStorage.getItem(phaseTimerKey(p, namespace));
-        initial[p] = saved ? parseInt(saved, 10) : 0;
-      } catch (_) {
-        initial[p] = 0;
+  const handleStudentJoinedRoom = (code: string, stu: any) => {
+    setRoomCode(code);
+    setStudent(stu);
+    localStorage.setItem('studentRoomCode', code);
+    localStorage.setItem('student', JSON.stringify(stu));
+
+    // Preserve solo timers and autosaved progress across the namespace transition
+    if (code && stu?.studentNumber) {
+      const soloNamespace = getStorageNamespace(stu.studentNumber, '');
+      const roomNamespace = getStorageNamespace(stu.studentNumber, code);
+      for (let p = 1; p <= 7; p++) {
+        const soloTimer = localStorage.getItem(phaseTimerKey(p, soloNamespace));
+        if (soloTimer && !localStorage.getItem(phaseTimerKey(p, roomNamespace))) {
+          localStorage.setItem(phaseTimerKey(p, roomNamespace), soloTimer);
+        }
+        const soloProgress = sessionStorage.getItem(phaseProgressKey(p, soloNamespace));
+        if (soloProgress && !sessionStorage.getItem(phaseProgressKey(p, roomNamespace))) {
+          sessionStorage.setItem(phaseProgressKey(p, roomNamespace), soloProgress);
+        }
       }
     }
-    return initial;
-  });
+    setCurrentView('DASHBOARD');
+  };
 
   const isCurrentPhaseComplete = activePhaseIndex === 1
     ? step3Status === 'SUCCESS'
@@ -521,10 +562,15 @@ function App() {
       : `${API_BASE_URL}/api/students/heartbeat`;
 
     const heartbeatInterval = setInterval(() => {
+      const currentTimer = phaseTimersRef.current[activePhaseIndex] ?? 0;
       fetch(heartbeatUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ studentNumber: studentNum, phase: activePhaseIndex }),
+        body: JSON.stringify({
+          studentNumber: studentNum,
+          phase: activePhaseIndex,
+          timerSeconds: currentTimer
+        }),
         keepalive: true
       }).catch(() => {});
     }, 10000);
@@ -1990,12 +2036,7 @@ function App() {
         // Master Teacher Account: Directly route to centralized Teacher Dashboard
         setCurrentView('TEACHER_DASHBOARD');
       }}
-      onStudentJoinRoom={(code, stu) => {
-        setRoomCode(code);
-        setStudent(stu);
-        localStorage.setItem('studentRoomCode', code);
-        setCurrentView('DASHBOARD');
-      }}
+      onStudentJoinRoom={handleStudentJoinedRoom}
     />;
   }
 
@@ -2133,13 +2174,7 @@ function App() {
             
             setCurrentView(targetView);
           }} 
-          onStudentJoinRoom={(code, studentObj) => {
-            setStudent(studentObj);
-            setRoomCode(code);
-            localStorage.setItem('studentRoomCode', code);
-            localStorage.setItem('student', JSON.stringify(studentObj));
-            setCurrentView('DASHBOARD');
-          }}
+          onStudentJoinRoom={handleStudentJoinedRoom}
         />
         {renderInvitationModal()}
       </>

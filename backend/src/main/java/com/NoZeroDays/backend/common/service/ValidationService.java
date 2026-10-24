@@ -403,6 +403,7 @@ public class ValidationService {
                 session.setPhaseExitedAt(null);
                 session.setAccumulatedPauseSeconds(0L);
                 session.setLastHeartbeatAt(null);
+                session.setLastRecordedSeconds(0L);
 
                 if (currentCompletedPhase >= 7) {
                     session.setStatus("COMPLETED");

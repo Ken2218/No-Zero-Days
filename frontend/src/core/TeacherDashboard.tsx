@@ -135,6 +135,7 @@ export default function TeacherDashboard({
   // Delete student modal
   const [studentToDelete, setStudentToDelete] = useState<{ number: string; name: string } | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [startingRoom, setStartingRoom] = useState(false);
 
   // Sync if prop roomCode changes
   useEffect(() => {
@@ -386,6 +387,30 @@ export default function TeacherDashboard({
       setAddError(err.message || 'Connection error.');
     } finally {
       setIsAddingStudent(false);
+    }
+  };
+
+  const handleStartRoom = async () => {
+    if (!activeRoomCode) return;
+    setStartingRoom(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/rooms/${activeRoomCode}/start`, {
+        method: 'POST'
+      });
+      if (res.ok) {
+        setEmailReportToast('🚀 Room session started! Students can now proceed.');
+        setTimeout(() => setEmailReportToast(''), 4000);
+        await fetchTeacherRooms();
+      } else {
+        const err = await res.json().catch(() => ({}));
+        setEmailReportToast(`✕ ${err.error || 'Failed to start room.'}`);
+        setTimeout(() => setEmailReportToast(''), 4000);
+      }
+    } catch (err: any) {
+      setEmailReportToast(`✕ Network error: ${err.message || 'Failed to connect.'}`);
+      setTimeout(() => setEmailReportToast(''), 4000);
+    } finally {
+      setStartingRoom(false);
     }
   };
 
@@ -891,6 +916,24 @@ export default function TeacherDashboard({
                   </div>
 
                   <div className="active-section-actions">
+                    {teacherRooms.find(r => r.roomCode === activeRoomCode)?.status === 'WAITING' && (
+                      <button
+                        type="button"
+                        className="section-action-btn start-session-btn"
+                        onClick={handleStartRoom}
+                        disabled={startingRoom || !activeRoomCode}
+                        title="Start this classroom session so waiting students can proceed"
+                        style={{
+                          background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                          color: '#fff',
+                          fontWeight: 'bold',
+                          border: '1px solid #34d399',
+                          boxShadow: '0 0 10px rgba(16, 185, 129, 0.4)'
+                        }}
+                      >
+                        <span>▶️</span> {startingRoom ? 'STARTING...' : 'START SESSION'}
+                      </button>
+                    )}
                     <button
                       type="button"
                       className="section-action-btn email"

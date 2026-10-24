@@ -76,6 +76,13 @@ public class GameSession {
      */
     private LocalDateTime lastHeartbeatAt = null;
 
+    /**
+     * Authoritative elapsed seconds reported by the student client via
+     * heartbeat, phase-enter, phase-exit, or validation submissions.
+     */
+    @Column(name = "last_recorded_seconds")
+    private Long lastRecordedSeconds = 0L;
+
     // Default Constructor
     public GameSession() {}
 
@@ -116,4 +123,7 @@ public class GameSession {
 
     public LocalDateTime getLastHeartbeatAt() { return lastHeartbeatAt; }
     public void setLastHeartbeatAt(LocalDateTime lastHeartbeatAt) { this.lastHeartbeatAt = lastHeartbeatAt; }
+
+    public Long getLastRecordedSeconds() { return lastRecordedSeconds != null ? lastRecordedSeconds : 0L; }
+    public void setLastRecordedSeconds(Long lastRecordedSeconds) { this.lastRecordedSeconds = lastRecordedSeconds; }
 }

@@ -9,7 +9,6 @@ import com.NoZeroDays.backend.common.repository.AttemptLogRepository;
 import com.NoZeroDays.backend.common.repository.GameSessionRepository;
 import com.NoZeroDays.backend.common.repository.RoomParticipantRepository;
 import com.NoZeroDays.backend.common.repository.RoomRepository;
-import com.NoZeroDays.backend.common.repository.ScenarioSnapshotRepository;
 import com.NoZeroDays.backend.common.repository.StudentProfileRepository;
 
 import com.NoZeroDays.backend.common.model.Teacher;
@@ -54,9 +53,6 @@ public class RoomController {
 
     @Autowired
     private AttemptLogRepository attemptLogRepository;
-
-    @Autowired
-    private ScenarioSnapshotRepository scenarioSnapshotRepository;
 
     @Autowired
     private com.NoZeroDays.backend.common.service.EmailReportService emailReportService;
@@ -523,22 +519,18 @@ public class RoomController {
             roomParticipantRepository.save(participant);
         }
 
-        // Joining a room starts a clean gameplay record: discard any attempts,
-        // sessions, or scenario snapshots created before this join so pre-join
-        // (free-play or prior-room) time never bleeds into this room's reports.
-        // The frontend only calls /join when the student has no room code, so
-        // this never destroys in-room progress.
-        attemptLogRepository.deleteByStudentProfile(profile);
-        scenarioSnapshotRepository.deleteByStudentProfile(profile);
-        gameSessionRepository.deleteByStudentProfile(profile);
-
-        // Initialize a fresh active game session for the joined room.
+        // Initialize active game session if none exists.
         // startTime is left null — it gets stamped on the student's first Phase 1 submission.
-        GameSession newSession = new GameSession(profile);
-        newSession.setCurrentModule("M1_MATH");
-        newSession.setCurrentPhase(1);
-        newSession.setStatus("ACTIVE");
-        gameSessionRepository.save(newSession);
+        List<GameSession> activeSessions = gameSessionRepository.findByStudentProfileAndStatus(profile, "ACTIVE");
+        if (activeSessions.isEmpty()) {
+            GameSession newSession = new GameSession(profile);
+            newSession.setCurrentModule("M1_MATH");
+            newSession.setCurrentPhase(1);
+            newSession.setStatus("ACTIVE");
+            // Do NOT copy room.getStartedAt() — that would start every student's
+            // timer at the same instant (room activation), not their individual start.
+            gameSessionRepository.save(newSession);
+        }
 
         Map<String, Object> resp = new HashMap<>();
         resp.put("success", true);
@@ -845,6 +837,12 @@ public class RoomController {
         if (session.getPhaseEnteredAt() == null) {
             session.setPhaseEnteredAt(now);
         }
+        if (body != null && body.get("timerSeconds") != null) {
+            try {
+                long s = Long.parseLong(body.get("timerSeconds").toString());
+                if (s >= 0) session.setLastRecordedSeconds(s);
+            } catch (Exception ignored) {}
+        }
         gameSessionRepository.save(session);
 
         System.out.println("[PHASE-ENTER] student=" + studentNumber
@@ -901,6 +899,12 @@ public class RoomController {
         // Freeze/pause the active timer at this moment
         session.setPhaseExitedAt(now);
         session.setLastHeartbeatAt(now);
+        if (body != null && body.get("timerSeconds") != null) {
+            try {
+                long s = Long.parseLong(body.get("timerSeconds").toString());
+                if (s >= 0) session.setLastRecordedSeconds(s);
+            } catch (Exception ignored) {}
+        }
         gameSessionRepository.save(session);
 
         System.out.println("[PHASE-EXIT] student=" + studentNumber + " exitedAt=" + now + " (timer paused)");
@@ -935,6 +939,12 @@ public class RoomController {
         GameSession session = sessions.get(0);
         LocalDateTime now = LocalDateTime.now();
         session.setLastHeartbeatAt(now);
+        if (body != null && body.get("timerSeconds") != null) {
+            try {
+                long s = Long.parseLong(body.get("timerSeconds").toString());
+                if (s >= 0) session.setLastRecordedSeconds(s);
+            } catch (Exception ignored) {}
+        }
         // Heartbeats must never mutate currentPhase — stale tabs ping with outdated
         // phase numbers and would rewind the authoritative progression.
         gameSessionRepository.save(session);
@@ -1042,16 +1052,21 @@ public class RoomController {
                 boolean firstCompletedFound = false;
 
                 for (AttemptLog log : attempts) {
-                    if (firstCompletedFound) {
-                        // All required steps were already satisfied in a previous attempt -> genuine re-audit
+                    if ("RE_AUDIT".equalsIgnoreCase(log.getAttemptType())) {
                         reAuditAttempts.add(log);
-                    } else {
-                        // Phase has not yet been completed -> must belong to the first completion attempt stream
+                    } else if (log.getAttemptType() != null && !log.getAttemptType().isBlank()) {
                         firstAttempts.add(log);
-                        if (log.isSuccessful() && !log.isDrillReset() && log.getStep() != null) {
-                            stepsCompletedSoFar.add(log.getStep().toUpperCase());
-                            if (!requiredSteps.isEmpty() && requiredSteps.stream().allMatch(stepsCompletedSoFar::contains)) {
-                                firstCompletedFound = true;
+                    } else {
+                        // Legacy fallback when attemptType was null
+                        if (firstCompletedFound) {
+                            reAuditAttempts.add(log);
+                        } else {
+                            firstAttempts.add(log);
+                            if (log.isSuccessful() && !log.isDrillReset() && log.getStep() != null) {
+                                stepsCompletedSoFar.add(log.getStep().toUpperCase());
+                                if (!requiredSteps.isEmpty() && requiredSteps.stream().allMatch(stepsCompletedSoFar::contains)) {
+                                    firstCompletedFound = true;
+                                }
                             }
                         }
                     }
@@ -1087,6 +1102,8 @@ public class RoomController {
                 boolean isCurrentActivePhase = (session != null && session.getCurrentPhase() == phaseId);
                 boolean isStudentActivelyInPhase = isCurrentActivePhase && session != null
                         && session.getPhaseEnteredAt() != null && session.getPhaseExitedAt() == null;
+                boolean isStudentPausedInPhase = isCurrentActivePhase && session != null
+                        && session.getPhaseEnteredAt() != null && session.getPhaseExitedAt() != null;
 
                 long firstPhaseSeconds = 0;
                 if (isFirstCompleted) {
@@ -1141,21 +1158,48 @@ public class RoomController {
                 } else if (isStudentActivelyInPhase) {
                     classFirstActiveCounts[i]++;
                     classFirstTotalAttempts[i] += firstAttemptsCount;
-                    LocalDateTime activeStart = session.getPhaseEnteredAt();
-                    LocalDateTime activeEnd;
-                    LocalDateTime now = LocalDateTime.now();
-                    // Inactivity / disconnect safeguard: if no heartbeat received for > 30s, freeze at last heartbeat
-                    if (session.getLastHeartbeatAt() != null) {
-                        long heartbeatAge = ChronoUnit.SECONDS.between(session.getLastHeartbeatAt(), now);
-                        activeEnd = (heartbeatAge > 30) ? session.getLastHeartbeatAt() : now;
+
+                    long diff;
+                    if (session.getLastRecordedSeconds() != null && session.getLastRecordedSeconds() > 0) {
+                        long secSinceReport = 0;
+                        if (session.getLastHeartbeatAt() != null) {
+                            secSinceReport = ChronoUnit.SECONDS.between(session.getLastHeartbeatAt(), LocalDateTime.now());
+                            secSinceReport = Math.max(0, Math.min(secSinceReport, 15L));
+                        }
+                        diff = session.getLastRecordedSeconds() + secSinceReport;
                     } else {
-                        long ageSinceEnter = ChronoUnit.SECONDS.between(activeStart, now);
-                        activeEnd = (ageSinceEnter > 45) ? activeStart.plusSeconds(30) : now;
+                        LocalDateTime activeStart = session.getPhaseEnteredAt();
+                        LocalDateTime activeEnd;
+                        LocalDateTime now = LocalDateTime.now();
+                        // Inactivity / disconnect safeguard: if no heartbeat received for > 30s, freeze at last heartbeat
+                        if (session.getLastHeartbeatAt() != null) {
+                            long heartbeatAge = ChronoUnit.SECONDS.between(session.getLastHeartbeatAt(), now);
+                            activeEnd = (heartbeatAge > 30) ? session.getLastHeartbeatAt() : now;
+                        } else {
+                            long ageSinceEnter = ChronoUnit.SECONDS.between(activeStart, now);
+                            activeEnd = (ageSinceEnter > 45) ? activeStart.plusSeconds(30) : now;
+                        }
+                        long wallDiff = ChronoUnit.SECONDS.between(activeStart, activeEnd);
+                        long paused = session.getAccumulatedPauseSeconds();
+                        // Hard cap runaway timer if student abandoned without logging out (max 2 hours)
+                        diff = Math.min(Math.max(wallDiff - paused, 0L), 7200L);
                     }
-                    long diff = ChronoUnit.SECONDS.between(activeStart, activeEnd);
-                    long paused = session.getAccumulatedPauseSeconds();
-                    // Hard cap runaway timer if student abandoned without logging out (max 2 hours)
-                    diff = Math.min(Math.max(diff - paused, 0L), 7200L);
+                    firstPhaseSeconds = diff;
+                    studentFirstTotalSeconds += firstPhaseSeconds;
+                } else if (isStudentPausedInPhase) {
+                    classFirstActiveCounts[i]++;
+                    classFirstTotalAttempts[i] += firstAttemptsCount;
+
+                    long diff;
+                    if (session.getLastRecordedSeconds() != null && session.getLastRecordedSeconds() > 0) {
+                        diff = session.getLastRecordedSeconds();
+                    } else {
+                        LocalDateTime activeStart = session.getPhaseEnteredAt();
+                        LocalDateTime activeEnd = session.getPhaseExitedAt();
+                        long wallDiff = ChronoUnit.SECONDS.between(activeStart, activeEnd);
+                        long paused = session.getAccumulatedPauseSeconds();
+                        diff = Math.min(Math.max(wallDiff - paused, 0L), 7200L);
+                    }
                     firstPhaseSeconds = diff;
                     studentFirstTotalSeconds += firstPhaseSeconds;
                 } else if (!firstAttempts.isEmpty()) {
@@ -1175,7 +1219,7 @@ public class RoomController {
                 String firstStatus;
                 if (isFirstCompleted) {
                     firstStatus = "COMPLETED";
-                } else if (isStudentActivelyInPhase || !firstAttempts.isEmpty()) {
+                } else if (isStudentActivelyInPhase || isStudentPausedInPhase || !firstAttempts.isEmpty()) {
                     firstStatus = "ACTIVE";
                 } else {
                     firstStatus = "NOT_ATTEMPTED";
@@ -1199,6 +1243,9 @@ public class RoomController {
                 }
 
                 int reAuditAttemptsCount = Math.max(reAuditDrillResets, reAuditFailedCount / 3);
+                if (!reAuditAttempts.isEmpty() && reAuditAttemptsCount == 0) {
+                    reAuditAttemptsCount = 1;
+                }
                 boolean hasReAudited = !reAuditAttempts.isEmpty();
                 boolean isReAuditCompleted = hasReAudited && isPhaseCompleteBySteps(reAuditAttempts, module, phaseIndex);
 
@@ -1233,13 +1280,10 @@ public class RoomController {
 
                     if (recordedReAuditSeconds != null && recordedReAuditSeconds > 0) {
                         reAuditPhaseSeconds = recordedReAuditSeconds;
-                    } else {
+                    } else if (reAuditStart != null) {
                         LocalDateTime endRef = reAuditLastSuccess != null ? reAuditLastSuccess : (reAuditEnd != null ? reAuditEnd : reAuditStart);
                         long diff = ChronoUnit.SECONDS.between(reAuditStart, endRef);
-                        if (diff <= 0) {
-                            diff = Math.max(reAuditAttemptsCount * 30L, 25L);
-                        }
-                        reAuditPhaseSeconds = Math.max(diff, 20L);
+                        reAuditPhaseSeconds = Math.max(diff, 0L);
                     }
                     studentReAuditTotalSeconds += reAuditPhaseSeconds;
 
@@ -1524,8 +1568,11 @@ public class RoomController {
     }
 
     private String formatDuration(long totalSeconds, String status) {
-        if ("LOCKED".equals(status) || totalSeconds <= 0) {
+        if ("LOCKED".equals(status) || "NOT_ATTEMPTED".equals(status) || totalSeconds < 0) {
             return "--";
+        }
+        if (totalSeconds == 0) {
+            return "0s";
         }
         long hours = totalSeconds / 3600;
         long minutes = (totalSeconds % 3600) / 60;

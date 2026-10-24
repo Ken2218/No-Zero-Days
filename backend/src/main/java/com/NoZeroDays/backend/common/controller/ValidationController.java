@@ -131,12 +131,19 @@ public class ValidationController {
             newSession.setStartTime(now);
             newSession.setPhaseEnteredAt(now);
             newSession.setLastHeartbeatAt(now);
+            if (request.getTimerSeconds() != null && request.getTimerSeconds() >= 0) {
+                newSession.setLastRecordedSeconds(request.getTimerSeconds());
+            }
             gameSessionRepository.save(newSession);
         } else {
             GameSession session = sessions.get(0);
             boolean dirty = false;
             session.setLastHeartbeatAt(now);
             dirty = true;
+            if (request.getTimerSeconds() != null && request.getTimerSeconds() >= 0) {
+                session.setLastRecordedSeconds(request.getTimerSeconds());
+                dirty = true;
+            }
             if (session.getStartTime() == null) {
                 session.setStartTime(now);
                 dirty = true;
@@ -317,14 +324,20 @@ public class ValidationController {
             boolean firstCompletedFound = false;
 
             for (AttemptLog log : phaseAttempts) {
-                if (firstCompletedFound) {
+                if ("RE_AUDIT".equalsIgnoreCase(log.getAttemptType())) {
                     reAuditAttempts.add(log);
-                } else {
+                } else if (log.getAttemptType() != null && !log.getAttemptType().isBlank()) {
                     firstAttempts.add(log);
-                    if (log.isSuccessful() && !log.isDrillReset() && log.getStep() != null) {
-                        stepsCompletedSoFar.add(log.getStep().toUpperCase());
-                        if (!requiredSteps.isEmpty() && requiredSteps.stream().allMatch(stepsCompletedSoFar::contains)) {
-                            firstCompletedFound = true;
+                } else {
+                    if (firstCompletedFound) {
+                        reAuditAttempts.add(log);
+                    } else {
+                        firstAttempts.add(log);
+                        if (log.isSuccessful() && !log.isDrillReset() && log.getStep() != null) {
+                            stepsCompletedSoFar.add(log.getStep().toUpperCase());
+                            if (!requiredSteps.isEmpty() && requiredSteps.stream().allMatch(stepsCompletedSoFar::contains)) {
+                                firstCompletedFound = true;
+                            }
                         }
                     }
                 }
