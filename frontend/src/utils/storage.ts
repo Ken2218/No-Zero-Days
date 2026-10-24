@@ -4,6 +4,7 @@
 
 const TIMER_PREFIX = 'phase_timer_';
 const PROGRESS_PREFIX = 'phase_progress_';
+const VIEW_PREFIX = 'current_view_';
 
 const sanitize = (value: string): string => value.replace(/[^a-zA-Z0-9_-]/g, '_');
 
@@ -21,10 +22,16 @@ export function phaseProgressKey(phase: number, namespace: string): string {
   return namespace ? `${PROGRESS_PREFIX}${phase}__${namespace}` : `${PROGRESS_PREFIX}${phase}`;
 }
 
+export function currentViewKey(namespace: string): string {
+  return namespace ? `${VIEW_PREFIX}${namespace}` : `${VIEW_PREFIX}default`;
+}
+
 export function clearAllPhaseStorage(): void {
   try {
     Object.keys(localStorage).forEach((key) => {
-      if (key.startsWith(TIMER_PREFIX)) localStorage.removeItem(key);
+      if (key.startsWith(TIMER_PREFIX) || key.startsWith(VIEW_PREFIX)) {
+        localStorage.removeItem(key);
+      }
     });
     Object.keys(sessionStorage).forEach((key) => {
       if (key.startsWith(PROGRESS_PREFIX)) sessionStorage.removeItem(key);

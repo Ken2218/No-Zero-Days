@@ -22,7 +22,7 @@ import {
   generatePhase6Scenario, 
   generatePhase7Scenario 
 } from '../utils/scenarioGen';
-import { getStorageNamespace, phaseTimerKey, phaseProgressKey } from '../utils/storage';
+import { getStorageNamespace, phaseTimerKey, phaseProgressKey, currentViewKey } from '../utils/storage';
 import './App.css'; 
 
 function App() {
@@ -163,6 +163,58 @@ function App() {
     setTheme(prev => (prev === 'dark' ? 'light' : 'dark'));
   };
 
+  // Loads a phase's autosaved state from sessionStorage. Returns true when state
+  // was found and restored. Used both when picking a phase from the Dashboard
+  // and when re-entering a mid-phase session after a page refresh.
+  const loadPhaseStateFromStorage = (phase: number, studentNum: string | undefined, room: string): boolean => {
+    try {
+      const stored = sessionStorage.getItem(
+        phaseProgressKey(phase, getStorageNamespace(studentNum, room))
+      );
+      if (!stored) return false;
+      const parsed = JSON.parse(stored);
+      if (!parsed || parsed.phaseId !== phase || !parsed.scenario) return false;
+
+      setScenario(parsed.scenario);
+      setExtractedA(parsed.extractedA || '');
+      setExtractedB(parsed.extractedB || '');
+      setStep1Status(parsed.step1Status || 'ACTIVE');
+      setExtractionAttempts(parsed.extractionAttempts || 0);
+      setSelectedRule(parsed.selectedRule || '');
+      setStep2Status(parsed.step2Status || 'LOCKED');
+      setCalculatedValue(parsed.calculatedValue || '');
+      setStep3Status(parsed.step3Status || 'LOCKED');
+      setNetPayValue(parsed.netPayValue || '');
+      setStep4Status(parsed.step4Status || 'LOCKED');
+      setGrossPayValue(parsed.grossPayValue || '');
+      setGrossPayStatus(parsed.grossPayStatus || 'LOCKED');
+      setNetPayFormula(parsed.netPayFormula || '');
+      setNetFormulaStatus(parsed.netFormulaStatus || 'LOCKED');
+      setPagIbigDeductionValue(parsed.pagIbigDeductionValue || '');
+      setPagIbigDeductionStatus(parsed.pagIbigDeductionStatus || 'LOCKED');
+      setPhilhealthErValue(parsed.philhealthErValue || '');
+      setPhilhealthSssEeValue(parsed.philhealthSssEeValue || '');
+      setPhilhealthErStatus(parsed.philhealthErStatus || 'LOCKED');
+      setTrueOtHoursValue(parsed.trueOtHoursValue || '');
+      setTrueOtHoursStatus(parsed.trueOtHoursStatus || 'LOCKED');
+      setOtMultiplierValue(parsed.otMultiplierValue || '');
+      setOtMultiplierStatus(parsed.otMultiplierStatus || 'LOCKED');
+      setOtFormulaValue(parsed.otFormulaValue || '');
+      setOtFormulaStatus(parsed.otFormulaStatus || 'LOCKED');
+      setHolidayTypeValue(parsed.holidayTypeValue || '');
+      setHolidayMultiplierValue(parsed.holidayMultiplierValue || '');
+      setHolidayFormulaValue(parsed.holidayFormulaValue || '');
+      setHolidayFormulaStatus(parsed.holidayFormulaStatus || 'LOCKED');
+      setTribunalGross(parsed.tribunalGross || '');
+      setTribunalDeductions(parsed.tribunalDeductions || '');
+      setTribunalNet(parsed.tribunalNet || '');
+      setTribunalStatus(parsed.tribunalStatus || 'ACTIVE');
+      return true;
+    } catch (_) {
+      return false;
+    }
+  };
+
   // Restore a previously authenticated session from localStorage.
   // The `sessionChecked` flag ensures nothing is rendered until this effect completes,
   // guaranteeing that unauthenticated visits to "/" always land on the Login screen.
@@ -188,12 +240,31 @@ function App() {
       }
     } else if (savedStudent) {
       try {
-        setStudent(JSON.parse(savedStudent));
+        const parsedStudent = JSON.parse(savedStudent);
+        setStudent(parsedStudent);
         const savedRoomCode = localStorage.getItem('studentRoomCode');
         if (savedRoomCode) {
           setRoomCode(savedRoomCode);
         }
-        setCurrentView('DASHBOARD');
+
+        // If the student was inside a phase room when the page refreshed,
+        // restore the phase view AND its autosaved progress instead of
+        // dropping them back to the Dashboard.
+        const studentNum = parsedStudent?.studentNumber;
+        const namespace = getStorageNamespace(studentNum, savedRoomCode || '');
+        const savedView = localStorage.getItem(currentViewKey(namespace));
+        let restoredPhase = false;
+        if (savedView && /^PHASE[1-7]$/.test(savedView)) {
+          const phase = parseInt(savedView.replace('PHASE', ''), 10);
+          if (loadPhaseStateFromStorage(phase, studentNum, savedRoomCode || '')) {
+            setActivePhaseIndex(phase);
+            setCurrentView(savedView);
+            restoredPhase = true;
+          }
+        }
+        if (!restoredPhase) {
+          setCurrentView('DASHBOARD');
+        }
       } catch (_) {
         // Corrupted data — clear it and show Login
         localStorage.removeItem('student');
@@ -208,6 +279,24 @@ function App() {
     // Mark the session check as complete so the app can render
     setSessionChecked(true);
   }, []);
+
+  // Remember the student's current view so a page refresh mid-phase re-enters
+  // the phase room instead of dropping back to the Dashboard.
+  // Gated on sessionChecked so the initial (pre-restore) render can't wipe the
+  // saved key before the restore effect has read it.
+  useEffect(() => {
+    if (!sessionChecked) return;
+    try {
+      const studentNum = (student as any)?.studentNumber;
+      const currentRoom = roomCode || localStorage.getItem('studentRoomCode') || '';
+      const key = currentViewKey(getStorageNamespace(studentNum, currentRoom));
+      if (currentView === 'DASHBOARD' || /^PHASE[1-7]$/.test(currentView)) {
+        localStorage.setItem(key, currentView);
+      } else {
+        localStorage.removeItem(key);
+      }
+    } catch (_) {}
+  }, [sessionChecked, currentView, student, roomCode]);
 
   // Debug log to trace narrative intro display gates (resolves ESLint unused var)
   useEffect(() => {
@@ -2006,57 +2095,10 @@ function App() {
           toggleTheme={toggleTheme}
           onSelectPhase={(phase) => {
             const hasOngoingState = (scenario as any)?.phaseId === phase;
-            let loadedFromStorage = false;
-
-            if (!hasOngoingState) {
-              try {
-                const studentNum = (student as any)?.studentNumber;
-                const currentRoom = roomCode || localStorage.getItem('studentRoomCode') || '';
-                const stored = sessionStorage.getItem(
-                  phaseProgressKey(phase, getStorageNamespace(studentNum, currentRoom))
-                );
-                if (stored) {
-                  const parsed = JSON.parse(stored);
-                  if (parsed && parsed.phaseId === phase && parsed.scenario) {
-                    setScenario(parsed.scenario);
-                    setExtractedA(parsed.extractedA || '');
-                    setExtractedB(parsed.extractedB || '');
-                    setStep1Status(parsed.step1Status || 'ACTIVE');
-                    setExtractionAttempts(parsed.extractionAttempts || 0);
-                    setSelectedRule(parsed.selectedRule || '');
-                    setStep2Status(parsed.step2Status || 'LOCKED');
-                    setCalculatedValue(parsed.calculatedValue || '');
-                    setStep3Status(parsed.step3Status || 'LOCKED');
-                    setNetPayValue(parsed.netPayValue || '');
-                    setStep4Status(parsed.step4Status || 'LOCKED');
-                    setGrossPayValue(parsed.grossPayValue || '');
-                    setGrossPayStatus(parsed.grossPayStatus || 'LOCKED');
-                    setNetPayFormula(parsed.netPayFormula || '');
-                    setNetFormulaStatus(parsed.netFormulaStatus || 'LOCKED');
-                    setPagIbigDeductionValue(parsed.pagIbigDeductionValue || '');
-                    setPagIbigDeductionStatus(parsed.pagIbigDeductionStatus || 'LOCKED');
-                    setPhilhealthErValue(parsed.philhealthErValue || '');
-                    setPhilhealthSssEeValue(parsed.philhealthSssEeValue || '');
-                    setPhilhealthErStatus(parsed.philhealthErStatus || 'LOCKED');
-                    setTrueOtHoursValue(parsed.trueOtHoursValue || '');
-                    setTrueOtHoursStatus(parsed.trueOtHoursStatus || 'LOCKED');
-                    setOtMultiplierValue(parsed.otMultiplierValue || '');
-                    setOtMultiplierStatus(parsed.otMultiplierStatus || 'LOCKED');
-                    setOtFormulaValue(parsed.otFormulaValue || '');
-                    setOtFormulaStatus(parsed.otFormulaStatus || 'LOCKED');
-                    setHolidayTypeValue(parsed.holidayTypeValue || '');
-                    setHolidayMultiplierValue(parsed.holidayMultiplierValue || '');
-                    setHolidayFormulaValue(parsed.holidayFormulaValue || '');
-                    setHolidayFormulaStatus(parsed.holidayFormulaStatus || 'LOCKED');
-                    setTribunalGross(parsed.tribunalGross || '');
-                    setTribunalDeductions(parsed.tribunalDeductions || '');
-                    setTribunalNet(parsed.tribunalNet || '');
-                    setTribunalStatus(parsed.tribunalStatus || 'ACTIVE');
-                    loadedFromStorage = true;
-                  }
-                }
-              } catch (_) {}
-            }
+            const studentNum = (student as any)?.studentNumber;
+            const currentRoom = roomCode || localStorage.getItem('studentRoomCode') || '';
+            const loadedFromStorage = !hasOngoingState
+              && loadPhaseStateFromStorage(phase, studentNum, currentRoom);
 
             setActivePhaseIndex(phase);
             if (!hasOngoingState && !loadedFromStorage) {

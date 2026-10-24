@@ -10,4 +10,5 @@ import java.util.Optional;
 @Repository
 public interface ScenarioSnapshotRepository extends JpaRepository<ScenarioSnapshot, Long> {
     Optional<ScenarioSnapshot> findByStudentProfileAndModuleAndPhase(StudentProfile studentProfile, String module, Integer phase);
+    void deleteByStudentProfile(StudentProfile studentProfile);
 }

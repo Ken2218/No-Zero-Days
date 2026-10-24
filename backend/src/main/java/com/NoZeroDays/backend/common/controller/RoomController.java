@@ -9,6 +9,7 @@ import com.NoZeroDays.backend.common.repository.AttemptLogRepository;
 import com.NoZeroDays.backend.common.repository.GameSessionRepository;
 import com.NoZeroDays.backend.common.repository.RoomParticipantRepository;
 import com.NoZeroDays.backend.common.repository.RoomRepository;
+import com.NoZeroDays.backend.common.repository.ScenarioSnapshotRepository;
 import com.NoZeroDays.backend.common.repository.StudentProfileRepository;
 
 import com.NoZeroDays.backend.common.model.Teacher;
@@ -53,6 +54,9 @@ public class RoomController {
 
     @Autowired
     private AttemptLogRepository attemptLogRepository;
+
+    @Autowired
+    private ScenarioSnapshotRepository scenarioSnapshotRepository;
 
     @Autowired
     private com.NoZeroDays.backend.common.service.EmailReportService emailReportService;
@@ -519,18 +523,22 @@ public class RoomController {
             roomParticipantRepository.save(participant);
         }
 
-        // Initialize active game session if none exists.
+        // Joining a room starts a clean gameplay record: discard any attempts,
+        // sessions, or scenario snapshots created before this join so pre-join
+        // (free-play or prior-room) time never bleeds into this room's reports.
+        // The frontend only calls /join when the student has no room code, so
+        // this never destroys in-room progress.
+        attemptLogRepository.deleteByStudentProfile(profile);
+        scenarioSnapshotRepository.deleteByStudentProfile(profile);
+        gameSessionRepository.deleteByStudentProfile(profile);
+
+        // Initialize a fresh active game session for the joined room.
         // startTime is left null — it gets stamped on the student's first Phase 1 submission.
-        List<GameSession> activeSessions = gameSessionRepository.findByStudentProfileAndStatus(profile, "ACTIVE");
-        if (activeSessions.isEmpty()) {
-            GameSession newSession = new GameSession(profile);
-            newSession.setCurrentModule("M1_MATH");
-            newSession.setCurrentPhase(1);
-            newSession.setStatus("ACTIVE");
-            // Do NOT copy room.getStartedAt() — that would start every student's
-            // timer at the same instant (room activation), not their individual start.
-            gameSessionRepository.save(newSession);
-        }
+        GameSession newSession = new GameSession(profile);
+        newSession.setCurrentModule("M1_MATH");
+        newSession.setCurrentPhase(1);
+        newSession.setStatus("ACTIVE");
+        gameSessionRepository.save(newSession);
 
         Map<String, Object> resp = new HashMap<>();
         resp.put("success", true);
