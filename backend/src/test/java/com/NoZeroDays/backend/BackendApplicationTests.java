@@ -80,7 +80,12 @@ class BackendApplicationTests {
         }
         
         // Call validationController.getProgressStatus
-        ResponseEntity<?> response = validationController.getProgressStatus(testStudentNum);
+        org.springframework.mock.web.MockHttpServletRequest httpRequest =
+            new org.springframework.mock.web.MockHttpServletRequest();
+        httpRequest.setAttribute(
+            com.NoZeroDays.backend.common.auth.AuthInterceptor.ATTR_STUDENT_NUMBER,
+            testStudentNum);
+        ResponseEntity<?> response = validationController.getProgressStatus(testStudentNum, httpRequest);
         assertEquals(200, response.getStatusCode().value());
         
         List<ValidationController.PhaseProgress> progressList = (List<ValidationController.PhaseProgress>) response.getBody();
