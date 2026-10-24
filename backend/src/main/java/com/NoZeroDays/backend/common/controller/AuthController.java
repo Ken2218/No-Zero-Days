@@ -99,6 +99,18 @@ public class AuthController {
         StudentProfile profile;
         if (existing.isPresent()) {
             profile = existing.get();
+            if (!"Temporary Student".equalsIgnoreCase(profile.getFullName())
+                    && !authService.isFlexibleNameMatch(profile.getFullName(), name)) {
+                return ResponseEntity.status(409).body(Map.of("error",
+                        "Student number '" + studentNumber + "' is already registered to a different name."));
+            }
+            if ("Temporary Student".equalsIgnoreCase(profile.getFullName())) {
+                profile.setFullName(name);
+                if (!section.isEmpty()) {
+                    profile.setSection(section);
+                }
+                profile = studentRepository.save(profile);
+            }
         } else {
             profile = studentRepository.save(new StudentProfile(studentNumber, name, section));
         }

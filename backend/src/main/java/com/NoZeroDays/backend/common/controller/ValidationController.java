@@ -246,8 +246,9 @@ public class ValidationController {
         java.util.List<PhaseProgress> list = new java.util.ArrayList<>();
         boolean previousCompleted = true;
 
-        List<GameSession> activeSessions = gameSessionRepository.findByStudentProfileAndStatus(student, "ACTIVE");
-        GameSession activeSession = activeSessions.isEmpty() ? null : activeSessions.get(0);
+        GameSession activeSession = gameSessionRepository
+                .findFirstByStudentProfileOrderByIdDesc(student)
+                .orElse(null);
         java.time.LocalDateTime sessionStartTime = activeSession != null ? activeSession.getStartTime() : null;
         if (sessionStartTime != null) {
             long currentSessionAttempts = attemptLogRepository.countAttemptsSince(student, sessionStartTime);
@@ -320,7 +321,7 @@ public class ValidationController {
                     reAuditAttempts.add(log);
                 } else {
                     firstAttempts.add(log);
-                    if (log.isSuccessful() && log.getStep() != null) {
+                    if (log.isSuccessful() && !log.isDrillReset() && log.getStep() != null) {
                         stepsCompletedSoFar.add(log.getStep().toUpperCase());
                         if (!requiredSteps.isEmpty() && requiredSteps.stream().allMatch(stepsCompletedSoFar::contains)) {
                             firstCompletedFound = true;
@@ -388,7 +389,7 @@ public class ValidationController {
             
         java.util.Set<String> successfulSteps = new java.util.HashSet<>();
         for (AttemptLog log : attempts) {
-            if (log.isSuccessful()) {
+            if (log.isSuccessful() && !log.isDrillReset()) {
                 String step = log.getStep();
                 if (step != null) {
                     successfulSteps.add(step.toUpperCase());
@@ -412,6 +413,7 @@ public class ValidationController {
 
         java.util.Set<String> successfulSteps = attempts.stream()
                 .filter(AttemptLog::isSuccessful)
+                .filter(a -> !a.isDrillReset())
                 .map(a -> a.getStep() != null ? a.getStep().toUpperCase() : "")
                 .collect(java.util.stream.Collectors.toSet());
 

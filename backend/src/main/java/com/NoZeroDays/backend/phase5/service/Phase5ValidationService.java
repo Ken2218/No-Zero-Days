@@ -22,10 +22,21 @@ public class Phase5ValidationService {
     public ValidationResponse validate(ValidationRequest request) {
         StudentProfile student = validationService.resolveStudent(request.getStudentNumber());
 
+        String scenarioMismatch = validationService.checkScenarioConsistency(student, request);
+        if (scenarioMismatch != null) {
+            return validationService.runDrillEngineAndLog(student, request, false, false, scenarioMismatch, null, null, false);
+        }
+
         double sssEe        = request.getSssEeShare()         != null ? request.getSssEeShare()         : 0.0;
         double sssEr        = request.getSssErShare()         != null ? request.getSssErShare()         : 0.0;
         double personalLoan = request.getPersonalSalaryLoan() != null ? request.getPersonalSalaryLoan() : 0.0;
         double spouseLoan   = request.getSpouseLoan()         != null ? request.getSpouseLoan()         : 0.0;
+
+        if (request.getSssEeShare() == null || sssEe <= 0.0 || request.getPersonalSalaryLoan() == null
+                || (request.getBasicSalary() != null && request.getBasicSalary() <= 0.0)) {
+            return validationService.runDrillEngineAndLog(student, request, false, false,
+                    "Validation Error: Scenario parameters were not received by the server. Please reload the phase.", null, null, false);
+        }
 
         double epsilon = 0.01;
 
@@ -34,6 +45,7 @@ public class Phase5ValidationService {
         String  message      = "";
         Double  auditExpected = null;
         Double  auditReceived = null;
+        boolean phaseJustCompleted = false;
 
         String step = request.getStep() != null ? request.getStep() : "EXTRACT";
 
@@ -87,22 +99,26 @@ public class Phase5ValidationService {
             }
 
         } else if ("EXECUTE".equalsIgnoreCase(step) || "SYNTHESIS".equalsIgnoreCase(step)) {
-            double result   = request.getSubmittedResult() != null ? request.getSubmittedResult() : 0.0;
-            double basicSalaryVal = request.getBasicSalary() != null ? request.getBasicSalary() : 22500.00;
-            double expected = basicSalaryVal - sssEe - personalLoan - 200.00;
-
-            if (Math.abs(result - expected) < epsilon) {
-                success = true;
-                message = "Phase 5 Complete! Net Take-Home Pay verified successfully at ₱"
-                        + String.format("%.2f", expected);
-                validationService.updateProgress(student, "M3_BUREAUCRACY", 1);
+            if (request.getSubmittedResult() == null) {
+                message = "Arithmetic Error! No computed value was submitted. Compute Net Pay = Gross Pay − Deductions and enter the result.";
             } else {
-                message = "Arithmetic Error! Compute Net Pay: Gross Pay (₱" + String.format("%.2f", basicSalaryVal) + ") − SSS EE Share (₱" + String.format("%.2f", sssEe) + ") − Personal Salary Loan (₱"
-                        + String.format("%.2f", personalLoan) + ") − Pag-IBIG Deduction (₱200.00) again.";
+                double result   = request.getSubmittedResult();
+                double basicSalaryVal = request.getBasicSalary() != null ? request.getBasicSalary() : 22500.00;
+                double expected = basicSalaryVal - sssEe - personalLoan - 200.00;
+
+                if (Math.abs(result - expected) < epsilon) {
+                    success = true;
+                    message = "Phase 5 Complete! Net Take-Home Pay verified successfully at ₱"
+                            + String.format("%.2f", expected);
+                    phaseJustCompleted = validationService.updateProgress(student, "M3_BUREAUCRACY", 1);
+                } else {
+                    message = "Arithmetic Error! Compute Net Pay: Gross Pay (₱" + String.format("%.2f", basicSalaryVal) + ") − SSS EE Share (₱" + String.format("%.2f", sssEe) + ") − Personal Salary Loan (₱"
+                            + String.format("%.2f", personalLoan) + ") − Pag-IBIG Deduction (₱200.00) again.";
+                }
             }
         }
 
         return validationService.runDrillEngineAndLog(
-                student, request, success, isRedHerring, message, auditExpected, auditReceived);
+                student, request, success, isRedHerring, message, auditExpected, auditReceived, phaseJustCompleted);
     }
 }

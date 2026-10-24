@@ -27,7 +27,9 @@ export default function TeacherLobby({ roomCode, teacherName, teacherEmail, sect
   const [participantCount, setParticipantCount] = useState(0);
   const [copied, setCopied] = useState(false);
   const [initiating, setInitiating] = useState(false);
-  const [sessionActive, setSessionActive] = useState(true);
+  // Start as false (WAITING) so the INITIATE SESSION button is visible for a
+  // freshly created room; the status poll corrects this on mount.
+  const [sessionActive, setSessionActive] = useState(false);
   const [error, setError] = useState('');
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -82,9 +84,9 @@ export default function TeacherLobby({ roomCode, teacherName, teacherEmail, sect
       const res = await fetch(`${API_BASE_URL}/api/rooms/${roomCode}/status`);
       if (res.ok) {
         const data = await res.json();
-        if (data.status === 'ACTIVE') {
-          setSessionActive(true);
-        }
+        // Track the authoritative room status in both directions so a room
+        // reset back to WAITING also restores the INITIATE button.
+        setSessionActive(data.status === 'ACTIVE');
         if (data.teacherEmail) {
           setCurrentTeacherEmail(data.teacherEmail);
         }

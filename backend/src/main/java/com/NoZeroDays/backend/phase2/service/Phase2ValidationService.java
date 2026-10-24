@@ -25,9 +25,19 @@ public class Phase2ValidationService {
     public ValidationResponse validate(ValidationRequest request) {
         StudentProfile student = validationService.resolveStudent(request.getStudentNumber());
 
+        String scenarioMismatch = validationService.checkScenarioConsistency(student, request);
+        if (scenarioMismatch != null) {
+            return validationService.runDrillEngineAndLog(student, request, false, false, scenarioMismatch, null, null, false);
+        }
+
         double targetHourlyRate  = request.getHourlyRate()   != null ? request.getHourlyRate()   : 0.0;
         int    targetLateMinutes = request.getLateMinutes()  != null ? request.getLateMinutes()  : 0;
         // earlyClockInMinutes intentionally read but unused (kept for completeness of scenario data)
+
+        if (targetHourlyRate <= 0.0 || request.getLateMinutes() == null) {
+            return validationService.runDrillEngineAndLog(student, request, false, false,
+                    "Validation Error: Scenario parameters were not received by the server. Please reload the phase.", null, null, false);
+        }
 
         double epsilon = 0.01;
 
@@ -36,6 +46,7 @@ public class Phase2ValidationService {
         String  message      = "";
         Double  auditExpected = null;
         Double  auditReceived = null;
+        boolean phaseJustCompleted = false;
 
         String step = request.getStep() != null ? request.getStep() : "EXTRACT";
 
@@ -73,31 +84,35 @@ public class Phase2ValidationService {
             }
 
         } else if ("EXECUTE".equalsIgnoreCase(step)) {
-            double result   = request.getSubmittedResult() != null ? request.getSubmittedResult() : 0.0;
-            double expected = (targetHourlyRate / 60.0) * targetLateMinutes;
-
-            System.out.println("Backend Expected: " + expected + " | Frontend Sent: " + result);
-
-            // Precise calculation with BigDecimal
-            BigDecimal hourlyRateBD = BigDecimal.valueOf(targetHourlyRate);
-            BigDecimal sixty        = BigDecimal.valueOf(60);
-            BigDecimal lateMinBD    = BigDecimal.valueOf(targetLateMinutes);
-            BigDecimal expectedBD   = hourlyRateBD.divide(sixty, 10, RoundingMode.HALF_UP)
-                                                  .multiply(lateMinBD)
-                                                  .setScale(2, RoundingMode.HALF_UP);
-            double expectedRounded  = expectedBD.doubleValue();
-
-            // Accounting tolerance: margin of error <= 0.02
-            boolean isCorrect = Math.abs(expected - result) <= 0.02 || Math.abs(expectedRounded - result) <= 0.02;
-
-            if (isCorrect) {
-                success = true;
-                message = "Tardiness deduction verified at ₱" + String.format("%.2f", expectedRounded)
-                        + ". Proceed to Step 4 — Compute Gross Basic Pay.";
+            if (request.getSubmittedResult() == null) {
+                message = "Arithmetic Error! No computed value was submitted. Compute (Hourly Rate / 60) × Late Minutes and enter the result.";
             } else {
-                message = "Arithmetic Error! Compute (Hourly Rate / 60) × Late Minutes carefully.";
-                auditExpected = expectedRounded;
-                auditReceived = result;
+                double result   = request.getSubmittedResult();
+                double expected = (targetHourlyRate / 60.0) * targetLateMinutes;
+
+                System.out.println("Backend Expected: " + expected + " | Frontend Sent: " + result);
+
+                // Precise calculation with BigDecimal
+                BigDecimal hourlyRateBD = BigDecimal.valueOf(targetHourlyRate);
+                BigDecimal sixty        = BigDecimal.valueOf(60);
+                BigDecimal lateMinBD    = BigDecimal.valueOf(targetLateMinutes);
+                BigDecimal expectedBD   = hourlyRateBD.divide(sixty, 10, RoundingMode.HALF_UP)
+                                                      .multiply(lateMinBD)
+                                                      .setScale(2, RoundingMode.HALF_UP);
+                double expectedRounded  = expectedBD.doubleValue();
+
+                // Accounting tolerance: margin of error <= 0.02
+                boolean isCorrect = Math.abs(expected - result) <= 0.02 || Math.abs(expectedRounded - result) <= 0.02;
+
+                if (isCorrect) {
+                    success = true;
+                    message = "Tardiness deduction verified at ₱" + String.format("%.2f", expectedRounded)
+                            + ". Proceed to Step 4 — Compute Gross Basic Pay.";
+                } else {
+                    message = "Arithmetic Error! Compute (Hourly Rate / 60) × Late Minutes carefully.";
+                    auditExpected = expectedRounded;
+                    auditReceived = result;
+                }
             }
 
         } else if ("COMPUTE_GROSS".equalsIgnoreCase(step)) {
@@ -154,44 +169,48 @@ public class Phase2ValidationService {
             }
 
         } else if ("SYNTHESIS".equalsIgnoreCase(step)) {
-            // Step 6: Verify Final Net Pay = Gross Pay - Tardiness
-            // Gross pay was already verified in Step 4 — we trust the scenario values for canonical computation.
-            double result           = request.getSubmittedResult() != null ? request.getSubmittedResult() : 0.0;
-            int    targetDaysPresent = request.getDaysPresent()    != null ? request.getDaysPresent()     : 0;
-
-            System.out.println("[Phase2 SYNTHESIS] HourlyRate=" + targetHourlyRate
-                    + " Days=" + targetDaysPresent + " LateMinutes=" + targetLateMinutes
-                    + " | Received=" + result);
-
-            // Canonical computation using BigDecimal
-            BigDecimal hourlyRateBD  = BigDecimal.valueOf(targetHourlyRate);
-            BigDecimal eight         = BigDecimal.valueOf(8);
-            BigDecimal daysPresentBD = BigDecimal.valueOf(targetDaysPresent);
-            BigDecimal sixty         = BigDecimal.valueOf(60);
-            BigDecimal lateMinBD     = BigDecimal.valueOf(targetLateMinutes);
-
-            BigDecimal grossPayBD    = hourlyRateBD.multiply(eight).multiply(daysPresentBD).setScale(2, RoundingMode.HALF_UP);
-            BigDecimal tardinessBD   = hourlyRateBD.divide(sixty, 10, RoundingMode.HALF_UP)
-                                                   .multiply(lateMinBD)
-                                                   .setScale(2, RoundingMode.HALF_UP);
-            BigDecimal expectedNetBD = grossPayBD.subtract(tardinessBD).setScale(2, RoundingMode.HALF_UP);
-            double expectedRounded   = expectedNetBD.doubleValue();
-
-            boolean isCorrect = Math.abs(expectedRounded - result) <= 0.02;
-
-            if (isCorrect) {
-                success = true;
-                message = "Phase 2 Complete! Net Take-Home Pay verified at ₱"
-                        + String.format("%.2f", expectedRounded) + ". Excellent audit work!";
-                validationService.updateProgress(student, "M1_MATH", 2);
+            if (request.getSubmittedResult() == null || request.getDaysPresent() == null) {
+                message = "Arithmetic Error! No computed value was submitted. Compute Net Pay = Gross Pay − Tardiness and enter the result.";
             } else {
-                message = "Net Pay is incorrect. Review the Company Payroll Manual for the Net Pay formula and verify your prior computations.";
-                auditExpected = expectedRounded;
-                auditReceived = result;
+                // Step 6: Verify Final Net Pay = Gross Pay - Tardiness
+                // Gross pay was already verified in Step 4 — we trust the scenario values for canonical computation.
+                double result           = request.getSubmittedResult();
+                int    targetDaysPresent = request.getDaysPresent();
+
+                System.out.println("[Phase2 SYNTHESIS] HourlyRate=" + targetHourlyRate
+                        + " Days=" + targetDaysPresent + " LateMinutes=" + targetLateMinutes
+                        + " | Received=" + result);
+
+                // Canonical computation using BigDecimal
+                BigDecimal hourlyRateBD  = BigDecimal.valueOf(targetHourlyRate);
+                BigDecimal eight         = BigDecimal.valueOf(8);
+                BigDecimal daysPresentBD = BigDecimal.valueOf(targetDaysPresent);
+                BigDecimal sixty         = BigDecimal.valueOf(60);
+                BigDecimal lateMinBD     = BigDecimal.valueOf(targetLateMinutes);
+
+                BigDecimal grossPayBD    = hourlyRateBD.multiply(eight).multiply(daysPresentBD).setScale(2, RoundingMode.HALF_UP);
+                BigDecimal tardinessBD   = hourlyRateBD.divide(sixty, 10, RoundingMode.HALF_UP)
+                                                       .multiply(lateMinBD)
+                                                       .setScale(2, RoundingMode.HALF_UP);
+                BigDecimal expectedNetBD = grossPayBD.subtract(tardinessBD).setScale(2, RoundingMode.HALF_UP);
+                double expectedRounded   = expectedNetBD.doubleValue();
+
+                boolean isCorrect = Math.abs(expectedRounded - result) <= 0.02;
+
+                if (isCorrect) {
+                    success = true;
+                    message = "Phase 2 Complete! Net Take-Home Pay verified at ₱"
+                            + String.format("%.2f", expectedRounded) + ". Excellent audit work!";
+                    phaseJustCompleted = validationService.updateProgress(student, "M1_MATH", 2);
+                } else {
+                    message = "Net Pay is incorrect. Review the Company Payroll Manual for the Net Pay formula and verify your prior computations.";
+                    auditExpected = expectedRounded;
+                    auditReceived = result;
+                }
             }
         }
 
         return validationService.runDrillEngineAndLog(
-                student, request, success, isRedHerring, message, auditExpected, auditReceived);
+                student, request, success, isRedHerring, message, auditExpected, auditReceived, phaseJustCompleted);
     }
 }

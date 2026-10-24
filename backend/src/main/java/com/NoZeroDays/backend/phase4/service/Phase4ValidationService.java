@@ -26,14 +26,25 @@ public class Phase4ValidationService {
     public ValidationResponse validate(ValidationRequest request) {
         StudentProfile student = validationService.resolveStudent(request.getStudentNumber());
 
+        String scenarioMismatch = validationService.checkScenarioConsistency(student, request);
+        if (scenarioMismatch != null) {
+            return validationService.runDrillEngineAndLog(student, request, false, false, scenarioMismatch, null, null, false);
+        }
+
         double dailyRate = request.getDailyRate() != null ? request.getDailyRate() : 0.0;
         double epsilon   = 0.01;
+
+        if (dailyRate <= 0.0 || request.getDaysPresent() == null || request.getDaysPresent() <= 0) {
+            return validationService.runDrillEngineAndLog(student, request, false, false,
+                    "Validation Error: Scenario parameters were not received by the server. Please reload the phase.", null, null, false);
+        }
 
         boolean success      = false;
         boolean isRedHerring = false;
         String  message      = "";
         Double  auditExpected = null;
         Double  auditReceived = null;
+        boolean phaseJustCompleted = false;
 
         String step = request.getStep() != null ? request.getStep() : "EXTRACT";
 
@@ -126,38 +137,42 @@ public class Phase4ValidationService {
             }
 
         } else if ("SYNTHESIS".equalsIgnoreCase(step)) {
-            double result            = request.getSubmittedResult() != null ? request.getSubmittedResult() : 0.0;
-            double targetDailyRate   = request.getDailyRate()       != null ? request.getDailyRate()       : 0.0;
-            int    targetDaysPresent = request.getDaysPresent()     != null ? request.getDaysPresent()     : 0;
-
-            double expectedGross      = targetDailyRate * targetDaysPresent;
-            double expectedHolidayPay = targetDailyRate * 2.0;
-            double expected           = expectedGross + expectedHolidayPay;
-
-            System.out.println("Backend Expected (Phase 4 Synthesis): " + expected + " | Frontend Sent: " + result);
-
-            BigDecimal grossPayBD    = BigDecimal.valueOf(targetDailyRate).multiply(BigDecimal.valueOf(targetDaysPresent)).setScale(2, RoundingMode.HALF_UP);
-            BigDecimal holidayPayBD  = BigDecimal.valueOf(targetDailyRate).multiply(BigDecimal.valueOf(2.0)).setScale(2, RoundingMode.HALF_UP);
-            BigDecimal expectedTotalBD = grossPayBD.add(holidayPayBD).setScale(2, RoundingMode.HALF_UP);
-            double expectedRounded   = expectedTotalBD.doubleValue();
-
-            boolean isCorrect = Math.abs(expected - result) <= 0.02 || Math.abs(expectedRounded - result) <= 0.02;
-
-            if (isCorrect) {
-                success = true;
-                message = "Phase 4 Complete! Total Holiday-adjusted Earnings verified successfully at ₱"
-                        + String.format("%.2f", expectedRounded);
-                validationService.updateProgress(student, "M2_MULTIPLIERS", 2);
+            if (request.getSubmittedResult() == null) {
+                message = "Arithmetic Error! No computed value was submitted. Compute Total Earnings = Gross Pay + Holiday Pay and enter the result.";
             } else {
-                message = "Arithmetic Error! Total Earnings = Basic Gross Pay (₱"
-                        + String.format("%.2f", grossPayBD.doubleValue()) + ") + Holiday Pay (₱"
-                        + String.format("%.2f", holidayPayBD.doubleValue()) + ") again.";
-                auditExpected = expectedRounded;
-                auditReceived = result;
+                double result            = request.getSubmittedResult();
+                double targetDailyRate   = request.getDailyRate()       != null ? request.getDailyRate()       : 0.0;
+                int    targetDaysPresent = request.getDaysPresent()     != null ? request.getDaysPresent()     : 0;
+
+                double expectedGross      = targetDailyRate * targetDaysPresent;
+                double expectedHolidayPay = targetDailyRate * 2.0;
+                double expected           = expectedGross + expectedHolidayPay;
+
+                System.out.println("Backend Expected (Phase 4 Synthesis): " + expected + " | Frontend Sent: " + result);
+
+                BigDecimal grossPayBD    = BigDecimal.valueOf(targetDailyRate).multiply(BigDecimal.valueOf(targetDaysPresent)).setScale(2, RoundingMode.HALF_UP);
+                BigDecimal holidayPayBD  = BigDecimal.valueOf(targetDailyRate).multiply(BigDecimal.valueOf(2.0)).setScale(2, RoundingMode.HALF_UP);
+                BigDecimal expectedTotalBD = grossPayBD.add(holidayPayBD).setScale(2, RoundingMode.HALF_UP);
+                double expectedRounded   = expectedTotalBD.doubleValue();
+
+                boolean isCorrect = Math.abs(expected - result) <= 0.02 || Math.abs(expectedRounded - result) <= 0.02;
+
+                if (isCorrect) {
+                    success = true;
+                    message = "Phase 4 Complete! Total Holiday-adjusted Earnings verified successfully at ₱"
+                            + String.format("%.2f", expectedRounded);
+                    phaseJustCompleted = validationService.updateProgress(student, "M2_MULTIPLIERS", 2);
+                } else {
+                    message = "Arithmetic Error! Total Earnings = Basic Gross Pay (₱"
+                            + String.format("%.2f", grossPayBD.doubleValue()) + ") + Holiday Pay (₱"
+                            + String.format("%.2f", holidayPayBD.doubleValue()) + ") again.";
+                    auditExpected = expectedRounded;
+                    auditReceived = result;
+                }
             }
         }
 
         return validationService.runDrillEngineAndLog(
-                student, request, success, isRedHerring, message, auditExpected, auditReceived);
+                student, request, success, isRedHerring, message, auditExpected, auditReceived, phaseJustCompleted);
     }
 }

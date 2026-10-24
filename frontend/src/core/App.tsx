@@ -22,6 +22,7 @@ import {
   generatePhase6Scenario, 
   generatePhase7Scenario 
 } from '../utils/scenarioGen';
+import { getStorageNamespace, phaseTimerKey, phaseProgressKey } from '../utils/storage';
 import './App.css'; 
 
 function App() {
@@ -252,13 +253,8 @@ function App() {
       ? `${API_BASE_URL}/api/rooms/${currentRoom}/phase-exit`
       : `${API_BASE_URL}/api/students/phase-exit`;
 
-    if (navigator.sendBeacon) {
-      try {
-        const blob = new Blob([payload], { type: 'application/json' });
-        navigator.sendBeacon(exitUrl, blob);
-      } catch (_) {}
-    }
-
+    // Single delivery attempt: fetch with keepalive survives page teardown,
+    // so a duplicate sendBeacon is unnecessary (and doubles backend writes).
     try {
       await fetch(exitUrl, {
         method: 'POST',
@@ -279,9 +275,16 @@ function App() {
   // Real-time per-phase elapsed timer (seconds)
   const [phaseTimers, setPhaseTimers] = useState<{ [phase: number]: number }>(() => {
     const initial: { [phase: number]: number } = {};
+    let restoredNumber = '';
+    try {
+      const parsedStudent = JSON.parse(localStorage.getItem('student') || 'null');
+      restoredNumber = (parsedStudent as any)?.studentNumber || '';
+    } catch (_) {}
+    const restoredRoom = localStorage.getItem('studentRoomCode') || '';
+    const namespace = getStorageNamespace(restoredNumber, restoredRoom);
     for (let p = 1; p <= 7; p++) {
       try {
-        const saved = localStorage.getItem(`phase_timer_${p}`);
+        const saved = localStorage.getItem(phaseTimerKey(p, namespace));
         initial[p] = saved ? parseInt(saved, 10) : 0;
       } catch (_) {
         initial[p] = 0;
@@ -300,18 +303,22 @@ function App() {
   useEffect(() => {
     if (!isStudentInPhase || isCurrentPhaseComplete) return;
 
+    const studentNum = (student as any)?.studentNumber;
+    const currentRoom = roomCode || localStorage.getItem('studentRoomCode') || '';
+    const namespace = getStorageNamespace(studentNum, currentRoom);
+
     const timerInterval = setInterval(() => {
       setPhaseTimers(prev => {
         const nextVal = (prev[activePhaseIndex] || 0) + 1;
         try {
-          localStorage.setItem(`phase_timer_${activePhaseIndex}`, nextVal.toString());
+          localStorage.setItem(phaseTimerKey(activePhaseIndex, namespace), nextVal.toString());
         } catch (_) {}
         return { ...prev, [activePhaseIndex]: nextVal };
       });
     }, 1000);
 
     return () => clearInterval(timerInterval);
-  }, [isStudentInPhase, activePhaseIndex, isCurrentPhaseComplete]);
+  }, [isStudentInPhase, activePhaseIndex, isCurrentPhaseComplete, student, roomCode]);
 
   // Auto-persist active phase progress to sessionStorage so leaving to dashboard or reloading doesn't wipe progress
   useEffect(() => {
@@ -354,7 +361,10 @@ function App() {
         tribunalNet,
         tribunalStatus
       };
-      sessionStorage.setItem(`phase_progress_${activePhaseIndex}`, JSON.stringify(stateToSave));
+      const studentNum = (student as any)?.studentNumber;
+      const currentRoom = roomCode || localStorage.getItem('studentRoomCode') || '';
+      const namespace = getStorageNamespace(studentNum, currentRoom);
+      sessionStorage.setItem(phaseProgressKey(activePhaseIndex, namespace), JSON.stringify(stateToSave));
     } catch (_) {}
   }, [
     isStudentInPhase,
@@ -363,13 +373,38 @@ function App() {
     extractedA,
     extractedB,
     step1Status,
+    extractionAttempts,
     selectedRule,
     step2Status,
     calculatedValue,
     step3Status,
+    netPayValue,
     step4Status,
+    grossPayValue,
     grossPayStatus,
-    tribunalStatus
+    netPayFormula,
+    netFormulaStatus,
+    pagIbigDeductionValue,
+    pagIbigDeductionStatus,
+    philhealthErValue,
+    philhealthSssEeValue,
+    philhealthErStatus,
+    trueOtHoursValue,
+    trueOtHoursStatus,
+    otMultiplierValue,
+    otMultiplierStatus,
+    otFormulaValue,
+    otFormulaStatus,
+    holidayTypeValue,
+    holidayMultiplierValue,
+    holidayFormulaValue,
+    holidayFormulaStatus,
+    tribunalGross,
+    tribunalDeductions,
+    tribunalNet,
+    tribunalStatus,
+    student,
+    roomCode
   ]);
 
   // 1. Hook into phase transition / component unmount lifecycle:
@@ -776,11 +811,14 @@ function App() {
     setScenario(newScenario);
 
     // Reset this phase's timer upon a genuine scenario reroll / drill reset
+    const studentNum = (student as any)?.studentNumber;
+    const currentRoom = roomCode || localStorage.getItem('studentRoomCode') || '';
+    const namespace = getStorageNamespace(studentNum, currentRoom);
     setPhaseTimers(prev => {
       const updated = { ...prev, [phaseToUse]: 0 };
       try {
-        localStorage.setItem(`phase_timer_${phaseToUse}`, '0');
-        sessionStorage.removeItem(`phase_progress_${phaseToUse}`);
+        localStorage.setItem(phaseTimerKey(phaseToUse, namespace), '0');
+        sessionStorage.removeItem(phaseProgressKey(phaseToUse, namespace));
       } catch (_) {}
       return updated;
     });
@@ -840,7 +878,9 @@ function App() {
 
   const handleTransitionToNextPhase = () => {
     try {
-      sessionStorage.removeItem(`phase_progress_${activePhaseIndex}`);
+      const studentNum = (student as any)?.studentNumber;
+      const currentRoom = roomCode || localStorage.getItem('studentRoomCode') || '';
+      sessionStorage.removeItem(phaseProgressKey(activePhaseIndex, getStorageNamespace(studentNum, currentRoom)));
     } catch (_) {}
 
     if (activePhaseIndex === 1) {
@@ -1970,7 +2010,11 @@ function App() {
 
             if (!hasOngoingState) {
               try {
-                const stored = sessionStorage.getItem(`phase_progress_${phase}`);
+                const studentNum = (student as any)?.studentNumber;
+                const currentRoom = roomCode || localStorage.getItem('studentRoomCode') || '';
+                const stored = sessionStorage.getItem(
+                  phaseProgressKey(phase, getStorageNamespace(studentNum, currentRoom))
+                );
                 if (stored) {
                   const parsed = JSON.parse(stored);
                   if (parsed && parsed.phaseId === phase && parsed.scenario) {

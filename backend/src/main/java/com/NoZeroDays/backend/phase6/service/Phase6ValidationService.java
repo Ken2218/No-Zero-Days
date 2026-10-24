@@ -22,9 +22,19 @@ public class Phase6ValidationService {
     public ValidationResponse validate(ValidationRequest request) {
         StudentProfile student = validationService.resolveStudent(request.getStudentNumber());
 
+        String scenarioMismatch = validationService.checkScenarioConsistency(student, request);
+        if (scenarioMismatch != null) {
+            return validationService.runDrillEngineAndLog(student, request, false, false, scenarioMismatch, null, null, false);
+        }
+
         double basicSalary  = request.getBasicSalary()        != null ? request.getBasicSalary()        : 0.0;
         double sssEe        = request.getSssEeShare()         != null ? request.getSssEeShare()         : 0.0;
         double personalLoan = request.getPersonalSalaryLoan() != null ? request.getPersonalSalaryLoan() : 0.0;
+
+        if (basicSalary <= 0.0 || request.getSssEeShare() == null || sssEe <= 0.0 || request.getPersonalSalaryLoan() == null) {
+            return validationService.runDrillEngineAndLog(student, request, false, false,
+                    "Validation Error: Scenario parameters were not received by the server. Please reload the phase.", null, null, false);
+        }
 
         double epsilon = 0.01;
 
@@ -33,6 +43,7 @@ public class Phase6ValidationService {
         String  message      = "";
         Double  auditExpected = null;
         Double  auditReceived = null;
+        boolean phaseJustCompleted = false;
 
         String step = request.getStep() != null ? request.getStep() : "EXTRACT";
 
@@ -97,62 +108,70 @@ public class Phase6ValidationService {
             }
 
         } else if ("WITHHOLDING_TAX".equalsIgnoreCase(step)) {
-            double result = request.getSubmittedResult() != null ? request.getSubmittedResult() : 0.0;
-            double taxableIncome = basicSalary - sssEe - 200.00 - (basicSalary * 0.025);
-            double expectedTax = 0.0;
-
-            if (taxableIncome <= 20833.00) {
-                expectedTax = 0.0;
-            } else if (taxableIncome <= 33333.00) {
-                expectedTax = (taxableIncome - 20833.00) * 0.15;
-            } else if (taxableIncome <= 66667.00) {
-                expectedTax = 1875.00 + (taxableIncome - 33333.00) * 0.20;
-            } else if (taxableIncome <= 166667.00) {
-                expectedTax = 8541.80 + (taxableIncome - 66667.00) * 0.25;
-            } else if (taxableIncome <= 666667.00) {
-                expectedTax = 33541.80 + (taxableIncome - 166667.00) * 0.30;
+            if (request.getSubmittedResult() == null) {
+                message = "Arithmetic Error! No computed value was submitted. Apply the rate of the selected tax bracket and enter the withholding tax.";
             } else {
-                expectedTax = 153541.80 + (taxableIncome - 666667.00) * 0.35;
-            }
+                double result = request.getSubmittedResult();
+                double taxableIncome = basicSalary - sssEe - 200.00 - (basicSalary * 0.025);
+                double expectedTax = 0.0;
 
-            if (Math.abs(result - expectedTax) < epsilon) {
-                success = true;
-                message = "Withholding Tax verified successfully at ₱" + String.format("%.2f", expectedTax) + "! Proceed to Step 5.";
-            } else {
-                message = "Incorrect Withholding Tax amount. Apply the rate of the selected tax bracket on the excess over the bracket threshold.";
+                if (taxableIncome <= 20833.00) {
+                    expectedTax = 0.0;
+                } else if (taxableIncome <= 33333.00) {
+                    expectedTax = (taxableIncome - 20833.00) * 0.15;
+                } else if (taxableIncome <= 66667.00) {
+                    expectedTax = 1875.00 + (taxableIncome - 33333.00) * 0.20;
+                } else if (taxableIncome <= 166667.00) {
+                    expectedTax = 8541.80 + (taxableIncome - 66667.00) * 0.25;
+                } else if (taxableIncome <= 666667.00) {
+                    expectedTax = 33541.80 + (taxableIncome - 166667.00) * 0.30;
+                } else {
+                    expectedTax = 153541.80 + (taxableIncome - 666667.00) * 0.35;
+                }
+
+                if (Math.abs(result - expectedTax) < epsilon) {
+                    success = true;
+                    message = "Withholding Tax verified successfully at ₱" + String.format("%.2f", expectedTax) + "! Proceed to Step 5.";
+                } else {
+                    message = "Incorrect Withholding Tax amount. Apply the rate of the selected tax bracket on the excess over the bracket threshold.";
+                }
             }
 
         } else if ("SYNTHESIS".equalsIgnoreCase(step)) {
-            double result = request.getSubmittedResult() != null ? request.getSubmittedResult() : 0.0;
-            double taxableIncome = basicSalary - sssEe - 200.00 - (basicSalary * 0.025);
-            double expectedTax = 0.0;
-
-            if (taxableIncome <= 20833.00) {
-                expectedTax = 0.0;
-            } else if (taxableIncome <= 33333.00) {
-                expectedTax = (taxableIncome - 20833.00) * 0.15;
-            } else if (taxableIncome <= 66667.00) {
-                expectedTax = 1875.00 + (taxableIncome - 33333.00) * 0.20;
-            } else if (taxableIncome <= 166667.00) {
-                expectedTax = 8541.80 + (taxableIncome - 66667.00) * 0.25;
-            } else if (taxableIncome <= 666667.00) {
-                expectedTax = 33541.80 + (taxableIncome - 166667.00) * 0.30;
+            if (request.getSubmittedResult() == null) {
+                message = "Arithmetic Error! No computed value was submitted. Compute Net Pay = Basic Salary − all deductions and enter the result.";
             } else {
-                expectedTax = 153541.80 + (taxableIncome - 666667.00) * 0.35;
-            }
+                double result = request.getSubmittedResult();
+                double taxableIncome = basicSalary - sssEe - 200.00 - (basicSalary * 0.025);
+                double expectedTax = 0.0;
 
-            double expectedNetPay = basicSalary - sssEe - personalLoan - 200.00 - (basicSalary * 0.025) - expectedTax;
+                if (taxableIncome <= 20833.00) {
+                    expectedTax = 0.0;
+                } else if (taxableIncome <= 33333.00) {
+                    expectedTax = (taxableIncome - 20833.00) * 0.15;
+                } else if (taxableIncome <= 66667.00) {
+                    expectedTax = 1875.00 + (taxableIncome - 33333.00) * 0.20;
+                } else if (taxableIncome <= 166667.00) {
+                    expectedTax = 8541.80 + (taxableIncome - 66667.00) * 0.25;
+                } else if (taxableIncome <= 666667.00) {
+                    expectedTax = 33541.80 + (taxableIncome - 166667.00) * 0.30;
+                } else {
+                    expectedTax = 153541.80 + (taxableIncome - 666667.00) * 0.35;
+                }
 
-            if (Math.abs(result - expectedNetPay) < epsilon) {
-                success = true;
-                message = "Phase 6 Complete! Net Take-Home Pay verified successfully at ₱" + String.format("%.2f", expectedNetPay);
-                validationService.updateProgress(student, "M3_BUREAUCRACY", 2);
-            } else {
-                message = "Arithmetic Error! Compute Net Pay: Basic Salary minus all statutory deductions (SSS EE, PhilHealth EE, Pag-IBIG), Personal Loan, and Withholding Tax.";
+                double expectedNetPay = basicSalary - sssEe - personalLoan - 200.00 - (basicSalary * 0.025) - expectedTax;
+
+                if (Math.abs(result - expectedNetPay) < epsilon) {
+                    success = true;
+                    message = "Phase 6 Complete! Net Take-Home Pay verified successfully at ₱" + String.format("%.2f", expectedNetPay);
+                    phaseJustCompleted = validationService.updateProgress(student, "M3_BUREAUCRACY", 2);
+                } else {
+                    message = "Arithmetic Error! Compute Net Pay: Basic Salary minus all statutory deductions (SSS EE, PhilHealth EE, Pag-IBIG), Personal Loan, and Withholding Tax.";
+                }
             }
         }
 
         return validationService.runDrillEngineAndLog(
-                student, request, success, isRedHerring, message, auditExpected, auditReceived);
+                student, request, success, isRedHerring, message, auditExpected, auditReceived, phaseJustCompleted);
     }
 }

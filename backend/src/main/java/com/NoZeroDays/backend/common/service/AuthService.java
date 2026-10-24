@@ -22,13 +22,16 @@ public class AuthService {
 
     /**
      * Flexible Student Login verification:
-     * - Checks if student exists by student number.
-     * - Performs flexible, case-insensitive, whitespace-trimmed, substring, and token-matching on full name.
-     * - Allows login if student ID exists, ensuring capstone presentation participants are never locked out.
+     * - Student number must exist.
+     * - Full name is REQUIRED and must plausibly match the registered record
+     *   (case-insensitive, whitespace-insensitive, token-based).
      */
     public StudentProfile authenticateStudent(String rawStudentNumber, String rawName) {
         if (rawStudentNumber == null || rawStudentNumber.trim().isEmpty()) {
             throw new IllegalArgumentException("Student number cannot be empty.");
+        }
+        if (rawName == null || rawName.trim().isEmpty()) {
+            throw new IllegalArgumentException("Full name is required to sign in.");
         }
 
         String studentNumber = rawStudentNumber.trim();
@@ -39,14 +42,10 @@ public class AuthService {
 
         StudentProfile profile = existing.get();
 
-        // If a name is provided, check flexibly
-        if (rawName != null && !rawName.trim().isEmpty()) {
-            String enteredName = rawName.trim();
-            if (!isFlexibleNameMatch(profile.getFullName(), enteredName)) {
-                throw new IllegalArgumentException("Entered name '" + enteredName 
-                    + "' does not match registered record for Student ID '" + studentNumber 
-                    + "'. Please check your credentials or sign up first.");
-            }
+        if (!isFlexibleNameMatch(profile.getFullName(), rawName)) {
+            throw new IllegalArgumentException("Entered name '" + rawName.trim()
+                + "' does not match registered record for Student ID '" + studentNumber
+                + "'. Please check your credentials or sign up first.");
         }
 
         // NOTE: Do NOT create a GameSession here.
@@ -61,66 +60,52 @@ public class AuthService {
     /**
      * Flexible name comparison:
      * - Case-insensitive
-     * - Strips leading/trailing whitespaces and collapses multiple spaces
-     * - Substring matching in either direction (e.g. "Juan" in "Juan Dela Cruz")
-     * - Token/word overlap (e.g. first name or last name match)
-     * - Levenshtein distance tolerance for minor typos (<= 2 char differences)
+     * - Strips leading/trailing whitespace and collapses multiple spaces
+     * - Full-name match in either direction (registered name contains entered name or vice versa)
+     * - Token overlap: every significant token (>= 3 chars) of the entered name
+     *   must appear in the registered name
      */
     public boolean isFlexibleNameMatch(String registeredName, String inputName) {
         if (inputName == null || inputName.trim().isEmpty()) {
-            return true;
+            return false;
         }
         if (registeredName == null || registeredName.trim().isEmpty()) {
-            return true;
+            return false;
         }
 
         String normReg = registeredName.trim().replaceAll("\\s+", " ").toLowerCase();
         String normInput = inputName.trim().replaceAll("\\s+", " ").toLowerCase();
 
         // 1. Exact or case-insensitive match
-        if (normReg.equalsIgnoreCase(normInput)) {
+        if (normReg.equals(normInput)) {
             return true;
         }
 
-        // 2. Substring matching in either direction
+        // 2. Full-name substring matching in either direction
         if (normReg.contains(normInput) || normInput.contains(normReg)) {
             return true;
         }
 
-        // 3. Name-part / token overlap (first name, last name, middle name)
+        // 3. Token overlap: every significant token of the entered name must appear
+        //    as a whole word (or substring) of the registered name.
         String[] regParts = normReg.split("[\\s,-]+");
         String[] inputParts = normInput.split("[\\s,-]+");
+        boolean anySignificantToken = false;
         for (String ip : inputParts) {
-            if (ip.length() >= 2) {
-                for (String rp : regParts) {
-                    if (rp.length() >= 2 && (rp.equals(ip) || rp.contains(ip) || ip.contains(rp))) {
-                        return true;
-                    }
+            if (ip.length() < 3) continue;
+            anySignificantToken = true;
+            boolean found = false;
+            for (String rp : regParts) {
+                if (rp.length() >= 3 && (rp.equals(ip) || rp.contains(ip) || ip.contains(rp))) {
+                    found = true;
+                    break;
                 }
             }
-        }
-
-        // 4. Fuzzy edit distance (<= 2 typos)
-        if (levenshteinDistance(normReg, normInput) <= 2) {
-            return true;
-        }
-
-        return false;
-    }
-
-    private int levenshteinDistance(String a, String b) {
-        int[] costs = new int[b.length() + 1];
-        for (int j = 0; j < costs.length; j++) costs[j] = j;
-        for (int i = 1; i <= a.length(); i++) {
-            costs[0] = i;
-            int nw = i - 1;
-            for (int j = 1; j <= b.length(); j++) {
-                int cj = Math.min(1 + Math.min(costs[j], costs[j - 1]),
-                        a.charAt(i - 1) == b.charAt(j - 1) ? nw : nw + 1);
-                nw = costs[j];
-                costs[j] = cj;
+            if (!found) {
+                return false;
             }
         }
-        return costs[b.length()];
+
+        return anySignificantToken;
     }
 }

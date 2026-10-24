@@ -22,10 +22,20 @@ public class Phase1ValidationService {
     public ValidationResponse validate(ValidationRequest request) {
         StudentProfile student = validationService.resolveStudent(request.getStudentNumber());
 
+        String scenarioMismatch = validationService.checkScenarioConsistency(student, request);
+        if (scenarioMismatch != null) {
+            return validationService.runDrillEngineAndLog(student, request, false, false, scenarioMismatch, null, null, false);
+        }
+
         double targetDailyRate   = request.getDailyRate()    != null ? request.getDailyRate()    : 0.0;
         int    targetDaysPresent = request.getDaysPresent()  != null ? request.getDaysPresent()  : 0;
         double rice              = request.getRiceSubsidy()  != null ? request.getRiceSubsidy()  : 0.0;
         double uniform           = request.getUniformAllowance() != null ? request.getUniformAllowance() : 0.0;
+
+        if (targetDailyRate <= 0.0 || targetDaysPresent <= 0) {
+            return validationService.runDrillEngineAndLog(student, request, false, false,
+                    "Validation Error: Scenario parameters were not received by the server. Please reload the phase.", null, null, false);
+        }
 
         double epsilon = 0.01;
 
@@ -34,6 +44,7 @@ public class Phase1ValidationService {
         String  message      = "";
         Double  auditExpected = null;
         Double  auditReceived = null;
+        boolean phaseJustCompleted = false;
 
         String step = request.getStep() != null ? request.getStep() : "EXTRACT";
 
@@ -65,19 +76,23 @@ public class Phase1ValidationService {
             }
 
         } else if ("EXECUTE".equalsIgnoreCase(step)) {
-            double result   = request.getSubmittedResult() != null ? request.getSubmittedResult() : 0.0;
-            double expected = targetDailyRate * targetDaysPresent;
-
-            if (Math.abs(result - expected) < epsilon) {
-                success = true;
-                message = "Phase 1 Complete! Gross Basic Pay verified successfully at ₱" + expected;
-                validationService.updateProgress(student, "M1_MATH", 1);
+            if (request.getSubmittedResult() == null) {
+                message = "Arithmetic Error! No computed value was submitted. Calculate Daily Rate × Days Present and enter the result.";
             } else {
-                message = "Arithmetic Error! Calculate Daily Rate (₱" + targetDailyRate + ") × Days Present (" + targetDaysPresent + ") again.";
+                double result   = request.getSubmittedResult();
+                double expected = targetDailyRate * targetDaysPresent;
+
+                if (Math.abs(result - expected) < epsilon) {
+                    success = true;
+                    message = "Phase 1 Complete! Gross Basic Pay verified successfully at ₱" + expected;
+                    phaseJustCompleted = validationService.updateProgress(student, "M1_MATH", 1);
+                } else {
+                    message = "Arithmetic Error! Calculate Daily Rate (₱" + targetDailyRate + ") × Days Present (" + targetDaysPresent + ") again.";
+                }
             }
         }
 
         return validationService.runDrillEngineAndLog(
-                student, request, success, isRedHerring, message, auditExpected, auditReceived);
+                student, request, success, isRedHerring, message, auditExpected, auditReceived, phaseJustCompleted);
     }
 }

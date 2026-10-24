@@ -4,15 +4,19 @@ import com.NoZeroDays.backend.common.dto.ValidationRequest;
 import com.NoZeroDays.backend.common.dto.ValidationResponse;
 import com.NoZeroDays.backend.common.model.AttemptLog;
 import com.NoZeroDays.backend.common.model.RoomParticipant;
+import com.NoZeroDays.backend.common.model.ScenarioSnapshot;
 import com.NoZeroDays.backend.common.model.StudentProfile;
 import com.NoZeroDays.backend.common.repository.AttemptLogRepository;
 import com.NoZeroDays.backend.common.repository.GameSessionRepository;
 import com.NoZeroDays.backend.common.repository.RoomParticipantRepository;
+import com.NoZeroDays.backend.common.repository.ScenarioSnapshotRepository;
 import com.NoZeroDays.backend.common.repository.StudentProfileRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 
 /**
@@ -41,6 +45,9 @@ public class ValidationService {
 
     @Autowired
     private RoomParticipantRepository roomParticipantRepository;
+
+    @Autowired
+    private ScenarioSnapshotRepository scenarioSnapshotRepository;
 
     @Autowired
     private EmailReportService emailReportService;
@@ -79,6 +86,111 @@ public class ValidationService {
     }
 
     // -------------------------------------------------------------------------
+    // Scenario consistency enforcement (anti-tampering)
+    // -------------------------------------------------------------------------
+
+    /**
+     * Verifies that the scenario values attached to a submission still match the
+     * scenario the student registered for this module+phase (registered on the
+     * first successful EXTRACT). Returns a rejection message, or null when OK.
+     * Phase 7 (M4_TRIBUNAL) and EXTRACT steps are exempt: EXTRACT is what
+     * registers the snapshot, and Phase 7 is a single self-contained submission.
+     */
+    public String checkScenarioConsistency(StudentProfile student, ValidationRequest request) {
+        if (student == null || request == null) return null;
+        String module = request.getModule() != null ? request.getModule().toUpperCase() : "M1_MATH";
+        if ("M4_TRIBUNAL".equalsIgnoreCase(module)) return null;
+        String step = request.getStep() != null ? request.getStep() : "EXTRACT";
+        if ("EXTRACT".equalsIgnoreCase(step)) return null;
+        int phase = request.getPhase() != null ? request.getPhase() : 1;
+
+        Optional<ScenarioSnapshot> snapOpt =
+                scenarioSnapshotRepository.findByStudentProfileAndModuleAndPhase(student, module, phase);
+        if (snapOpt.isEmpty()) return null;
+
+        ScenarioSnapshot snap = snapOpt.get();
+        boolean matches =
+                   fieldMatches(snap.getDailyRate(), request.getDailyRate())
+                && fieldMatches(snap.getDaysPresent(), request.getDaysPresent())
+                && fieldMatches(snap.getHourlyRate(), request.getHourlyRate())
+                && fieldMatches(snap.getLateMinutes(), request.getLateMinutes())
+                && fieldMatches(snap.getRedHerringLateMinutes(), request.getRedHerringLateMinutes())
+                && fieldMatches(snap.getEarlyClockInMinutes(), request.getEarlyClockInMinutes())
+                && fieldMatches(snap.getOtHours(), request.getOtHours())
+                && fieldMatches(snap.getUnpaidLunchHours(), request.getUnpaidLunchHours())
+                && fieldMatches(snap.getWorkedOnHoliday(), request.getWorkedOnHoliday())
+                && fieldMatches(snap.getBasicSalary(), request.getBasicSalary())
+                && fieldMatches(snap.getSssEeShare(), request.getSssEeShare())
+                && fieldMatches(snap.getSssErShare(), request.getSssErShare())
+                && fieldMatches(snap.getPersonalSalaryLoan(), request.getPersonalSalaryLoan())
+                && fieldMatches(snap.getSpouseLoan(), request.getSpouseLoan())
+                && fieldMatches(snap.getRiceSubsidy(), request.getRiceSubsidy())
+                && fieldMatches(snap.getUniformAllowance(), request.getUniformAllowance())
+                && fieldMatches(snap.getGrossPay(), request.getGrossPay())
+                && fieldMatches(snap.getTardinessDeduction(), request.getTardinessDeduction())
+                && stringFieldMatches(snap.getEmployeeName(), request.getEmployeeName())
+                && stringFieldMatches(snap.getCompanyName(), request.getCompanyName());
+
+        if (!matches) {
+            return "Scenario mismatch detected: the submitted scenario values do not match this phase's registered scenario. Please restart the phase.";
+        }
+        return null;
+    }
+
+    private boolean fieldMatches(Object snapValue, Object requestValue) {
+        // A missing request field is skipped (some steps legitimately omit fields);
+        // a present field must equal the registered value.
+        if (requestValue == null) return true;
+        return Objects.equals(snapValue, requestValue);
+    }
+
+    private boolean stringFieldMatches(String snapValue, String requestValue) {
+        if (requestValue == null || requestValue.isBlank()) return true;
+        return Objects.equals(snapValue, requestValue);
+    }
+
+    /**
+     * Registers/updates the scenario snapshot for a student's module+phase.
+     * Called only after a successful EXTRACT so the registered values are the
+     * ones the student actually validated against.
+     */
+    private void saveScenarioSnapshot(StudentProfile student, String module, int phase, ValidationRequest request) {
+        Optional<ScenarioSnapshot> snapOpt =
+                scenarioSnapshotRepository.findByStudentProfileAndModuleAndPhase(student, module.toUpperCase(), phase);
+        ScenarioSnapshot snap = snapOpt.orElseGet(() -> {
+            ScenarioSnapshot s = new ScenarioSnapshot();
+            s.setStudentProfile(student);
+            s.setModule(module.toUpperCase());
+            s.setPhase(phase);
+            return s;
+        });
+
+        snap.setDailyRate(request.getDailyRate());
+        snap.setDaysPresent(request.getDaysPresent());
+        snap.setHourlyRate(request.getHourlyRate());
+        snap.setLateMinutes(request.getLateMinutes());
+        snap.setRedHerringLateMinutes(request.getRedHerringLateMinutes());
+        snap.setEarlyClockInMinutes(request.getEarlyClockInMinutes());
+        snap.setOtHours(request.getOtHours());
+        snap.setUnpaidLunchHours(request.getUnpaidLunchHours());
+        snap.setWorkedOnHoliday(request.getWorkedOnHoliday());
+        snap.setBasicSalary(request.getBasicSalary());
+        snap.setSssEeShare(request.getSssEeShare());
+        snap.setSssErShare(request.getSssErShare());
+        snap.setPersonalSalaryLoan(request.getPersonalSalaryLoan());
+        snap.setSpouseLoan(request.getSpouseLoan());
+        snap.setRiceSubsidy(request.getRiceSubsidy());
+        snap.setUniformAllowance(request.getUniformAllowance());
+        snap.setGrossPay(request.getGrossPay());
+        snap.setTardinessDeduction(request.getTardinessDeduction());
+        snap.setEmployeeName(request.getEmployeeName());
+        snap.setCompanyName(request.getCompanyName());
+        snap.setUpdatedAt(LocalDateTime.now());
+
+        scenarioSnapshotRepository.save(snap);
+    }
+
+    // -------------------------------------------------------------------------
     // Public utility: Drill Engine + AttemptLog persistence
     // -------------------------------------------------------------------------
 
@@ -103,7 +215,8 @@ public class ValidationService {
             boolean isRedHerring,
             String message,
             Double auditExpected,
-            Double auditReceived) {
+            Double auditReceived,
+            boolean phaseJustCompleted) {
 
         String module = request.getModule() != null ? request.getModule() : "M1_MATH";
         int phase    = request.getPhase()  != null ? request.getPhase()  : 1;
@@ -181,6 +294,27 @@ public class ValidationService {
 
         attemptLogRepository.save(attempt);
 
+        // Register the scenario snapshot on a successful EXTRACT so later steps
+        // of this phase can be checked against the same values.
+        if ("EXTRACT".equalsIgnoreCase(step) && success && !isRedHerring
+                && !"M4_TRIBUNAL".equalsIgnoreCase(module)) {
+            saveScenarioSnapshot(student, module, phase, request);
+        }
+
+        // The final attempt is persisted now — only then is it safe to send the
+        // classroom completion report (it reads AttemptLog rows).
+        if (phaseJustCompleted) {
+            try {
+                Optional<RoomParticipant> rp =
+                        roomParticipantRepository.findFirstByStudentProfileOrderByJoinedAtDesc(student);
+                if (rp.isPresent() && rp.get().getRoom() != null) {
+                    emailReportService.sendClassroomReport(rp.get().getRoom(), student);
+                }
+            } catch (Exception e) {
+                System.err.println("[ValidationService] Failed to trigger email report: " + e.getMessage());
+            }
+        }
+
         // --- Apply drill engine ---
         boolean drillTriggered = false;
         String finalMessage = message;
@@ -240,8 +374,11 @@ public class ValidationService {
     /**
      * Advances the student's GameSession to the next phase upon a successful completion.
      * Maps module+phase combinations to a canonical 1-7 phase index.
+     * Returns true only when the session newly transitioned to COMPLETED (final phase),
+     * so callers can trigger the completion report after the final attempt is persisted.
      */
-    public void updateProgress(StudentProfile student, String module, int phase) {
+    public boolean updateProgress(StudentProfile student, String module, int phase) {
+        boolean justCompleted = false;
         List<com.NoZeroDays.backend.common.model.GameSession> activeSessions =
                 gameSessionRepository.findByStudentProfileAndStatus(student, "ACTIVE");
         if (!activeSessions.isEmpty()) {
@@ -269,21 +406,12 @@ public class ValidationService {
 
                 if (currentCompletedPhase >= 7) {
                     session.setStatus("COMPLETED");
-
-                    // Trigger classroom email report to teacher if enrolled in a room
-                    try {
-                        Optional<RoomParticipant> rp =
-                                roomParticipantRepository.findFirstByStudentProfileOrderByJoinedAtDesc(student);
-                        if (rp.isPresent() && rp.get().getRoom() != null) {
-                            emailReportService.sendClassroomReport(rp.get().getRoom(), student);
-                        }
-                    } catch (Exception e) {
-                        System.err.println("[ValidationService] Failed to trigger email report: " + e.getMessage());
-                    }
+                    justCompleted = true;
                 }
                 gameSessionRepository.save(session);
             }
         }
+        return justCompleted;
     }
 
     public boolean isPhaseAlreadyCompleted(StudentProfile student, String module, int phase) {
@@ -299,6 +427,7 @@ public class ValidationService {
 
         java.util.Set<String> successfulSteps = attempts.stream()
                 .filter(AttemptLog::isSuccessful)
+                .filter(a -> !a.isDrillReset())
                 .map(a -> a.getStep() != null ? a.getStep().toUpperCase() : "")
                 .collect(java.util.stream.Collectors.toSet());
 

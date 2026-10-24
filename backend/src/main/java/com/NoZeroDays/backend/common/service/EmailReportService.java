@@ -301,7 +301,7 @@ public class EmailReportService {
                     reAuditAttempts.add(log);
                 } else {
                     firstAttempts.add(log);
-                    if (log.isSuccessful() && log.getStep() != null) {
+                    if (log.isSuccessful() && !log.isDrillReset() && log.getStep() != null) {
                         stepsCompletedSoFar.add(log.getStep().toUpperCase());
                         if (!requiredSteps.isEmpty() && requiredSteps.stream().allMatch(stepsCompletedSoFar::contains)) {
                             firstCompletedFound = true;
@@ -500,7 +500,7 @@ public class EmailReportService {
         if (requiredSteps.isEmpty()) return false;
         Set<String> successfulSteps = new HashSet<>();
         for (AttemptLog a : attempts) {
-            if (a.isSuccessful() && a.getStep() != null) {
+            if (a.isSuccessful() && !a.isDrillReset() && a.getStep() != null) {
                 successfulSteps.add(a.getStep().toUpperCase());
             }
         }

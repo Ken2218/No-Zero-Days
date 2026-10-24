@@ -59,6 +59,14 @@ public class AttemptLog {
     public String getUserInputData() { return userInputData; }
     public void setUserInputData(String userInputData) { this.userInputData = userInputData; }
 
+    /**
+     * True when this row is a synthetic DRILL_RESET barrier, not a real answer.
+     * Barriers must never count as completed steps.
+     */
+    public boolean isDrillReset() {
+        return userInputData != null && userInputData.startsWith("system=DRILL_RESET");
+    }
+
     public String getExpectedData() { return expectedData; }
     public void setExpectedData(String expectedData) { this.expectedData = expectedData; }
 

@@ -26,11 +26,21 @@ public class Phase3ValidationService {
     public ValidationResponse validate(ValidationRequest request) {
         StudentProfile student = validationService.resolveStudent(request.getStudentNumber());
 
+        String scenarioMismatch = validationService.checkScenarioConsistency(student, request);
+        if (scenarioMismatch != null) {
+            return validationService.runDrillEngineAndLog(student, request, false, false, scenarioMismatch, null, null, false);
+        }
+
         double hourlyRate        = request.getHourlyRate()        != null ? request.getHourlyRate()        : 0.0;
         double otHours           = request.getOtHours()           != null ? request.getOtHours()           : 0.0;
         double unpaidLunch       = request.getUnpaidLunchHours()  != null ? request.getUnpaidLunchHours()  : 0.0;
         double actualOt          = otHours - unpaidLunch;
         int    targetDaysPresent = request.getDaysPresent()       != null ? request.getDaysPresent()       : 0;
+
+        if (hourlyRate <= 0.0 || request.getOtHours() == null || otHours <= 0.0 || request.getDaysPresent() == null || targetDaysPresent <= 0) {
+            return validationService.runDrillEngineAndLog(student, request, false, false,
+                    "Validation Error: Scenario parameters were not received by the server. Please reload the phase.", null, null, false);
+        }
 
         double epsilon = 0.01;
 
@@ -39,6 +49,7 @@ public class Phase3ValidationService {
         String  message      = "";
         Double  auditExpected = null;
         Double  auditReceived = null;
+        boolean phaseJustCompleted = false;
 
         String step = request.getStep() != null ? request.getStep() : "EXTRACT";
 
@@ -152,42 +163,46 @@ public class Phase3ValidationService {
             }
 
         } else if ("SYNTHESIS".equalsIgnoreCase(step)) {
-            double result        = request.getSubmittedResult() != null ? request.getSubmittedResult() : 0.0;
-            double expectedGross = hourlyRate * 8.0 * targetDaysPresent;
-            double expectedOtPay = hourlyRate * actualOt * 1.25;
-            double expected      = expectedGross + expectedOtPay;
-
-            System.out.println("Backend Expected (Phase 3 Synthesis): " + expected + " | Frontend Sent: " + result);
-
-            BigDecimal hourlyRateBD  = BigDecimal.valueOf(hourlyRate);
-            BigDecimal eightBD       = BigDecimal.valueOf(8);
-            BigDecimal daysPresentBD = BigDecimal.valueOf(targetDaysPresent);
-            BigDecimal grossPayBD    = hourlyRateBD.multiply(eightBD).multiply(daysPresentBD).setScale(2, RoundingMode.HALF_UP);
-
-            BigDecimal actualOtBD   = BigDecimal.valueOf(actualOt);
-            BigDecimal multiplierBD = BigDecimal.valueOf(1.25);
-            BigDecimal otPayBD      = hourlyRateBD.multiply(actualOtBD).multiply(multiplierBD).setScale(2, RoundingMode.HALF_UP);
-
-            BigDecimal expectedTotalBD = grossPayBD.add(otPayBD).setScale(2, RoundingMode.HALF_UP);
-            double expectedRounded     = expectedTotalBD.doubleValue();
-
-            boolean isCorrect = Math.abs(expected - result) <= 0.02 || Math.abs(expectedRounded - result) <= 0.02;
-
-            if (isCorrect) {
-                success = true;
-                message = "Phase 3 Complete! Total Overtime-adjusted Earnings verified successfully at ₱"
-                        + String.format("%.2f", expectedRounded);
-                validationService.updateProgress(student, "M2_MULTIPLIERS", 1);
+            if (request.getSubmittedResult() == null) {
+                message = "Arithmetic Error! No computed value was submitted. Compute Total Earnings = Gross Pay + Overtime Pay and enter the result.";
             } else {
-                message = "Arithmetic Error! Total Earnings = Gross Pay (₱"
-                        + String.format("%.2f", grossPayBD.doubleValue()) + ") + Overtime Pay (₱"
-                        + String.format("%.2f", otPayBD.doubleValue()) + ") again.";
-                auditExpected = expectedRounded;
-                auditReceived = result;
+                double result        = request.getSubmittedResult();
+                double expectedGross = hourlyRate * 8.0 * targetDaysPresent;
+                double expectedOtPay = hourlyRate * actualOt * 1.25;
+                double expected      = expectedGross + expectedOtPay;
+
+                System.out.println("Backend Expected (Phase 3 Synthesis): " + expected + " | Frontend Sent: " + result);
+
+                BigDecimal hourlyRateBD  = BigDecimal.valueOf(hourlyRate);
+                BigDecimal eightBD       = BigDecimal.valueOf(8);
+                BigDecimal daysPresentBD = BigDecimal.valueOf(targetDaysPresent);
+                BigDecimal grossPayBD    = hourlyRateBD.multiply(eightBD).multiply(daysPresentBD).setScale(2, RoundingMode.HALF_UP);
+
+                BigDecimal actualOtBD   = BigDecimal.valueOf(actualOt);
+                BigDecimal multiplierBD = BigDecimal.valueOf(1.25);
+                BigDecimal otPayBD      = hourlyRateBD.multiply(actualOtBD).multiply(multiplierBD).setScale(2, RoundingMode.HALF_UP);
+
+                BigDecimal expectedTotalBD = grossPayBD.add(otPayBD).setScale(2, RoundingMode.HALF_UP);
+                double expectedRounded     = expectedTotalBD.doubleValue();
+
+                boolean isCorrect = Math.abs(expected - result) <= 0.02 || Math.abs(expectedRounded - result) <= 0.02;
+
+                if (isCorrect) {
+                    success = true;
+                    message = "Phase 3 Complete! Total Overtime-adjusted Earnings verified successfully at ₱"
+                            + String.format("%.2f", expectedRounded);
+                    phaseJustCompleted = validationService.updateProgress(student, "M2_MULTIPLIERS", 1);
+                } else {
+                    message = "Arithmetic Error! Total Earnings = Gross Pay (₱"
+                            + String.format("%.2f", grossPayBD.doubleValue()) + ") + Overtime Pay (₱"
+                            + String.format("%.2f", otPayBD.doubleValue()) + ") again.";
+                    auditExpected = expectedRounded;
+                    auditReceived = result;
+                }
             }
         }
 
         return validationService.runDrillEngineAndLog(
-                student, request, success, isRedHerring, message, auditExpected, auditReceived);
+                student, request, success, isRedHerring, message, auditExpected, auditReceived, phaseJustCompleted);
     }
 }

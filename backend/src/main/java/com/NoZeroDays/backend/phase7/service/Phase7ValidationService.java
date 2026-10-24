@@ -36,6 +36,14 @@ public class Phase7ValidationService {
         double personalLoan = request.getPersonalSalaryLoan() != null ? request.getPersonalSalaryLoan() : 0.0;
         double basicSalary  = request.getBasicSalary()        != null ? request.getBasicSalary()        : (dailyRate * daysPresent);
 
+        if (dailyRate <= 0.0 || daysPresent <= 0 || hourlyRate <= 0.0
+                || request.getSubmittedValueA() == null
+                || request.getSubmittedValueB() == null
+                || request.getSubmittedResult() == null) {
+            return validationService.runDrillEngineAndLog(student, request, false, false,
+                    "Validation Error: Scenario parameters or submitted values were not received by the server. Please reload the phase.", null, null, false);
+        }
+
         // Compute target values
         double grossBasicPay = dailyRate * daysPresent;
         double otPay         = hourlyRate * (otHours - unpaidLunch) * 1.25;
@@ -68,9 +76,9 @@ public class Phase7ValidationService {
         double expectedNet = expectedGross - expectedDeductions;
 
         // Student-submitted answers
-        double userGross      = request.getSubmittedValueA()  != null ? request.getSubmittedValueA()  : 0.0;
-        double userDeductions = request.getSubmittedValueB()  != null ? request.getSubmittedValueB()  : 0.0;
-        double userNet        = request.getSubmittedResult()  != null ? request.getSubmittedResult()  : 0.0;
+        double userGross      = request.getSubmittedValueA();
+        double userDeductions = request.getSubmittedValueB();
+        double userNet        = request.getSubmittedResult();
 
         boolean grossMatch      = Math.abs(userGross      - expectedGross)      < 1.0;
         boolean deductionsMatch = Math.abs(userDeductions - expectedDeductions) < 1.0;
@@ -79,11 +87,12 @@ public class Phase7ValidationService {
         boolean success      = false;
         boolean isRedHerring = false;
         String  message;
+        boolean phaseJustCompleted = false;
 
         if (grossMatch && deductionsMatch && netMatch) {
             success = true;
             message = "CONGRATULATIONS AUDITOR! Net Payroll audit is clean and 100% correct. You are a payroll champion!";
-            validationService.updateProgress(student, "M4_TRIBUNAL", 1);
+            phaseJustCompleted = validationService.updateProgress(student, "M4_TRIBUNAL", 1);
         } else {
             // Determine diagnostic remediation routing
             if (!grossMatch) {
@@ -96,6 +105,6 @@ public class Phase7ValidationService {
         }
 
         return validationService.runDrillEngineAndLog(
-                student, request, success, isRedHerring, message, null, null);
+                student, request, success, isRedHerring, message, null, null, phaseJustCompleted);
     }
 }

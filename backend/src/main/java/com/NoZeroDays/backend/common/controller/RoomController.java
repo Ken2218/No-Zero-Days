@@ -15,6 +15,7 @@ import com.NoZeroDays.backend.common.model.Teacher;
 import com.NoZeroDays.backend.common.repository.TeacherRepository;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ContentDisposition;
@@ -178,6 +179,13 @@ public class RoomController {
             roomCode = generateUniqueRoomCode();
         }
 
+        if (roomCode.length() > 32) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Room code must be 32 characters or fewer."));
+        }
+        if (teacherName != null && teacherName.length() > 255) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Teacher name is too long (max 255 characters)."));
+        }
+
         // Find or create Teacher entity for master association
         Teacher teacher = null;
         if (!teacherEmail.isBlank()) {
@@ -192,6 +200,19 @@ public class RoomController {
         Room room;
         if (existing.isPresent()) {
             room = existing.get();
+            // A room code may only be reclaimed by the teacher who owns it.
+            boolean sameEmail = !teacherEmail.isBlank()
+                    && room.getTeacherEmail() != null
+                    && teacherEmail.trim().equalsIgnoreCase(room.getTeacherEmail().trim());
+            boolean sameNameNoEmail = teacherEmail.isBlank()
+                    && room.getTeacherEmail() == null
+                    && teacherName != null
+                    && room.getTeacherName() != null
+                    && teacherName.trim().equalsIgnoreCase(room.getTeacherName().trim());
+            if (!sameEmail && !sameNameNoEmail) {
+                return ResponseEntity.status(409).body(Map.of("error",
+                        "Room code '" + roomCode + "' is already in use by another teacher."));
+            }
             room.setTeacherName(teacherName);
             room.setSection(section);
             if (!teacherEmail.isBlank()) {
@@ -404,6 +425,19 @@ public class RoomController {
         }
 
         Room room = roomOpt.get();
+        if ("COMPLETED".equalsIgnoreCase(room.getStatus())) {
+            return ResponseEntity.status(409).body(Map.of("error", "This room session has already been completed."));
+        }
+        if ("ACTIVE".equalsIgnoreCase(room.getStatus())) {
+            Map<String, Object> already = new HashMap<>();
+            already.put("success", true);
+            already.put("alreadyActive", true);
+            already.put("roomCode", room.getRoomCode());
+            already.put("status", "ACTIVE");
+            already.put("startedAt", room.getStartedAt());
+            return ResponseEntity.ok(already);
+        }
+
         room.setStatus("ACTIVE");
         room.setStartedAt(LocalDateTime.now());
         roomRepository.save(room);
@@ -450,6 +484,12 @@ public class RoomController {
         if (studentNumber == null || studentNumber.trim().isEmpty()) {
             return ResponseEntity.badRequest().body(Map.of("error", "Student number is required."));
         }
+        if (roomCode.trim().length() > 32) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Room code must be 32 characters or fewer."));
+        }
+        if (studentNumber.trim().length() > 255) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Student number is too long (max 255 characters)."));
+        }
 
         Optional<Room> roomOpt = roomRepository.findByRoomCodeIgnoreCase(roomCode.trim());
         if (roomOpt.isEmpty()) {
@@ -457,13 +497,22 @@ public class RoomController {
         }
         Room room = roomOpt.get();
 
-        StudentProfile profile = resolveOrCreateStudent(studentNumber.trim(), fullName, section, room.getSection());
+        StudentProfile profile;
+        try {
+            profile = resolveOrCreateStudent(studentNumber.trim(), fullName, section, room.getSection());
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
 
         // Add to room participants if not already present
         Optional<RoomParticipant> participantOpt = roomParticipantRepository.findByRoomAndStudentProfile(room, profile);
         if (participantOpt.isEmpty()) {
             RoomParticipant participant = new RoomParticipant(room, profile, "ACCEPTED");
-            roomParticipantRepository.save(participant);
+            try {
+                roomParticipantRepository.save(participant);
+            } catch (DataIntegrityViolationException e) {
+                // Concurrent join (double click / second tab) — already a participant, treat as success.
+            }
         } else {
             RoomParticipant participant = participantOpt.get();
             participant.setStatus("ACCEPTED");
@@ -774,36 +823,19 @@ public class RoomController {
         LocalDateTime now = LocalDateTime.now();
         session.setLastHeartbeatAt(now);
 
-        Object phaseObj = body.get("phase");
-        int targetPhase = session.getCurrentPhase();
-        if (phaseObj != null) {
-            try {
-                int pNum = Integer.parseInt(phaseObj.toString());
-                if (pNum >= 1 && pNum <= 7) {
-                    targetPhase = pNum;
-                }
-            } catch (Exception ignored) {}
+        // currentPhase is authoritative and advanced only by successful phase
+        // completion (ValidationService.updateProgress). Presence pings from stale
+        // tabs must never rewind it, so the client-reported phase is ignored here.
+        if (session.getPhaseExitedAt() != null) {
+            long pauseGap = ChronoUnit.SECONDS.between(session.getPhaseExitedAt(), now);
+            session.setAccumulatedPauseSeconds(
+                    session.getAccumulatedPauseSeconds() + Math.max(pauseGap, 0));
+            session.setPhaseExitedAt(null); // clear exit marker — student is back
         }
 
-        // If switching to a different phase, switch active objective and reset presence timer for new phase
-        if (session.getCurrentPhase() != targetPhase) {
-            session.setCurrentPhase(targetPhase);
-            session.setAccumulatedPauseSeconds(0L);
+        // Only set phaseEnteredAt if not already in an active window
+        if (session.getPhaseEnteredAt() == null) {
             session.setPhaseEnteredAt(now);
-            session.setPhaseExitedAt(null);
-        } else {
-            // Same phase: if student previously exited (paused) without completing, bank the pause gap
-            if (session.getPhaseExitedAt() != null) {
-                long pauseGap = ChronoUnit.SECONDS.between(session.getPhaseExitedAt(), now);
-                session.setAccumulatedPauseSeconds(
-                        session.getAccumulatedPauseSeconds() + Math.max(pauseGap, 0));
-                session.setPhaseExitedAt(null); // clear exit marker — student is back
-            }
-
-            // Only set phaseEnteredAt if not already in an active window
-            if (session.getPhaseEnteredAt() == null) {
-                session.setPhaseEnteredAt(now);
-            }
         }
         gameSessionRepository.save(session);
 
@@ -843,6 +875,21 @@ public class RoomController {
         GameSession session = sessions.get(0);
         LocalDateTime now = LocalDateTime.now();
 
+        // Ignore exit pings from stale tabs: if the reported phase doesn't match the
+        // session's authoritative current phase, this exit belongs to a phase the
+        // student already left and must not pause the current phase's timer.
+        if (body != null && body.get("phase") != null) {
+            try {
+                int reportedPhase = Integer.parseInt(body.get("phase").toString());
+                if (session.getCurrentPhase() != reportedPhase) {
+                    System.out.println("[PHASE-EXIT] student=" + studentNumber
+                            + " ignored stale exit for phase " + reportedPhase
+                            + " (current=" + session.getCurrentPhase() + ")");
+                    return ResponseEntity.ok(Map.of("ok", true, "ignored", true));
+                }
+            } catch (Exception ignored) {}
+        }
+
         // Freeze/pause the active timer at this moment
         session.setPhaseExitedAt(now);
         session.setLastHeartbeatAt(now);
@@ -880,16 +927,8 @@ public class RoomController {
         GameSession session = sessions.get(0);
         LocalDateTime now = LocalDateTime.now();
         session.setLastHeartbeatAt(now);
-
-        Object phaseObj = body != null ? body.get("phase") : null;
-        if (phaseObj != null) {
-            try {
-                int pNum = Integer.parseInt(phaseObj.toString());
-                if (pNum >= 1 && pNum <= 7 && session.getCurrentPhase() != pNum) {
-                    session.setCurrentPhase(pNum);
-                }
-            } catch (Exception ignored) {}
-        }
+        // Heartbeats must never mutate currentPhase — stale tabs ping with outdated
+        // phase numbers and would rewind the authoritative progression.
         gameSessionRepository.save(session);
 
         return ResponseEntity.ok(Map.of("ok", true, "heartbeatAt", now.toString()));
@@ -942,9 +981,11 @@ public class RoomController {
         for (RoomParticipant p : participants) {
             StudentProfile student = p.getStudentProfile();
 
-            // Fetch active session
-            List<GameSession> activeSessions = gameSessionRepository.findByStudentProfileAndStatus(student, "ACTIVE");
-            GameSession session = activeSessions.isEmpty() ? null : activeSessions.get(0);
+            // Fetch the latest session regardless of status so COMPLETED students
+            // are reported with their real phase progression instead of falling back to phase 1
+            GameSession session = gameSessionRepository
+                    .findFirstByStudentProfileOrderByIdDesc(student)
+                    .orElse(null);
             int currentPhaseIndex = session != null ? session.getCurrentPhase() : 1;
             boolean isSessionCompleted = session != null && "COMPLETED".equalsIgnoreCase(session.getStatus());
 
@@ -999,7 +1040,7 @@ public class RoomController {
                     } else {
                         // Phase has not yet been completed -> must belong to the first completion attempt stream
                         firstAttempts.add(log);
-                        if (log.isSuccessful() && log.getStep() != null) {
+                        if (log.isSuccessful() && !log.isDrillReset() && log.getStep() != null) {
                             stepsCompletedSoFar.add(log.getStep().toUpperCase());
                             if (!requiredSteps.isEmpty() && requiredSteps.stream().allMatch(stepsCompletedSoFar::contains)) {
                                 firstCompletedFound = true;
@@ -1417,11 +1458,15 @@ public class RoomController {
         if (existing.isPresent()) {
             StudentProfile s = existing.get();
             if (fullName != null && !fullName.trim().isEmpty()) {
-                s.setFullName(fullName.trim());
+                boolean isTemporary = "Temporary Student".equalsIgnoreCase(s.getFullName());
+                if (isTemporary) {
+                    s.setFullName(fullName.trim());
+                } else if (!authService.isFlexibleNameMatch(s.getFullName(), fullName)) {
+                    throw new IllegalArgumentException("Student number '" + studentNumber
+                            + "' is already registered to a different name. Please check your credentials.");
+                }
             }
-            if (section != null && !section.trim().isEmpty()) {
-                s.setSection(section.trim());
-            }
+            // Never overwrite an existing profile's identity during join.
             return studentRepository.save(s);
         }
 
@@ -1440,6 +1485,7 @@ public class RoomController {
 
         Set<String> successfulSteps = attempts.stream()
                 .filter(AttemptLog::isSuccessful)
+                .filter(a -> !a.isDrillReset())
                 .map(a -> a.getStep() != null ? a.getStep().toUpperCase() : "")
                 .collect(Collectors.toSet());
 

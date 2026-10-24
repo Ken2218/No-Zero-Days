@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import API_BASE_URL from '../config';
 import { PHASE_GUIDES } from '../utils/phaseGuides';
+import { clearAllPhaseStorage } from '../utils/storage';
 import OnboardingGuide from '../components/Shared/OnboardingGuide';
 import './Auth.css';
 
@@ -142,10 +143,6 @@ export default function Dashboard({ student: propStudent, onSelectPhase, onStude
         const exitUrl = roomCode
           ? `${API_BASE_URL}/api/rooms/${roomCode}/phase-exit`
           : `${API_BASE_URL}/api/students/phase-exit`;
-        if (navigator.sendBeacon) {
-          const blob = new Blob([payload], { type: 'application/json' });
-          navigator.sendBeacon(exitUrl, blob);
-        }
         fetch(exitUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -154,6 +151,9 @@ export default function Dashboard({ student: propStudent, onSelectPhase, onStude
         }).catch(() => {});
       }
     } catch (_) {}
+    // Wipe per-phase timers and autosaved progress so the next student who
+    // logs in on this device doesn't inherit this student's state.
+    clearAllPhaseStorage();
     localStorage.removeItem('student');
     localStorage.removeItem('studentRoomCode');
     window.location.reload();
