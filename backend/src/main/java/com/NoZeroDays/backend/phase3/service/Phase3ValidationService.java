@@ -37,7 +37,17 @@ public class Phase3ValidationService {
         double actualOt          = otHours - unpaidLunch;
         int    targetDaysPresent = request.getDaysPresent()       != null ? request.getDaysPresent()       : 0;
 
-        if (hourlyRate <= 0.0 || request.getOtHours() == null || otHours <= 0.0 || request.getDaysPresent() == null || targetDaysPresent <= 0) {
+        String step = request.getStep() != null ? request.getStep() : "EXTRACT";
+
+        boolean isFormulaOrGrossStep = "NET_PAY_FORMULA".equalsIgnoreCase(step)
+                || "ESTABLISH_FORMULA".equalsIgnoreCase(step)
+                || "ESTABLISH_PREMIUM".equalsIgnoreCase(step)
+                || "COMPUTE_GROSS".equalsIgnoreCase(step);
+
+        if (!isFormulaOrGrossStep && (hourlyRate <= 0.0 || request.getOtHours() == null || otHours <= 0.0 || request.getDaysPresent() == null || targetDaysPresent <= 0)) {
+            return validationService.runDrillEngineAndLog(student, request, false, false,
+                    "Validation Error: Scenario parameters were not received by the server. Please reload the phase.", null, null, false);
+        } else if (isFormulaOrGrossStep && (hourlyRate <= 0.0 || request.getDaysPresent() == null || targetDaysPresent <= 0)) {
             return validationService.runDrillEngineAndLog(student, request, false, false,
                     "Validation Error: Scenario parameters were not received by the server. Please reload the phase.", null, null, false);
         }
@@ -50,8 +60,6 @@ public class Phase3ValidationService {
         Double  auditExpected = null;
         Double  auditReceived = null;
         boolean phaseJustCompleted = false;
-
-        String step = request.getStep() != null ? request.getStep() : "EXTRACT";
 
         if ("EXTRACT".equalsIgnoreCase(step)) {
             double valA = request.getSubmittedValueA() != null ? request.getSubmittedValueA() : 0.0;

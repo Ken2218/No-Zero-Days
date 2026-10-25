@@ -440,35 +440,6 @@ export default function Popups({
             <div className="calendar-ui-box" style={{ padding: '10px', fontSize: '0.85rem', color: '#94a3b8' }}>
               <p>⚠️ <strong>Auditor Instruction:</strong> Employee rest intervals are strictly non-working. Calculate the Net working overtime hours before computing overtime premiums.</p>
             </div>
-
-            {/* Attendance Calendar under Production Time Card for manually counting Days Worked */}
-            <div style={{ marginTop: '16px', borderTop: '1px dashed #334155', paddingTop: '12px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
-                <h5 style={{ margin: 0, color: '#facc15', fontSize: '0.95rem', letterSpacing: '0.5px' }}>
-                  📅 Official Wall Calendar - June 2026
-                </h5>
-                <span style={{ fontSize: '0.75rem', color: '#38bdf8', fontWeight: 'bold' }}>Count Present (P) Shifts</span>
-              </div>
-              <p style={{ color: '#94a3b8', fontSize: '0.8rem', margin: '0 0 10px 0' }}>
-                Official Attendance Log — Count Present (P / P★) Weekday Shifts for Days Worked
-              </p>
-              <div className="calendar-ui-box" style={{ padding: '12px', background: '#0b1120', border: '1px solid #1e293b', borderRadius: '8px' }}>
-                <div className="cal-header-row" style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '4px', textAlign: 'center', fontWeight: 'bold', color: '#60a5fa', marginBottom: '8px', fontSize: '0.85rem' }}>
-                  <span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span style={{ color: '#ef4444' }}>S</span><span style={{ color: '#ef4444' }}>S</span>
-                </div>
-                <div className="cal-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '4px', textAlign: 'center', fontSize: '0.85rem' }}>
-                  {renderCalendarGrid()}
-                </div>
-                <div style={{ marginTop: '12px', textAlign: 'center', borderTop: '1px dashed #1e293b', paddingTop: '8px' }}>
-                  <p style={{ fontSize: '0.75rem', color: '#94a3b8', margin: '0 0 4px 0' }}>
-                    <strong>Legend:</strong> <span style={{ color: '#34d399', fontWeight: 'bold' }}>P = Present</span> | <span style={{ color: '#f87171', fontWeight: 'bold' }}>A = Absent</span> | <span style={{ color: '#fbbf24', fontWeight: 'bold' }}>P★ = Regular Holiday (Worked)</span>
-                  </p>
-                  <p style={{ fontSize: '0.7rem', color: '#64748b', margin: 0, fontStyle: 'italic' }}>
-                    ★ June 12 is Independence Day (Regular Holiday) - Present shift recorded.
-                  </p>
-                </div>
-              </div>
-            </div>
           </div>
         );
 
