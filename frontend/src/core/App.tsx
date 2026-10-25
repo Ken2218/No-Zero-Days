@@ -2067,6 +2067,12 @@ function App() {
           phase: ph,
           step: 'NET_PAY_FORMULA',
           timerSeconds: phaseTimers[activePhaseIndex] || 0,
+          dailyRate: scenario.dailyRate,
+          hourlyRate: scenario.hourlyRate,
+          daysPresent: scenario.daysPresent,
+          lateMinutes: scenario.lateMinutes,
+          employeeName: scenario.employeeName,
+          companyName: scenario.companyName,
           submittedRule: netPayFormula
         })
       });

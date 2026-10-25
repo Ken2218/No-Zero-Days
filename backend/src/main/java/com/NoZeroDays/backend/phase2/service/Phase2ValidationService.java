@@ -2,13 +2,16 @@ package com.NoZeroDays.backend.phase2.service;
 
 import com.NoZeroDays.backend.common.dto.ValidationRequest;
 import com.NoZeroDays.backend.common.dto.ValidationResponse;
+import com.NoZeroDays.backend.common.model.ScenarioSnapshot;
 import com.NoZeroDays.backend.common.model.StudentProfile;
+import com.NoZeroDays.backend.common.repository.ScenarioSnapshotRepository;
 import com.NoZeroDays.backend.common.service.ValidationService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.util.Optional;
 
 /**
  * Phase 2 Validation Service — Module: M1_MATH, phase == 2
@@ -22,6 +25,9 @@ public class Phase2ValidationService {
     @Autowired
     private ValidationService validationService;
 
+    @Autowired
+    private ScenarioSnapshotRepository scenarioSnapshotRepository;
+
     public ValidationResponse validate(ValidationRequest request) {
         StudentProfile student = validationService.resolveStudent(request.getStudentNumber());
 
@@ -30,13 +36,32 @@ public class Phase2ValidationService {
             return validationService.runDrillEngineAndLog(student, request, false, false, scenarioMismatch, null, null, false);
         }
 
+        String step = request.getStep() != null ? request.getStep() : "EXTRACT";
+
         double targetHourlyRate  = request.getHourlyRate()   != null ? request.getHourlyRate()   : 0.0;
         int    targetLateMinutes = request.getLateMinutes()  != null ? request.getLateMinutes()  : 0;
-        // earlyClockInMinutes intentionally read but unused (kept for completeness of scenario data)
 
+        // Failsafe hydration: recover missing parameters from registered ScenarioSnapshot
         if (targetHourlyRate <= 0.0 || request.getLateMinutes() == null) {
-            return validationService.runDrillEngineAndLog(student, request, false, false,
-                    "Validation Error: Scenario parameters were not received by the server. Please reload the phase.", null, null, false);
+            Optional<ScenarioSnapshot> snapOpt =
+                    scenarioSnapshotRepository.findByStudentProfileAndModuleAndPhase(student, "M1_MATH", 2);
+            if (snapOpt.isPresent()) {
+                ScenarioSnapshot snap = snapOpt.get();
+                if (targetHourlyRate <= 0.0 && snap.getHourlyRate() != null) {
+                    targetHourlyRate = snap.getHourlyRate();
+                }
+                if (request.getLateMinutes() == null && snap.getLateMinutes() != null) {
+                    targetLateMinutes = snap.getLateMinutes();
+                }
+            }
+        }
+
+        // Rule and formula selection steps do not require arithmetic parameters
+        if (!"NET_PAY_FORMULA".equalsIgnoreCase(step) && !"IDENTIFY_RULE".equalsIgnoreCase(step)) {
+            if (targetHourlyRate <= 0.0 || request.getLateMinutes() == null) {
+                return validationService.runDrillEngineAndLog(student, request, false, false,
+                        "Validation Error: Scenario parameters were not received by the server. Please reload the phase.", null, null, false);
+            }
         }
 
         double epsilon = 0.01;
@@ -47,8 +72,6 @@ public class Phase2ValidationService {
         Double  auditExpected = null;
         Double  auditReceived = null;
         boolean phaseJustCompleted = false;
-
-        String step = request.getStep() != null ? request.getStep() : "EXTRACT";
 
         if ("EXTRACT".equalsIgnoreCase(step)) {
             double valA             = request.getSubmittedValueA()        != null ? request.getSubmittedValueA()        : 0.0;
