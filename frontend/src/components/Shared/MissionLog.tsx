@@ -1438,7 +1438,7 @@ export default function MissionLog({
                 )}
                 {activePhaseIndex === 5 && (
                   <p style={{ fontSize: '0.78rem', color: '#94a3b8', margin: '2px 0 6px 0', fontStyle: 'italic' }}>
-                    Formula: Gross Pay − SSS EE Share − Personal Salary Loan − Pag-IBIG Deduction
+                    Formula: Gross Pay (Monthly Basic Salary) − SSS EE Share − Personal Salary Loan − Pag-IBIG Deduction
                   </p>
                 )}
                 {activePhaseIndex === 6 && (
@@ -1473,7 +1473,7 @@ export default function MissionLog({
                           : activePhaseIndex === 4
                             ? 'Review the Company Payroll Manual to synthesize Holiday Pay into Total Gross Earnings.'
                             : activePhaseIndex === 5
-                              ? 'Deduct SSS EE Share, Personal Salary Loan, and Pag-IBIG deduction from Gross Pay.'
+                              ? 'Deduct SSS EE Share, Personal Salary Loan, and Pag-IBIG deduction from Gross Pay (Monthly Basic Salary from Form 109-E).'
                               : 'Deduct SSS EE Share, Personal Salary Loan, Pag-IBIG deduction, PhilHealth EE Share, and Withholding Tax from Basic Salary.'
                       }
                     </div>

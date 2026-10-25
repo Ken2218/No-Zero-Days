@@ -586,7 +586,7 @@ export default function Popups({
                 <span>Employee Name:</span> <strong>{scenario.employeeName || 'Juan Dela Cruz'}</strong>
               </div>
               <div className="data-row" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
-                <span>Monthly Basic Salary:</span> <strong className="highlight-green">₱{(scenario.basicSalary ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
+                <span>Monthly Basic Salary (Gross Pay):</span> <strong className="highlight-green">₱{(scenario.basicSalary ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
               </div>
               <div className="data-row" style={{ display: 'flex', justifyContent: 'space-between' }}>
                 <span>Mid-Year Bonus Advance:</span> <strong>₱8,000.00</strong>
@@ -608,7 +608,7 @@ export default function Popups({
                 <span>Employee Name:</span> <strong>{scenario.employeeName || 'Juan Dela Cruz'}</strong>
               </div>
               <div className="data-row" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
-                <span>Monthly Basic Salary:</span> <strong className="highlight-green">₱{(scenario.basicSalary ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
+                <span>Monthly Basic Salary (Gross Pay):</span> <strong className="highlight-green">₱{(scenario.basicSalary ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
               </div>
               <div className="data-row" style={{ display: 'flex', justifyContent: 'space-between' }}>
                 <span>Standard Daily Rate:</span> <strong>₱{(scenario.dailyRate ?? 0).toFixed(2)} / Day</strong>

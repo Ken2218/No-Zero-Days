@@ -28,7 +28,7 @@ export default function EmployeeContractModal({ isOpen, onClose, basicSalary }: 
               <span>Employee Name:</span> <strong>Juan Dela Cruz</strong>
             </div>
             <div className="data-row" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
-              <span>Monthly Basic Salary:</span> <strong className="highlight-green">₱{basicSalary.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
+              <span>Monthly Basic Salary (Gross Pay):</span> <strong className="highlight-green">₱{basicSalary.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
             </div>
             <div className="data-row" style={{ display: 'flex', justifyContent: 'space-between' }}>
               <span>Mid-Year Bonus Advance:</span> <strong>₱8,000.00</strong>

@@ -2101,15 +2101,20 @@ function App() {
     try {
       const { module: mod, phase: ph } = getModuleAndPhase();
 
-      // Pass the student's verified gross pay if present, otherwise calculate default
+      // Compute phase-appropriate gross pay and tardiness deduction
       const grossPay = grossPayValue
         ? parseFloat(grossPayValue)
         : (activePhaseIndex === 2
             ? parseFloat((scenario.hourlyRate * 8 * scenario.daysPresent).toFixed(2))
-            : parseFloat((scenario.dailyRate * scenario.daysPresent).toFixed(2)));
-      const tardinessDeduction = calculatedValue
-        ? parseFloat(parseFloat(calculatedValue).toFixed(2))
-        : parseFloat(((scenario.hourlyRate / 60) * scenario.lateMinutes).toFixed(2));
+            : (activePhaseIndex === 5 || activePhaseIndex === 6)
+                ? (scenario.basicSalary ?? 0)
+                : parseFloat((scenario.dailyRate * scenario.daysPresent).toFixed(2)));
+
+      const tardinessDeduction = activePhaseIndex === 2
+        ? (calculatedValue
+            ? parseFloat(parseFloat(calculatedValue).toFixed(2))
+            : parseFloat(((scenario.hourlyRate / 60) * scenario.lateMinutes).toFixed(2)))
+        : 0.0;
 
       const requestPayload = {
         studentNumber: student?.studentNumber || 'STU-UNKNOWN',
@@ -2118,6 +2123,8 @@ function App() {
         phase: ph,
         step: 'SYNTHESIS',
         timerSeconds: phaseTimers[activePhaseIndex] || 0,
+        employeeName: scenario.employeeName,
+        companyName: scenario.companyName,
         dailyRate: scenario.dailyRate,
         daysPresent: scenario.daysPresent,
         hourlyRate: scenario.hourlyRate,
