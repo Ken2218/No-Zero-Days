@@ -38,7 +38,7 @@ public interface GameSessionRepository extends JpaRepository<GameSession, Long> 
 
     @Modifying
     @Transactional
-    @Query("DELETE FROM GameSession s WHERE s.studentProfile = :student AND (s.roomCode IS NULL OR s.roomCode = :roomCode)")
+    @Query("DELETE FROM GameSession s WHERE s.studentProfile = :student AND (s.roomCode IS NULL OR UPPER(s.roomCode) = UPPER(:roomCode))")
     int deleteByStudentProfileAndRoomCodeScope(
         @Param("student") StudentProfile student,
         @Param("roomCode") String roomCode

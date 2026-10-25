@@ -750,6 +750,9 @@ public class RoomController {
         StudentProfile student = studentOpt.get();
 
         roomParticipantRepository.deleteByRoomAndStudentProfile(room, student);
+        gameSessionRepository.deleteByStudentProfileAndRoomCodeScope(student, room.getRoomCode());
+        attemptLogRepository.deleteByStudentProfileAndRoomCodeScope(student, room.getRoomCode());
+        scenarioSnapshotRepository.deleteByStudentProfile(student);
 
         return ResponseEntity.ok(Map.of(
             "success", true,
@@ -778,6 +781,9 @@ public class RoomController {
         StudentProfile student = studentOpt.get();
 
         roomParticipantRepository.deleteByRoomAndStudentProfile(room, student);
+        gameSessionRepository.deleteByStudentProfileAndRoomCodeScope(student, room.getRoomCode());
+        attemptLogRepository.deleteByStudentProfileAndRoomCodeScope(student, room.getRoomCode());
+        scenarioSnapshotRepository.deleteByStudentProfile(student);
 
         return ResponseEntity.ok(Map.of(
             "success", true,
