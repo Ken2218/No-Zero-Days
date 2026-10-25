@@ -877,7 +877,8 @@ public class RoomController {
             } catch (Exception ignored) {}
         }
         if (reportedPhase == null || reportedPhase < 1 || reportedPhase > 7) {
-            reportedPhase = session.getCurrentPhase();
+            int currentP = session.getCurrentPhase();
+            reportedPhase = (currentP >= 1 && currentP <= 7) ? currentP : 1;
         }
 
         // Track the specific phase room the student entered
@@ -970,7 +971,7 @@ public class RoomController {
         // so the teacher dashboard shows THIS specific phase as paused (not leaked into milestone phase)
         session.setPhaseExitedAt(now);
         session.setLastHeartbeatAt(now);
-        if (reportedPhase != null) {
+        if (reportedPhase != null && reportedPhase >= 1 && reportedPhase <= 7) {
             session.setActivePhase(reportedPhase);
         }
         Long reportedSeconds = parseClampedTimerSeconds(body);
@@ -1077,41 +1078,46 @@ public class RoomController {
         ResponseEntity<?> ownershipError = requireRoomOwner(room, request);
         if (ownershipError != null) return ownershipError;
 
-        List<RoomParticipant> participants = roomParticipantRepository.findByRoomOrderByJoinedAtAsc(room);
-        LocalDateTime roomStartedAt = room.getStartedAt() != null ? room.getStartedAt() : room.getCreatedAt();
+        try {
+            List<RoomParticipant> participants = roomParticipantRepository.findByRoomOrderByJoinedAtAsc(room);
+            LocalDateTime roomStartedAt = room.getStartedAt() != null ? room.getStartedAt() : room.getCreatedAt();
 
-        List<Map<String, Object>> studentResults = new ArrayList<>();
+            List<Map<String, Object>> studentResults = new ArrayList<>();
 
-        // Aggregators for Class Summary & Charts: Combined
-        int[] classPhaseCompletedCounts = new int[7];
-        int[] classPhaseActiveCounts = new int[7];
-        long[] classPhaseTotalAttempts = new long[7];
-        long[] classPhaseTotalSeconds = new long[7];
-        int[] classPhaseTimeContributors = new int[7];
+            // Aggregators for Class Summary & Charts: Combined
+            int[] classPhaseCompletedCounts = new int[7];
+            int[] classPhaseActiveCounts = new int[7];
+            long[] classPhaseTotalAttempts = new long[7];
+            long[] classPhaseTotalSeconds = new long[7];
+            int[] classPhaseTimeContributors = new int[7];
 
-        // Aggregators for First Attempt stream
-        int[] classFirstCompletedCounts = new int[7];
-        int[] classFirstActiveCounts = new int[7];
-        long[] classFirstTotalAttempts = new long[7];
-        long[] classFirstTotalSeconds = new long[7];
-        int[] classFirstTimeContributors = new int[7];
+            // Aggregators for First Attempt stream
+            int[] classFirstCompletedCounts = new int[7];
+            int[] classFirstActiveCounts = new int[7];
+            long[] classFirstTotalAttempts = new long[7];
+            long[] classFirstTotalSeconds = new long[7];
+            int[] classFirstTimeContributors = new int[7];
 
-        // Aggregators for Re-Audit stream
-        int[] classReAuditCompletedCounts = new int[7];
-        int[] classReAuditActiveCounts = new int[7];
-        long[] classReAuditTotalAttempts = new long[7];
-        long[] classReAuditTotalSeconds = new long[7];
-        int[] classReAuditTimeContributors = new int[7];
+            // Aggregators for Re-Audit stream
+            int[] classReAuditCompletedCounts = new int[7];
+            int[] classReAuditActiveCounts = new int[7];
+            long[] classReAuditTotalAttempts = new long[7];
+            long[] classReAuditTotalSeconds = new long[7];
+            int[] classReAuditTimeContributors = new int[7];
 
-        int totalRoomAttempts = 0;
-        int completedStudentsCount = 0;
-        int firstAttemptCompletedStudentsCount = 0;
-        int reAuditActiveStudentsCount = 0;
+            int totalRoomAttempts = 0;
+            int completedStudentsCount = 0;
+            int firstAttemptCompletedStudentsCount = 0;
+            int reAuditActiveStudentsCount = 0;
 
         for (RoomParticipant p : participants) {
-            StudentProfile student = p.getStudentProfile();
+            if (p == null || p.getStudentProfile() == null) {
+                continue;
+            }
+            try {
+                StudentProfile student = p.getStudentProfile();
 
-            // Fetch the latest session regardless of status so COMPLETED students
+                // Fetch the latest session regardless of status so COMPLETED students
             // are reported with their real phase progression instead of falling back to phase 1
             GameSession session = gameSessionRepository
                     .findFirstByStudentProfileAndRoomCodeOrderByIdDesc(student, room.getRoomCode())
@@ -1508,12 +1514,20 @@ public class RoomController {
             }
             totalRoomAttempts += studentTotalAttempts;
 
-            int displayPhaseIndex = (activePhase != null)
-                    ? activePhase
-                    : (currentPhaseIndex <= 7 ? currentPhaseIndex : 7);
-            String currentPhaseTitle = (displayPhaseIndex <= 7)
-                    ? PHASE_TITLES[displayPhaseIndex - 1]
-                    : "Final Audit Complete";
+            int displayPhaseIndex;
+            if (activePhase != null && activePhase >= 1 && activePhase <= 7) {
+                displayPhaseIndex = activePhase;
+            } else if (currentPhaseIndex >= 1 && currentPhaseIndex <= 7) {
+                displayPhaseIndex = currentPhaseIndex;
+            } else if (currentPhaseIndex > 7 || studentCompletedPhases >= 7 || isSessionCompleted) {
+                displayPhaseIndex = 7;
+            } else {
+                displayPhaseIndex = 1;
+            }
+
+            String currentPhaseTitle = (studentCompletedPhases >= 7 || isSessionCompleted || currentPhaseIndex > 7)
+                    ? "Final Audit Complete"
+                    : PHASE_TITLES[Math.max(0, Math.min(6, displayPhaseIndex - 1))];
 
             Map<String, Object> stuMap = new HashMap<>();
             stuMap.put("studentNumber", student.getStudentNumber());
@@ -1548,6 +1562,10 @@ public class RoomController {
             stuMap.put("reAudit", stuReAudit);
 
             studentResults.add(stuMap);
+            } catch (Exception ex) {
+                System.err.println("[RoomController] Error processing participant in room " + roomCode + ": " + ex.getMessage());
+                ex.printStackTrace();
+            }
         }
 
         int totalStudents = studentResults.size();
@@ -1638,7 +1656,13 @@ public class RoomController {
         response.put("students", studentResults);
         response.put("attemptMode", attemptMode);
         return ResponseEntity.ok(response);
+    } catch (Exception e) {
+        System.err.println("[RoomController] Unexpected error in getRoomDashboard for room " + roomCode + ": " + e.getMessage());
+        e.printStackTrace();
+        return ResponseEntity.status(org.springframework.http.HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(Map.of("error", "Internal server error: " + e.getMessage()));
     }
+}
 
     // -------------------------------------------------------------------------
     // HELPER METHODS
