@@ -1893,15 +1893,15 @@ public class RoomController {
     // 12. EXCEL CLASSROOM REPORT DOWNLOAD (.XLSX)
     // -------------------------------------------------------------------------
     @GetMapping("/rooms/{roomCode}/report/excel")
-    public ResponseEntity<byte[]> downloadRoomReportExcel(@PathVariable String roomCode, HttpServletRequest request) {
+    public ResponseEntity<?> downloadRoomReportExcel(@PathVariable String roomCode, HttpServletRequest request) {
         Optional<Room> roomOpt = roomRepository.findByRoomCodeIgnoreCase(roomCode);
         if (roomOpt.isEmpty()) {
-            return ResponseEntity.status(404).build();
+            return ResponseEntity.status(404).body(Map.of("error", "Room not found: " + roomCode));
         }
         Room room = roomOpt.get();
         ResponseEntity<?> ownershipError = requireRoomOwner(room, request);
         if (ownershipError != null) {
-            return ResponseEntity.status(ownershipError.getStatusCode()).build();
+            return ownershipError;
         }
         try {
             byte[] excelBytes = emailReportService.generateClassroomReportExcel(room);
@@ -1912,8 +1912,11 @@ public class RoomController {
                     .build());
             return new ResponseEntity<>(excelBytes, headers, HttpStatus.OK);
         } catch (Exception ex) {
-            System.err.println("[RoomController] Error generating Excel report: " + ex.getMessage());
-            return ResponseEntity.status(500).build();
+            System.err.println("[RoomController] Error generating Excel report for room " + roomCode + ": " + ex.getMessage());
+            ex.printStackTrace();
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .header("Content-Type", "application/json")
+                    .body(Map.of("error", "Failed to generate Excel report: " + ex.getMessage()));
         }
     }
 }

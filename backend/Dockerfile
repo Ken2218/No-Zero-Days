@@ -13,11 +13,14 @@ RUN mvn clean package -DskipTests
 FROM eclipse-temurin:17-jre-alpine
 WORKDIR /app
 
+# Install fontconfig & TrueType fonts so POI font metrics never fail in Alpine
+RUN apk add --no-cache fontconfig freetype ttf-dejavu
+
 # Copy the generated jar from the build stage
 COPY --from=build /app/target/*.jar app.jar
 
 ENV PORT=10000
 EXPOSE 10000
 
-# Bind to Render's dynamic PORT
-ENTRYPOINT ["sh", "-c", "java -Dserver.port=${PORT} -jar app.jar"]
+# Bind to Render's dynamic PORT with headless AWT flag enabled
+ENTRYPOINT ["sh", "-c", "java -Djava.awt.headless=true -Dserver.port=${PORT} -jar app.jar"]

@@ -119,6 +119,7 @@ public class EmailReportService {
         // First Attempt Breakdown
         public int firstTries;
         public long firstSeconds;
+        public long firstWinningSeconds;
         public boolean isFirstCompleted;
 
         // Re-Audit Breakdown
@@ -244,12 +245,20 @@ public class EmailReportService {
         List<RoomParticipant> participants = roomParticipantRepository.findByRoomOrderByJoinedAtAsc(room);
         List<StudentMetrics> allMetrics = new ArrayList<>();
         for (RoomParticipant p : participants) {
-            allMetrics.add(computeStudentMetrics(room, p.getStudentProfile()));
+            if (p == null || p.getStudentProfile() == null) continue;
+            try {
+                allMetrics.add(computeStudentMetrics(room, p.getStudentProfile()));
+            } catch (Exception e) {
+                System.err.println("[EmailReportService] Failed to compute metrics for html: " + e.getMessage());
+            }
         }
         return buildClassroomHtml(room, allMetrics, null);
     }
 
     private StudentMetrics computeStudentMetrics(Room room, StudentProfile student) {
+        if (student == null) {
+            return new StudentMetrics();
+        }
         StudentMetrics sm = new StudentMetrics();
         sm.profile = student;
 
@@ -342,21 +351,10 @@ public class EmailReportService {
                 for (int k = firstAttempts.size() - 1; k >= 0; k--) {
                     AttemptLog log = firstAttempts.get(k);
                     if (log.isSuccessful()) {
-                        if (log.getElapsedSeconds() != null && log.getElapsedSeconds() > 0) {
-                            recordedSeconds = log.getElapsedSeconds();
+                        Long s = extractRecordedSeconds(log);
+                        if (s != null && s > 0) {
+                            recordedSeconds = s;
                             break;
-                        }
-                        if (log.getUserInputData() != null && log.getUserInputData().contains("timerSeconds=")) {
-                            try {
-                                java.util.regex.Matcher m = java.util.regex.Pattern.compile("timerSeconds=(\\d+)").matcher(log.getUserInputData());
-                                if (m.find()) {
-                                    long s = Long.parseLong(m.group(1));
-                                    if (s > 0) {
-                                        recordedSeconds = s;
-                                        break;
-                                    }
-                                }
-                            } catch (Exception ignored) {}
                         }
                     }
                 }
@@ -374,7 +372,6 @@ public class EmailReportService {
                 } else {
                     firstSec = 0L;
                 }
-                firstTotalSeconds += firstSec;
             } else if (phaseId == currentPhaseIndex && session != null && session.getPhaseEnteredAt() != null && session.getPhaseExitedAt() == null) {
                 LocalDateTime activeStart = session.getPhaseEnteredAt();
                 LocalDateTime activeEnd;
@@ -389,13 +386,55 @@ public class EmailReportService {
                 long diff = ChronoUnit.SECONDS.between(activeStart, activeEnd);
                 long paused = session.getAccumulatedPauseSeconds();
                 firstSec = Math.min(Math.max(diff - paused, 0L), 7200L);
-                firstTotalSeconds += firstSec;
             } else if (!firstAttempts.isEmpty() && firstAttemptTime != null) {
                 LocalDateTime endRef = firstLastAttempt != null ? firstLastAttempt : firstAttemptTime;
                 long diff = ChronoUnit.SECONDS.between(firstAttemptTime, endRef);
                 firstSec = Math.max(diff, 0L);
-                firstTotalSeconds += firstSec;
             }
+
+            // Option 2: First Winning Run Speed vs Total Effort across attempts
+            long firstWinningSeconds = firstSec;
+            long firstTotalEffortSeconds = 0;
+
+            if (firstTries <= 1) {
+                firstTotalEffortSeconds = firstSec;
+            } else {
+                List<List<AttemptLog>> runs = new ArrayList<>();
+                List<AttemptLog> currentRun = new ArrayList<>();
+                for (AttemptLog log : firstAttempts) {
+                    if (log.isDrillReset()) {
+                        runs.add(currentRun);
+                        currentRun = new ArrayList<>();
+                    } else {
+                        currentRun.add(log);
+                    }
+                }
+                runs.add(currentRun);
+
+                long failedRunsSum = 0;
+                for (int r = 0; r < runs.size() - 1; r++) {
+                    List<AttemptLog> rLogs = runs.get(r);
+                    long runMax = 0;
+                    for (AttemptLog log : rLogs) {
+                        Long s = extractRecordedSeconds(log);
+                        if (s != null && s > runMax) {
+                            runMax = s;
+                        }
+                    }
+                    if (runMax <= 0 && !rLogs.isEmpty()) {
+                        LocalDateTime rStart = rLogs.get(0).getAttemptTime();
+                        LocalDateTime rEnd = rLogs.get(rLogs.size() - 1).getAttemptTime();
+                        if (rStart != null && rEnd != null) {
+                            runMax = Math.max(ChronoUnit.SECONDS.between(rStart, rEnd), 0L);
+                        }
+                    }
+                    failedRunsSum += Math.min(Math.max(runMax, 0L), 3600L);
+                }
+                firstTotalEffortSeconds = failedRunsSum + firstSec;
+            }
+            firstTotalEffortSeconds = Math.max(firstTotalEffortSeconds, firstSec);
+
+            firstTotalSeconds += firstTotalEffortSeconds;
 
             // 2. Re-Audit Metrics
             int reAuditFailedCount = 0;
@@ -504,7 +543,8 @@ public class EmailReportService {
             pm.isCompleted = isCombinedDone;
 
             pm.firstTries = firstTries;
-            pm.firstSeconds = firstSec;
+            pm.firstSeconds = firstTotalEffortSeconds;
+            pm.firstWinningSeconds = firstWinningSeconds;
             pm.isFirstCompleted = isFirstDone;
 
             pm.reAuditTries = reAuditTries;
@@ -520,8 +560,13 @@ public class EmailReportService {
         sm.totalTimeSeconds = totalSeconds;
         sm.avgTimeSeconds = (completedCount > 0) ? (totalSeconds / completedCount) : totalSeconds;
         sm.totalAttempts = totalAttempts;
-        sm.currentPhase = currentPhaseIndex;
-        sm.currentPhaseTitle = (currentPhaseIndex <= 7) ? PHASE_NAMES[currentPhaseIndex - 1] : "Completed All Phases";
+
+        int safePhaseIndex = (currentPhaseIndex >= 1 && currentPhaseIndex <= 7) ? currentPhaseIndex : (currentPhaseIndex > 7 ? 7 : 1);
+        String currentPhaseTitle = (completedCount >= 7 || isSessionCompleted || currentPhaseIndex > 7)
+                ? "Completed All Phases"
+                : PHASE_NAMES[Math.max(0, Math.min(6, safePhaseIndex - 1))];
+        sm.currentPhase = safePhaseIndex;
+        sm.currentPhaseTitle = currentPhaseTitle;
 
         sm.firstCompletedCount = firstCompletedCount;
         sm.firstTotalAttempts = firstTotalAttempts;
@@ -706,6 +751,23 @@ public class EmailReportService {
         return org.springframework.web.util.HtmlUtils.htmlEscape(s);
     }
 
+    private Long extractRecordedSeconds(AttemptLog log) {
+        if (log == null) return null;
+        if (log.getElapsedSeconds() != null && log.getElapsedSeconds() > 0) {
+            return log.getElapsedSeconds();
+        }
+        if (log.getUserInputData() != null && log.getUserInputData().contains("timerSeconds=")) {
+            try {
+                java.util.regex.Matcher m = java.util.regex.Pattern.compile("timerSeconds=(\\d+)").matcher(log.getUserInputData());
+                if (m.find()) {
+                    long s = Long.parseLong(m.group(1));
+                    if (s > 0) return s;
+                }
+            } catch (Exception ignored) {}
+        }
+        return null;
+    }
+
     private String formatSeconds(long totalSeconds) {
         if (totalSeconds <= 0) return "--";
         long hours = totalSeconds / 3600;
@@ -729,7 +791,12 @@ public class EmailReportService {
         List<RoomParticipant> participants = roomParticipantRepository.findByRoomOrderByJoinedAtAsc(room);
         List<StudentMetrics> allMetrics = new ArrayList<>();
         for (RoomParticipant p : participants) {
-            allMetrics.add(computeStudentMetrics(room, p.getStudentProfile()));
+            if (p == null || p.getStudentProfile() == null) continue;
+            try {
+                allMetrics.add(computeStudentMetrics(room, p.getStudentProfile()));
+            } catch (Exception e) {
+                System.err.println("[EmailReportService] Failed to compute metrics for student in room " + room.getRoomCode() + ": " + e.getMessage());
+            }
         }
         return generateClassroomReportExcel(room, allMetrics);
     }
@@ -921,8 +988,10 @@ public class EmailReportService {
             }
 
             for (int col = 0; col < summaryHeaders.length; col++) {
-                summarySheet.autoSizeColumn(col);
-                summarySheet.setColumnWidth(col, Math.max(summarySheet.getColumnWidth(col) + 1000, 3800));
+                try {
+                    summarySheet.autoSizeColumn(col);
+                } catch (Throwable ignored) {}
+                summarySheet.setColumnWidth(col, Math.max(summarySheet.getColumnWidth(col) + 1200, 4200));
             }
 
             // ==========================================
@@ -949,10 +1018,13 @@ public class EmailReportService {
 
             int sIdx = 1;
             for (StudentMetrics sm : list) {
+                if (sm == null || sm.profile == null) continue;
                 Row r = firstSheet.createRow(sIdx);
                 Cell c0 = r.createCell(0); c0.setCellValue(sIdx); c0.setCellStyle(cellCenterStyle);
-                Cell c1 = r.createCell(1); c1.setCellValue(sm.profile.getFullName()); c1.setCellStyle(cellStyle);
-                Cell c2 = r.createCell(2); c2.setCellValue(sm.profile.getStudentNumber()); c2.setCellStyle(cellCenterStyle);
+                String fullName = sm.profile.getFullName() != null ? sm.profile.getFullName() : "Unknown";
+                String studentNum = sm.profile.getStudentNumber() != null ? sm.profile.getStudentNumber() : "--";
+                Cell c1 = r.createCell(1); c1.setCellValue(fullName); c1.setCellStyle(cellStyle);
+                Cell c2 = r.createCell(2); c2.setCellValue(studentNum); c2.setCellStyle(cellCenterStyle);
                 Cell c3 = r.createCell(3);
                 c3.setCellValue(sm.firstCompletedCount >= 7 ? "PASSED (7/7)" : "In Progress (" + sm.firstCompletedCount + "/7)");
                 c3.setCellStyle(sm.firstCompletedCount >= 7 ? completedBadgeStyle : inProgressBadgeStyle);
@@ -972,7 +1044,15 @@ public class EmailReportService {
                         cTries.setCellStyle(cellCenterStyle);
 
                         Cell cTime = r.createCell(timeCol);
-                        cTime.setCellValue(pm.isFirstCompleted || pm.firstSeconds > 0 ? formatSeconds(pm.firstSeconds) : "--");
+                        if (pm.isFirstCompleted || pm.firstSeconds > 0) {
+                            if (pm.firstTries > 1 && pm.firstWinningSeconds > 0 && pm.firstSeconds > pm.firstWinningSeconds) {
+                                cTime.setCellValue(formatSeconds(pm.firstWinningSeconds) + " (tot: " + formatSeconds(pm.firstSeconds) + ")");
+                            } else {
+                                cTime.setCellValue(formatSeconds(pm.firstSeconds));
+                            }
+                        } else {
+                            cTime.setCellValue("--");
+                        }
                         cTime.setCellStyle(cellCenterStyle);
                     } else {
                         Cell cTries = r.createCell(tryCol); cTries.setCellValue(0); cTries.setCellStyle(cellCenterStyle);
@@ -983,8 +1063,10 @@ public class EmailReportService {
             }
 
             for (int col = 0; col < firstHeaders.length; col++) {
-                firstSheet.autoSizeColumn(col);
-                firstSheet.setColumnWidth(col, Math.max(firstSheet.getColumnWidth(col) + 800, 3200));
+                try {
+                    firstSheet.autoSizeColumn(col);
+                } catch (Throwable ignored) {}
+                firstSheet.setColumnWidth(col, Math.max(firstSheet.getColumnWidth(col) + 1000, 3600));
             }
 
             // ==========================================
@@ -1011,10 +1093,13 @@ public class EmailReportService {
 
             int rIdx = 1;
             for (StudentMetrics sm : list) {
+                if (sm == null || sm.profile == null) continue;
                 Row r = reAuditSheet.createRow(rIdx);
                 Cell c0 = r.createCell(0); c0.setCellValue(rIdx); c0.setCellStyle(cellCenterStyle);
-                Cell c1 = r.createCell(1); c1.setCellValue(sm.profile.getFullName()); c1.setCellStyle(cellStyle);
-                Cell c2 = r.createCell(2); c2.setCellValue(sm.profile.getStudentNumber()); c2.setCellStyle(cellCenterStyle);
+                String fullName = sm.profile.getFullName() != null ? sm.profile.getFullName() : "Unknown";
+                String studentNum = sm.profile.getStudentNumber() != null ? sm.profile.getStudentNumber() : "--";
+                Cell c1 = r.createCell(1); c1.setCellValue(fullName); c1.setCellStyle(cellStyle);
+                Cell c2 = r.createCell(2); c2.setCellValue(studentNum); c2.setCellStyle(cellCenterStyle);
                 Cell c3 = r.createCell(3);
                 if (sm.reAuditCompletedCount >= 7) {
                     c3.setCellValue("RE-AUDITED ALL (7/7)");
@@ -1053,8 +1138,10 @@ public class EmailReportService {
             }
 
             for (int col = 0; col < reAuditHeaders.length; col++) {
-                reAuditSheet.autoSizeColumn(col);
-                reAuditSheet.setColumnWidth(col, Math.max(reAuditSheet.getColumnWidth(col) + 800, 3200));
+                try {
+                    reAuditSheet.autoSizeColumn(col);
+                } catch (Throwable ignored) {}
+                reAuditSheet.setColumnWidth(col, Math.max(reAuditSheet.getColumnWidth(col) + 1000, 3600));
             }
 
             // ==========================================
@@ -1081,10 +1168,13 @@ public class EmailReportService {
 
             int cIdx = 1;
             for (StudentMetrics sm : list) {
+                if (sm == null || sm.profile == null) continue;
                 Row r = rosterSheet.createRow(cIdx);
                 Cell c0 = r.createCell(0); c0.setCellValue(cIdx); c0.setCellStyle(cellCenterStyle);
-                Cell c1 = r.createCell(1); c1.setCellValue(sm.profile.getFullName()); c1.setCellStyle(cellStyle);
-                Cell c2 = r.createCell(2); c2.setCellValue(sm.profile.getStudentNumber()); c2.setCellStyle(cellCenterStyle);
+                String fullName = sm.profile.getFullName() != null ? sm.profile.getFullName() : "Unknown";
+                String studentNum = sm.profile.getStudentNumber() != null ? sm.profile.getStudentNumber() : "--";
+                Cell c1 = r.createCell(1); c1.setCellValue(fullName); c1.setCellStyle(cellStyle);
+                Cell c2 = r.createCell(2); c2.setCellValue(studentNum); c2.setCellStyle(cellCenterStyle);
                 Cell c3 = r.createCell(3);
                 c3.setCellValue(sm.isCompletedAll ? "COMPLETED (7/7)" : "Phase " + sm.currentPhase + " (" + sm.completedPhasesCount + "/7)");
                 c3.setCellStyle(sm.isCompletedAll ? completedBadgeStyle : inProgressBadgeStyle);
@@ -1115,8 +1205,10 @@ public class EmailReportService {
             }
 
             for (int col = 0; col < rosterHeaders.length; col++) {
-                rosterSheet.autoSizeColumn(col);
-                rosterSheet.setColumnWidth(col, Math.max(rosterSheet.getColumnWidth(col) + 800, 3200));
+                try {
+                    rosterSheet.autoSizeColumn(col);
+                } catch (Throwable ignored) {}
+                rosterSheet.setColumnWidth(col, Math.max(rosterSheet.getColumnWidth(col) + 1000, 3600));
             }
 
             ByteArrayOutputStream baos = new ByteArrayOutputStream();
