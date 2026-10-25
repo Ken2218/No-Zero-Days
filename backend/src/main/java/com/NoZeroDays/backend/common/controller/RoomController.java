@@ -1203,10 +1203,9 @@ public class RoomController {
                     }
                 }
 
-                // Attempts = real student submissions (DRILL_RESET barriers are not submissions)
-                int firstAttemptsCount = (int) firstAttempts.stream()
-                        .filter(l -> !"system=DRILL_RESET".equals(l.getUserInputData()))
-                        .count();
+                // Attempts = phase run attempts (1 initial attempt + drill resets).
+                // DRILL_RESET barriers mark failed runs that restarted the scenario.
+                int firstAttemptsCount = firstAttempts.isEmpty() ? 0 : (1 + firstDrillResets);
                 studentFirstTotalAttempts += firstAttemptsCount;
 
                 // Judge completion solely by actual steps completed (not sequential phase index comparison)
@@ -1354,9 +1353,25 @@ public class RoomController {
                     }
                 }
 
-                int reAuditAttemptsCount = (int) reAuditAttempts.stream()
-                        .filter(l -> !"system=DRILL_RESET".equals(l.getUserInputData()))
-                        .count();
+                String finalStepName = !requiredSteps.isEmpty() ? requiredSteps.get(requiredSteps.size() - 1) : null;
+                int reAuditAttemptsCount = 0;
+                if (!reAuditAttempts.isEmpty()) {
+                    long completedReAudits = reAuditAttempts.stream()
+                            .filter(l -> l.isSuccessful() && !l.isDrillReset() && finalStepName != null && finalStepName.equalsIgnoreCase(l.getStep()))
+                            .count();
+                    boolean inProgress = false;
+                    AttemptLog lastLog = reAuditAttempts.get(reAuditAttempts.size() - 1);
+                    if (!lastLog.isDrillReset()) {
+                        boolean lastIsFinalSuccess = lastLog.isSuccessful() && finalStepName != null && finalStepName.equalsIgnoreCase(lastLog.getStep());
+                        if (!lastIsFinalSuccess) {
+                            inProgress = true;
+                        }
+                    }
+                    reAuditAttemptsCount = (int) completedReAudits + reAuditDrillResets + (inProgress ? 1 : 0);
+                    if (reAuditAttemptsCount == 0) {
+                        reAuditAttemptsCount = 1;
+                    }
+                }
                 boolean hasReAudited = !reAuditAttempts.isEmpty();
                 boolean isReAuditCompleted = hasReAudited && isPhaseCompleteBySteps(reAuditAttempts, module, phaseIndex);
 
@@ -1369,7 +1384,6 @@ public class RoomController {
                     // Calculate best (least) recorded re-audit completion time among all replay attempts
                     Long bestReAuditSeconds = null;
                     Long latestRecordedSeconds = null;
-                    String finalStepName = !requiredSteps.isEmpty() ? requiredSteps.get(requiredSteps.size() - 1) : null;
 
                     for (AttemptLog log : reAuditAttempts) {
                         if (log.isSuccessful() && !log.isDrillReset()) {

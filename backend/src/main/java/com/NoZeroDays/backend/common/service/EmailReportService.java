@@ -313,18 +313,15 @@ public class EmailReportService {
             }
 
             // 1. First Attempt Metrics
-            // Tries = real student submissions (DRILL_RESET barriers are not submissions).
-            int firstTries = (int) firstAttempts.stream()
-                    .filter(l -> !"system=DRILL_RESET".equals(l.getUserInputData()))
-                    .count();
             int firstFailedCount = 0;
+            int firstDrillResets = 0;
             LocalDateTime firstAttemptTime = firstAttempts.isEmpty() ? null : firstAttempts.get(0).getAttemptTime();
             LocalDateTime firstLastSuccess = null;
             LocalDateTime firstLastAttempt = null;
 
             for (AttemptLog log : firstAttempts) {
                 if ("system=DRILL_RESET".equals(log.getUserInputData())) {
-                    // not a submission
+                    firstDrillResets++;
                 } else if (!log.isSuccessful()) {
                     firstFailedCount++;
                 } else {
@@ -332,6 +329,7 @@ public class EmailReportService {
                 }
                 firstLastAttempt = log.getAttemptTime();
             }
+            int firstTries = firstAttempts.isEmpty() ? 0 : (1 + firstDrillResets);
             firstTotalAttempts += firstTries;
 
             boolean isFirstDone = isSessionCompleted || firstCompletedFound || isPhaseCompleteBySteps(firstAttempts, module, phaseIndex);
@@ -400,23 +398,41 @@ public class EmailReportService {
             }
 
             // 2. Re-Audit Metrics
-            int reAuditTries = (int) reAuditAttempts.stream()
-                    .filter(l -> !"system=DRILL_RESET".equals(l.getUserInputData()))
-                    .count();
             int reAuditFailedCount = 0;
+            int reAuditDrillResets = 0;
             LocalDateTime reAuditStart = reAuditAttempts.isEmpty() ? null : reAuditAttempts.get(0).getAttemptTime();
             LocalDateTime reAuditLastSuccess = null;
             LocalDateTime reAuditLastAttempt = null;
 
             for (AttemptLog log : reAuditAttempts) {
                 if ("system=DRILL_RESET".equals(log.getUserInputData())) {
-                    // not a submission
+                    reAuditDrillResets++;
                 } else if (!log.isSuccessful()) {
                     reAuditFailedCount++;
                 } else {
                     reAuditLastSuccess = log.getAttemptTime();
                 }
                 reAuditLastAttempt = log.getAttemptTime();
+            }
+
+            String finalStepName = !requiredSteps.isEmpty() ? requiredSteps.get(requiredSteps.size() - 1) : null;
+            int reAuditTries = 0;
+            if (!reAuditAttempts.isEmpty()) {
+                long completedReAudits = reAuditAttempts.stream()
+                        .filter(l -> l.isSuccessful() && !l.isDrillReset() && finalStepName != null && finalStepName.equalsIgnoreCase(l.getStep()))
+                        .count();
+                boolean inProgress = false;
+                AttemptLog lastLog = reAuditAttempts.get(reAuditAttempts.size() - 1);
+                if (!lastLog.isDrillReset()) {
+                    boolean lastIsFinalSuccess = lastLog.isSuccessful() && finalStepName != null && finalStepName.equalsIgnoreCase(lastLog.getStep());
+                    if (!lastIsFinalSuccess) {
+                        inProgress = true;
+                    }
+                }
+                reAuditTries = (int) completedReAudits + reAuditDrillResets + (inProgress ? 1 : 0);
+                if (reAuditTries == 0) {
+                    reAuditTries = 1;
+                }
             }
 
             boolean hasReAudited = !reAuditAttempts.isEmpty();
@@ -429,7 +445,6 @@ public class EmailReportService {
 
                 // Best (least) recorded completion time across replays, matching
                 // the teacher dashboard's calculation.
-                String finalStepName = !requiredSteps.isEmpty() ? requiredSteps.get(requiredSteps.size() - 1) : null;
                 Long bestReAuditSeconds = null;
                 Long latestRecordedSeconds = null;
                 for (AttemptLog log : reAuditAttempts) {

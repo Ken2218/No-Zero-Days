@@ -373,12 +373,15 @@ public class ValidationController {
                     ? attemptLogRepository.findAttemptsSince(student, module, phaseIndex, sessionStartTime)
                     : attemptLogRepository.findLatestAttempts(student, module, phaseIndex);
                 int failures = 0;
+                int drillResets = 0;
                 for (AttemptLog log : attempts) {
-                    if (!log.isSuccessful()) {
+                    if ("system=DRILL_RESET".equals(log.getUserInputData())) {
+                        drillResets++;
+                    } else if (!log.isSuccessful()) {
                         failures++;
                     }
                 }
-                attemptsCount = Math.max(attempts.size(), 1);
+                attemptsCount = attempts.isEmpty() ? 0 : (1 + drillResets);
                 failedAttempts = failures;
                 bestScore = Math.max(100 - (failures * 10), 50);
             }
@@ -425,7 +428,21 @@ public class ValidationController {
                     reAuditFailedCount++;
                 }
             }
-            int reAuditAttemptsCount = Math.max(reAuditDrillResets, reAuditFailedCount / 3);
+            String finalStepName = !requiredSteps.isEmpty() ? requiredSteps.get(requiredSteps.size() - 1) : null;
+            long completedReAudits = reAuditAttempts.stream()
+                    .filter(l -> l.isSuccessful() && !l.isDrillReset() && finalStepName != null && finalStepName.equalsIgnoreCase(l.getStep()))
+                    .count();
+            boolean inProgress = false;
+            if (!reAuditAttempts.isEmpty()) {
+                AttemptLog lastLog = reAuditAttempts.get(reAuditAttempts.size() - 1);
+                if (!lastLog.isDrillReset()) {
+                    boolean lastIsFinalSuccess = lastLog.isSuccessful() && finalStepName != null && finalStepName.equalsIgnoreCase(lastLog.getStep());
+                    if (!lastIsFinalSuccess) {
+                        inProgress = true;
+                    }
+                }
+            }
+            int reAuditAttemptsCount = (int) completedReAudits + reAuditDrillResets + (inProgress ? 1 : 0);
             if (hasReAudited && reAuditAttemptsCount == 0) {
                 reAuditAttemptsCount = 1;
             }
