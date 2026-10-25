@@ -431,6 +431,7 @@ public class RoomController {
     // 5. STUDENT JOINS ROOM
     // -------------------------------------------------------------------------
     @PostMapping("/rooms/join")
+    @Transactional
     public ResponseEntity<?> joinRoom(@RequestBody Map<String, String> body, HttpServletRequest request) {
         String roomCode = body.get("roomCode");
         String studentNumber = body.get("studentNumber");
@@ -487,9 +488,9 @@ public class RoomController {
             roomParticipantRepository.save(participant);
         }
 
-        // Wipe pre-room (free-play) progress BEFORE session lookup so a legacy
-        // untagged ACTIVE session can never be reused for this room.
-        boolean progressReset = resetPreRoomProgress(profile);
+        // Wipe pre-room and room progress BEFORE session lookup so buggy or legacy
+        // sessions are cleared and timer tracking starts fresh.
+        boolean progressReset = resetPreRoomProgress(profile, room.getRoomCode());
 
         // Initialize active game session if none exists for this room.
         // startTime is left null — it gets stamped on the student's first Phase 1 submission.
@@ -517,22 +518,22 @@ public class RoomController {
     }
 
     /**
-     * Wipes free-play progress (sessions/attempts without a room code, plus
-     * scenario snapshots which regenerate on the next EXTRACT) when a student
-     * enters a room, so the teacher's dashboard only reflects in-room
-     * performance. In-room rows from other rooms are left untouched.
-     * Returns true when anything was actually removed. Snapshots are only
-     * cleared when free-play rows were found so a mid-room re-join never
-     * invalidates the room's own registered scenario.
+     * Wipes pre-room (free-play) progress and any prior room progress for this student
+     * when entering the room, ensuring that First Attempt progress starts fresh with
+     * accurate timer tracking.
      */
-    private boolean resetPreRoomProgress(StudentProfile student) {
-        long deletedSessions = gameSessionRepository.deleteByStudentProfileAndRoomCodeIsNull(student);
-        long deletedAttempts = attemptLogRepository.deleteByStudentProfileAndRoomCodeIsNull(student);
-        boolean wiped = deletedSessions > 0 || deletedAttempts > 0;
-        if (wiped) {
-            scenarioSnapshotRepository.deleteByStudentProfile(student);
+    private boolean resetPreRoomProgress(StudentProfile student, String roomCode) {
+        long deletedSessions;
+        long deletedAttempts;
+        if (roomCode != null && !roomCode.isBlank()) {
+            deletedSessions = gameSessionRepository.deleteByStudentProfileAndRoomCodeScope(student, roomCode.trim());
+            deletedAttempts = attemptLogRepository.deleteByStudentProfileAndRoomCodeScope(student, roomCode.trim());
+        } else {
+            deletedSessions = gameSessionRepository.deleteByStudentProfileAndRoomCodeIsNull(student);
+            deletedAttempts = attemptLogRepository.deleteByStudentProfileAndRoomCodeIsNull(student);
         }
-        return wiped;
+        scenarioSnapshotRepository.deleteByStudentProfile(student);
+        return deletedSessions > 0 || deletedAttempts > 0;
     }
 
     // -------------------------------------------------------------------------
@@ -655,6 +656,7 @@ public class RoomController {
     // 6B. STUDENT ACCEPTS ROOM INVITATION
     // -------------------------------------------------------------------------
     @PostMapping("/rooms/{roomCode}/invitations/accept")
+    @Transactional
     public ResponseEntity<?> acceptRoomInvitation(@PathVariable String roomCode, @RequestBody Map<String, String> body, HttpServletRequest request) {
         String studentNumber = body.get("studentNumber");
         String authedStudentNumber = (String) request.getAttribute(AuthInterceptor.ATTR_STUDENT_NUMBER);
@@ -690,9 +692,9 @@ public class RoomController {
         participant.setJoinedAt(LocalDateTime.now());
         roomParticipantRepository.save(participant);
 
-        // Wipe pre-room (free-play) progress BEFORE session lookup so a legacy
-        // untagged ACTIVE session can never be reused for this room.
-        boolean progressReset = resetPreRoomProgress(student);
+        // Wipe pre-room and room progress BEFORE session lookup so buggy or legacy
+        // sessions are cleared and timer tracking starts fresh.
+        boolean progressReset = resetPreRoomProgress(student, room.getRoomCode());
 
         // Ensure active game session exists for the accepting student.
         // startTime is intentionally left null — set only on Phase 1 first attempt.

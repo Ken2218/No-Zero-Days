@@ -62,11 +62,23 @@ public interface AttemptLogRepository extends JpaRepository<AttemptLog, Long> {
         @Param("roomCode") String roomCode
     );
 
+    @Modifying
+    @Transactional
     void deleteByStudentProfile(StudentProfile studentProfile);
 
     // Wipes free-play (pre-room) attempt rows when a student enters a room.
     // Returns the number of rows removed.
+    @Modifying
+    @Transactional
     long deleteByStudentProfileAndRoomCodeIsNull(StudentProfile studentProfile);
+
+    @Modifying
+    @Transactional
+    @Query("DELETE FROM AttemptLog a WHERE a.studentProfile = :student AND (a.roomCode IS NULL OR a.roomCode = :roomCode)")
+    int deleteByStudentProfileAndRoomCodeScope(
+        @Param("student") StudentProfile student,
+        @Param("roomCode") String roomCode
+    );
 
     @Modifying
     @Transactional

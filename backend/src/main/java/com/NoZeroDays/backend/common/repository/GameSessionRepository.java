@@ -3,9 +3,11 @@ package com.NoZeroDays.backend.common.repository;
 import com.NoZeroDays.backend.common.model.GameSession;
 import com.NoZeroDays.backend.common.model.StudentProfile;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
+import org.springframework.transaction.annotation.Transactional;
 import java.util.List;
 import java.util.Optional;
 
@@ -24,9 +26,21 @@ public interface GameSessionRepository extends JpaRepository<GameSession, Long> 
         @Param("roomCode") String roomCode
     );
 
+    @Modifying
+    @Transactional
     void deleteByStudentProfile(StudentProfile studentProfile);
 
     // Wipes free-play (pre-room) sessions when a student enters a room so the
     // teacher only tracks in-room performance. Returns the number of rows removed.
+    @Modifying
+    @Transactional
     long deleteByStudentProfileAndRoomCodeIsNull(StudentProfile studentProfile);
+
+    @Modifying
+    @Transactional
+    @Query("DELETE FROM GameSession s WHERE s.studentProfile = :student AND (s.roomCode IS NULL OR s.roomCode = :roomCode)")
+    int deleteByStudentProfileAndRoomCodeScope(
+        @Param("student") StudentProfile student,
+        @Param("roomCode") String roomCode
+    );
 }

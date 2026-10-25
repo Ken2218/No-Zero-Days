@@ -472,9 +472,18 @@ function App() {
       localStorage.removeItem(currentViewKey(roomNamespace));
     }
 
+    for (let p = 1; p <= 7; p++) {
+      sessionStorage.removeItem(`phase${p}_state`);
+      sessionStorage.removeItem(`phase_${p}_completed`);
+      localStorage.removeItem(`phase_${p}_timer`);
+      localStorage.removeItem(`phase_${p}_elapsed`);
+      localStorage.removeItem(`phase_${p}_attempts`);
+    }
+
     // Reset the in-memory gameplay state so the new room starts clean:
     // no leftover scenario, timers, step statuses, or strike counter.
     setScenario(null);
+    setActivePhaseIndex(1);
     setPhaseTimers({ 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0, 7: 0 });
     setExtractedA('');
     setExtractedB('');
@@ -973,13 +982,16 @@ function App() {
                 textAlign: 'left'
               }}>
                 <p style={{ margin: '0 0 8px', fontWeight: 'bold', color: '#f87171', letterSpacing: '0.5px' }}>
-                  ⚠ PROGRESS RESET WARNING
+                  ⚠️ NOTICE: FIRST ATTEMPT RESET
                 </p>
-                <p style={{ margin: 0 }}>
-                  Accepting this invitation will <strong>reset all progress you made
-                  before joining a room to zero</strong>. Once inside, your teacher will
-                  track your performance in this room starting from zero — your previous
-                  practice scores will no longer count.
+                <p style={{ margin: '0 0 8px', fontWeight: 'bold', color: '#f87171', fontSize: '0.92rem' }}>
+                  Notice: Joining this room will reset your First Attempt progress to ensure accurate timer tracking.
+                </p>
+                <p style={{ margin: 0, color: '#fca5a5' }}>
+                  All previous attempts and recorded times for room <strong>{roomInvitation?.roomCode}</strong> will be wiped. Once inside, your teacher will track your performance starting fresh from Phase 1 with accurate timer tracking.
+                </p>
+                <p style={{ margin: '8px 0 0', fontWeight: 'bold', color: '#fef08a' }}>
+                  Do you wish to proceed?
                 </p>
               </div>
               <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
@@ -2720,7 +2732,7 @@ function App() {
             {rerollToast === 'RED_HERRING'
               ? 'RED HERRING DETECTED — Critical audit failure. A new Audit Case has been generated.'
               : rerollToast === 'PROGRESS_RESET'
-                ? 'PROGRESS RESET — All progress made before joining this room was set to zero. Your teacher now tracks your performance inside this room.'
+                ? 'FIRST ATTEMPT RESET — Progress reset to ensure accurate timer tracking. Your teacher will now track your in-room performance.'
                 : 'Maximum attempts reached. A new Audit Case has been generated.'
             }
           </span>

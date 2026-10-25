@@ -694,7 +694,7 @@ export default function Dashboard({ student: propStudent, onSelectPhase, onStude
             <div className="join-modal-body">
               {joinConfirming ? (
                 <>
-                  <h3 className="join-modal-title">⚠ PROGRESS RESET WARNING</h3>
+                  <h3 className="join-modal-title">⚠️ NOTICE: FIRST ATTEMPT RESET</h3>
                   <div style={{
                     background: 'rgba(239, 68, 68, 0.12)',
                     border: '1px solid #ef4444',
@@ -705,13 +705,14 @@ export default function Dashboard({ student: propStudent, onSelectPhase, onStude
                     fontSize: '0.88rem',
                     lineHeight: '1.5'
                   }}>
-                    <p style={{ margin: '0 0 8px', fontWeight: 'bold', color: '#f87171' }}>
-                      ENTERING ROOM {joinRoomCode} WILL RESET YOUR PROGRESS TO ZERO.
+                    <p style={{ margin: '0 0 8px', fontWeight: 'bold', color: '#f87171', fontSize: '0.92rem' }}>
+                      Notice: Joining this room will reset your First Attempt progress to ensure accurate timer tracking.
                     </p>
-                    <p style={{ margin: 0 }}>
-                      All progress made in your account <strong>before joining a room</strong> will be
-                      wiped. Once inside, your teacher will track your performance in this room
-                      starting from zero — your previous practice scores will no longer count.
+                    <p style={{ margin: 0, color: '#fca5a5' }}>
+                      All previous attempts and recorded times for room <strong>{joinRoomCode}</strong> will be wiped. Once inside, your teacher will track your performance starting fresh from Phase 1 with accurate timer tracking.
+                    </p>
+                    <p style={{ margin: '8px 0 0', fontWeight: 'bold', color: '#fef08a' }}>
+                      Do you wish to proceed?
                     </p>
                   </div>
                   {joinError && <div className="error-banner" style={{ marginBottom: '15px' }}>{joinError}</div>}
