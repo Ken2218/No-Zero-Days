@@ -268,6 +268,10 @@ export default function Login({ onLoginSuccess, onTeacherCreateRoom }: LoginProp
       localStorage.setItem('teacher', JSON.stringify(teacherStorage));
       if (activeCode) {
         localStorage.setItem('teacherRoomStatus', 'ACTIVE');
+      } else {
+        // No room under this teacher — drop any stale room status from a
+        // previous session so the lobby state doesn't resurrect itself.
+        localStorage.removeItem('teacherRoomStatus');
       }
 
       onTeacherCreateRoom(activeCode, effectiveName, activeSection, effectiveEmail);

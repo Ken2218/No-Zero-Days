@@ -82,6 +82,14 @@ public interface AttemptLogRepository extends JpaRepository<AttemptLog, Long> {
 
     @Modifying
     @Transactional
+    @Query("DELETE FROM AttemptLog a WHERE a.studentProfile = :student AND UPPER(a.roomCode) = UPPER(:roomCode)")
+    int deleteByStudentProfileAndRoomCode(
+        @Param("student") StudentProfile student,
+        @Param("roomCode") String roomCode
+    );
+
+    @Modifying
+    @Transactional
     @Query("DELETE FROM AttemptLog a WHERE a.studentProfile = :student AND a.module = :module AND a.phase = :phase")
     void deleteByStudentProfileAndModuleAndPhase(
         @Param("student") StudentProfile student,

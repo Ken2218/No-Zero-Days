@@ -488,9 +488,13 @@ public class RoomController {
             roomParticipantRepository.save(participant);
         }
 
-        // Wipe pre-room and room progress BEFORE session lookup so buggy or legacy
-        // sessions are cleared and timer tracking starts fresh.
-        boolean progressReset = resetPreRoomProgress(profile, room.getRoomCode());
+        // Wipe pre-room and room progress ONLY on the first join of this room.
+        // Existing participants re-join to RESUME their records — wiping here
+        // would erase their in-room progress on every reconnect.
+        boolean progressReset = false;
+        if (!alreadyParticipant) {
+            progressReset = resetPreRoomProgress(profile, room.getRoomCode());
+        }
 
         // Initialize active game session if none exists for this room.
         // startTime is left null — it gets stamped on the student's first Phase 1 submission.
@@ -518,22 +522,28 @@ public class RoomController {
     }
 
     /**
-     * Wipes pre-room (free-play) progress and any prior room progress for this student
-     * when entering the room, ensuring that First Attempt progress starts fresh with
-     * accurate timer tracking.
+     * Wipes pre-room (free-play) progress and any prior progress for this room
+     * when a student first enters it, ensuring First Attempt progress starts
+     * fresh with accurate timer tracking. Scenario snapshots (scenario-consistency
+     * locks) are cleared only when free-play rows were actually removed, so
+     * another room's mid-phase locks survive.
      */
     private boolean resetPreRoomProgress(StudentProfile student, String roomCode) {
-        long deletedSessions;
-        long deletedAttempts;
+        long deletedNullSessions = gameSessionRepository.deleteByStudentProfileAndRoomCodeIsNull(student);
+        long deletedNullAttempts = attemptLogRepository.deleteByStudentProfileAndRoomCodeIsNull(student);
+
+        long deletedRoomSessions = 0;
+        long deletedRoomAttempts = 0;
         if (roomCode != null && !roomCode.isBlank()) {
-            deletedSessions = gameSessionRepository.deleteByStudentProfileAndRoomCodeScope(student, roomCode.trim());
-            deletedAttempts = attemptLogRepository.deleteByStudentProfileAndRoomCodeScope(student, roomCode.trim());
-        } else {
-            deletedSessions = gameSessionRepository.deleteByStudentProfileAndRoomCodeIsNull(student);
-            deletedAttempts = attemptLogRepository.deleteByStudentProfileAndRoomCodeIsNull(student);
+            deletedRoomSessions = gameSessionRepository.deleteByStudentProfileAndRoomCode(student, roomCode.trim());
+            deletedRoomAttempts = attemptLogRepository.deleteByStudentProfileAndRoomCode(student, roomCode.trim());
         }
-        scenarioSnapshotRepository.deleteByStudentProfile(student);
-        return deletedSessions > 0 || deletedAttempts > 0;
+
+        if (deletedNullSessions > 0 || deletedNullAttempts > 0) {
+            scenarioSnapshotRepository.deleteByStudentProfile(student);
+        }
+        return deletedNullSessions > 0 || deletedNullAttempts > 0
+                || deletedRoomSessions > 0 || deletedRoomAttempts > 0;
     }
 
     // -------------------------------------------------------------------------
@@ -688,13 +698,14 @@ public class RoomController {
         }
 
         RoomParticipant participant = partOpt.get();
+        boolean wasAccepted = "ACCEPTED".equalsIgnoreCase(participant.getStatus());
         participant.setStatus("ACCEPTED");
         participant.setJoinedAt(LocalDateTime.now());
         roomParticipantRepository.save(participant);
 
-        // Wipe pre-room and room progress BEFORE session lookup so buggy or legacy
-        // sessions are cleared and timer tracking starts fresh.
-        boolean progressReset = resetPreRoomProgress(student, room.getRoomCode());
+        // Wipe pre-room and room progress ONLY on first acceptance. Re-accepting
+        // an already-ACCEPTED participant must not erase their in-room records.
+        boolean progressReset = wasAccepted ? false : resetPreRoomProgress(student, room.getRoomCode());
 
         // Ensure active game session exists for the accepting student.
         // startTime is intentionally left null — set only on Phase 1 first attempt.

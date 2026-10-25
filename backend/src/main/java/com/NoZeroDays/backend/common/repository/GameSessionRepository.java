@@ -43,4 +43,12 @@ public interface GameSessionRepository extends JpaRepository<GameSession, Long> 
         @Param("student") StudentProfile student,
         @Param("roomCode") String roomCode
     );
+
+    @Modifying
+    @Transactional
+    @Query("DELETE FROM GameSession s WHERE s.studentProfile = :student AND UPPER(s.roomCode) = UPPER(:roomCode)")
+    int deleteByStudentProfileAndRoomCode(
+        @Param("student") StudentProfile student,
+        @Param("roomCode") String roomCode
+    );
 }
