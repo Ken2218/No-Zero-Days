@@ -190,7 +190,11 @@ function App() {
         return false;
       }
 
-      setScenario(parsed.scenario);
+      const restoredScenario = parsed.scenario;
+      if (restoredScenario && (!restoredScenario.calendarGrid || Object.keys(restoredScenario.calendarGrid).length === 0) && restoredScenario.daysPresent) {
+        restoredScenario.calendarGrid = generateCalendarDays(restoredScenario.daysPresent);
+      }
+      setScenario(restoredScenario);
       setExtractedA(parsed.extractedA || '');
       setExtractedB(parsed.extractedB || '');
       setStep1Status(parsed.step1Status || 'ACTIVE');
@@ -2555,6 +2559,7 @@ function App() {
               {activePhaseIndex === 3 && (
                 <>
                   <button type="button" className="quick-chip" onClick={() => setActivePopup('TIMECARD')}>⏱️ Production Time Card</button>
+                  <button type="button" className="quick-chip" onClick={() => setActivePopup('WALL_CALENDAR')}>📅 Attendance Calendar</button>
                   <button type="button" className="quick-chip" onClick={() => setActivePopup('DOLE_OVERTIME')}>📌 DOLE OT Poster</button>
                   <button type="button" className="quick-chip" onClick={() => setActivePopup('P3_CONTRACT')}>📁 Contract</button>
                   <button type="button" className="quick-chip" onClick={() => setActivePopup('DOOR')}>🚪 Exit Door</button>
@@ -2564,6 +2569,7 @@ function App() {
                 <>
                   <button type="button" className="quick-chip" onClick={() => setActivePopup('MEMOS')}>📌 Corkboard Memos</button>
                   <button type="button" className="quick-chip" onClick={() => setActivePopup('TIMESHEET_TERMINAL')}>⏱️ Timesheet Terminal</button>
+                  <button type="button" className="quick-chip" onClick={() => setActivePopup('WALL_CALENDAR')}>📅 Attendance Calendar</button>
                   <button type="button" className="quick-chip" onClick={() => setActivePopup('DOLE_HOLIDAY')}>📜 DOLE Holiday Poster</button>
                   <button type="button" className="quick-chip" onClick={() => setActivePopup('P4_CONTRACT')}>📁 Contract</button>
                   <button type="button" className="quick-chip" onClick={() => setActivePopup('DOOR')}>🚪 Exit Door</button>

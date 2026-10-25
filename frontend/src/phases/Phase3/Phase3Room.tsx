@@ -56,6 +56,13 @@ export default function Phase3Room({ setActivePopup }: Phase3RoomProps) {
         title="📁 Employee Contract Profile"
         onClick={() => setActivePopup('P3_CONTRACT')}
       />
+
+      {/* Hotspot 6: Wall Clock (Attendance Calendar) */}
+      <button
+        className="hotspot clock-hotspot"
+        title="📅 Official Attendance Calendar"
+        onClick={() => setActivePopup('WALL_CALENDAR')}
+      />
     </div>
   );
 }
