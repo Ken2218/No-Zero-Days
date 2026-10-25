@@ -1237,21 +1237,10 @@ public class RoomController {
                     for (int k = firstAttempts.size() - 1; k >= 0; k--) {
                         AttemptLog log = firstAttempts.get(k);
                         if (log.isSuccessful()) {
-                            if (log.getElapsedSeconds() != null && log.getElapsedSeconds() > 0) {
-                                recordedSeconds = log.getElapsedSeconds();
+                            Long s = extractRecordedSeconds(log);
+                            if (s != null && s > 0) {
+                                recordedSeconds = s;
                                 break;
-                            }
-                            if (log.getUserInputData() != null && log.getUserInputData().contains("timerSeconds=")) {
-                                try {
-                                    java.util.regex.Matcher m = java.util.regex.Pattern.compile("timerSeconds=(\\d+)").matcher(log.getUserInputData());
-                                    if (m.find()) {
-                                        long s = Long.parseLong(m.group(1));
-                                        if (s > 0) {
-                                            recordedSeconds = s;
-                                            break;
-                                        }
-                                    }
-                                } catch (Exception ignored) {}
                             }
                         }
                     }
@@ -1269,9 +1258,6 @@ public class RoomController {
                     } else {
                         firstPhaseSeconds = 0L;
                     }
-                    studentFirstTotalSeconds += firstPhaseSeconds;
-                    classFirstTotalSeconds[i] += firstPhaseSeconds;
-                    classFirstTimeContributors[i]++;
                 } else if (isStudentActivelyInPhase) {
                     classFirstActiveCounts[i]++;
                     classFirstTotalAttempts[i] += firstAttemptsCount;
@@ -1302,7 +1288,6 @@ public class RoomController {
                         diff = Math.min(Math.max(wallDiff - paused, 0L), 7200L);
                     }
                     firstPhaseSeconds = diff;
-                    studentFirstTotalSeconds += firstPhaseSeconds;
                 } else if (isStudentPausedInPhase) {
                     classFirstActiveCounts[i]++;
                     classFirstTotalAttempts[i] += firstAttemptsCount;
@@ -1318,7 +1303,6 @@ public class RoomController {
                         diff = Math.min(Math.max(wallDiff - paused, 0L), 7200L);
                     }
                     firstPhaseSeconds = diff;
-                    studentFirstTotalSeconds += firstPhaseSeconds;
                 } else if (!firstAttempts.isEmpty()) {
                     // Non-consecutive phase previously attempted by student!
                     classFirstTotalAttempts[i] += firstAttemptsCount;
@@ -1328,7 +1312,56 @@ public class RoomController {
                     } else {
                         firstPhaseSeconds = 0L;
                     }
-                    studentFirstTotalSeconds += firstPhaseSeconds;
+                }
+
+                // First Winning Run Speed vs Total Effort across attempts (Option 2)
+                long firstWinningSeconds = firstPhaseSeconds;
+                long firstTotalEffortSeconds = 0;
+
+                if (firstAttemptsCount <= 1) {
+                    firstTotalEffortSeconds = firstPhaseSeconds;
+                } else {
+                    // Slicing firstAttempts by DRILL_RESET barriers to capture each attempt run
+                    List<List<AttemptLog>> runs = new ArrayList<>();
+                    List<AttemptLog> currentRun = new ArrayList<>();
+                    for (AttemptLog log : firstAttempts) {
+                        if (log.isDrillReset()) {
+                            runs.add(currentRun);
+                            currentRun = new ArrayList<>();
+                        } else {
+                            currentRun.add(log);
+                        }
+                    }
+                    runs.add(currentRun);
+
+                    long failedRunsSum = 0;
+                    // Runs prior to the last run were failed runs terminated by a reset barrier
+                    for (int r = 0; r < runs.size() - 1; r++) {
+                        List<AttemptLog> rLogs = runs.get(r);
+                        long runMax = 0;
+                        for (AttemptLog log : rLogs) {
+                            Long s = extractRecordedSeconds(log);
+                            if (s != null && s > runMax) {
+                                runMax = s;
+                            }
+                        }
+                        if (runMax <= 0 && !rLogs.isEmpty()) {
+                            LocalDateTime rStart = rLogs.get(0).getAttemptTime();
+                            LocalDateTime rEnd = rLogs.get(rLogs.size() - 1).getAttemptTime();
+                            if (rStart != null && rEnd != null) {
+                                runMax = Math.max(ChronoUnit.SECONDS.between(rStart, rEnd), 0L);
+                            }
+                        }
+                        failedRunsSum += Math.min(Math.max(runMax, 0L), 3600L);
+                    }
+                    firstTotalEffortSeconds = failedRunsSum + firstPhaseSeconds;
+                }
+                firstTotalEffortSeconds = Math.max(firstTotalEffortSeconds, firstPhaseSeconds);
+
+                studentFirstTotalSeconds += firstTotalEffortSeconds;
+                if (isFirstCompleted) {
+                    classFirstTotalSeconds[i] += firstTotalEffortSeconds;
+                    classFirstTimeContributors[i]++;
                 }
 
                 int firstScore = isFirstCompleted ? Math.max(100 - (firstFailedCount * 10), 50) : 0;
@@ -1445,7 +1478,7 @@ public class RoomController {
                 // --- 3. Combined / Legacy Metrics ---
                 int totalAttemptsForPhase = firstAttemptsCount + reAuditAttemptsCount;
                 int totalFailedForPhase = firstFailedCount + reAuditFailedCount;
-                long totalSecondsForPhase = firstPhaseSeconds + reAuditPhaseSeconds;
+                long totalSecondsForPhase = firstTotalEffortSeconds + reAuditPhaseSeconds;
                 boolean isCombinedCompleted = isFirstCompleted;
                 String combinedStatus = firstStatus;
                 int combinedBestScore = Math.max(firstScore, reAuditScore);
@@ -1476,26 +1509,38 @@ public class RoomController {
                 phaseObj.put("attempts", totalAttemptsForPhase);
                 phaseObj.put("failedAttempts", totalFailedForPhase);
                 phaseObj.put("bestScore", combinedBestScore);
+                phaseObj.put("winningTimeSeconds", isFirstCompleted ? firstWinningSeconds : 0L);
+                phaseObj.put("winningTimeFormatted", isFirstCompleted ? formatDuration(firstWinningSeconds, "COMPLETED") : "--");
+                phaseObj.put("totalEffortSeconds", totalSecondsForPhase);
+                phaseObj.put("totalEffortFormatted", formatDuration(totalSecondsForPhase, combinedStatus));
                 phaseObj.put("timeSpentSeconds", totalSecondsForPhase);
                 phaseObj.put("timeSpentFormatted", formatDuration(totalSecondsForPhase, combinedStatus));
 
-                // First Attempt Specifics
+                // First Attempt Specifics (Option 2: Winning speed + Total effort)
                 Map<String, Object> firstObj = new HashMap<>();
                 firstObj.put("status", firstStatus);
                 firstObj.put("attempts", firstAttemptsCount);
                 firstObj.put("failedAttempts", firstFailedCount);
                 firstObj.put("bestScore", firstScore);
-                firstObj.put("timeSpentSeconds", firstPhaseSeconds);
-                firstObj.put("timeSpentFormatted", formatDuration(firstPhaseSeconds, firstStatus));
+                firstObj.put("winningTimeSeconds", firstWinningSeconds);
+                firstObj.put("winningTimeFormatted", isFirstCompleted ? formatDuration(firstWinningSeconds, "COMPLETED") : "--");
+                firstObj.put("totalEffortSeconds", firstTotalEffortSeconds);
+                firstObj.put("totalEffortFormatted", formatDuration(firstTotalEffortSeconds, firstStatus));
+                firstObj.put("timeSpentSeconds", firstTotalEffortSeconds);
+                firstObj.put("timeSpentFormatted", formatDuration(firstTotalEffortSeconds, firstStatus));
                 phaseObj.put("firstAttempt", firstObj);
 
-                // Re-Audit Specifics
+                // Re-Audit Specifics (Fastest recorded run stays standard)
                 Map<String, Object> reAuditObj = new HashMap<>();
                 reAuditObj.put("status", reAuditStatus);
                 reAuditObj.put("hasReAudited", hasReAudited);
                 reAuditObj.put("attempts", reAuditAttemptsCount);
                 reAuditObj.put("failedAttempts", reAuditFailedCount);
                 reAuditObj.put("bestScore", reAuditScore);
+                reAuditObj.put("winningTimeSeconds", reAuditPhaseSeconds);
+                reAuditObj.put("winningTimeFormatted", isReAuditCompleted ? formatDuration(reAuditPhaseSeconds, "COMPLETED") : "--");
+                reAuditObj.put("totalEffortSeconds", reAuditPhaseSeconds);
+                reAuditObj.put("totalEffortFormatted", formatDuration(reAuditPhaseSeconds, reAuditStatus));
                 reAuditObj.put("timeSpentSeconds", reAuditPhaseSeconds);
                 reAuditObj.put("timeSpentFormatted", formatDuration(reAuditPhaseSeconds, reAuditStatus));
                 phaseObj.put("reAudit", reAuditObj);
@@ -1728,6 +1773,23 @@ public class RoomController {
             return Collections.singletonList("SUBMIT");
         }
         return Collections.emptyList();
+    }
+
+    private Long extractRecordedSeconds(AttemptLog log) {
+        if (log == null) return null;
+        if (log.getElapsedSeconds() != null && log.getElapsedSeconds() > 0) {
+            return log.getElapsedSeconds();
+        }
+        if (log.getUserInputData() != null && log.getUserInputData().contains("timerSeconds=")) {
+            try {
+                java.util.regex.Matcher m = java.util.regex.Pattern.compile("timerSeconds=(\\d+)").matcher(log.getUserInputData());
+                if (m.find()) {
+                    long s = Long.parseLong(m.group(1));
+                    if (s > 0) return s;
+                }
+            } catch (Exception ignored) {}
+        }
+        return null;
     }
 
     private String formatDuration(long totalSeconds, String status) {

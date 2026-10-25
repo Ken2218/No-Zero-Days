@@ -10,6 +10,10 @@ interface PhaseStreamDetail {
   bestScore: number;
   timeSpentSeconds: number;
   timeSpentFormatted: string;
+  winningTimeSeconds?: number;
+  winningTimeFormatted?: string;
+  totalEffortSeconds?: number;
+  totalEffortFormatted?: string;
   hasReAudited?: boolean;
 }
 
@@ -24,6 +28,10 @@ interface PhaseDetail {
   bestScore: number;
   timeSpentSeconds: number;
   timeSpentFormatted: string;
+  winningTimeSeconds?: number;
+  winningTimeFormatted?: string;
+  totalEffortSeconds?: number;
+  totalEffortFormatted?: string;
   firstAttempt?: PhaseStreamDetail;
   reAudit?: PhaseStreamDetail;
 }
@@ -1799,7 +1807,11 @@ export default function TeacherDashboard({
                         <div
                           key={p.phaseId}
                           className={`phase-chip ${p.status}`}
-                          title={`${p.title}: ${p.status === 'NOT_ATTEMPTED' ? 'OPEN' : p.status} | Attempts: ${p.attempts} | Time: ${p.timeSpentFormatted}`}
+                          title={`${p.title}: ${p.status === 'NOT_ATTEMPTED' ? 'OPEN' : p.status} | Attempts: ${p.attempts} | ${
+                            p.firstAttempt && p.firstAttempt.attempts > 1 && p.firstAttempt.winningTimeFormatted && p.firstAttempt.winningTimeFormatted !== '--'
+                              ? `Winning run: ${p.firstAttempt.winningTimeFormatted} • Total effort: ${p.firstAttempt.totalEffortFormatted || p.timeSpentFormatted}`
+                              : `Time: ${p.timeSpentFormatted}`
+                          }`}
                           onClick={() => setExpandedStudent(isExpanded ? null : stu.studentNumber)}
                         >
                           <span className="chip-num">P{p.phaseId}</span>
@@ -1828,12 +1840,26 @@ export default function TeacherDashboard({
                                 <strong>P{p.phaseId}</strong>: {p.title.replace(/^Phase \d+: /, '')}
                               </div>
                               <div className="p-col-first">
-                                <span className="p-metric-tag" title="First attempt tries">
-                                  🎯 {first?.attempts ?? p.attempts} att
-                                </span>
-                                <span className="p-metric-tag" title="First attempt duration">
-                                  ⏱️ {first?.timeSpentFormatted ?? p.timeSpentFormatted}
-                                </span>
+                                {first && first.attempts > 1 && first.winningTimeFormatted && first.winningTimeFormatted !== '--' ? (
+                                  <div className="p-runs-breakdown">
+                                    <span className="p-run-winning" title="Winning completion speed">
+                                      ⏱️ {first.winningTimeFormatted} <span className="p-run-badge">(Winning run)</span>
+                                    </span>
+                                    <span className="p-run-divider">•</span>
+                                    <span className="p-run-total" title="Total cumulative time spent across all attempt runs">
+                                      Total time: {first.totalEffortFormatted || first.timeSpentFormatted} across {first.attempts} attempts
+                                    </span>
+                                  </div>
+                                ) : (
+                                  <>
+                                    <span className="p-metric-tag" title="First attempt duration">
+                                      ⏱️ {first?.winningTimeFormatted && first.winningTimeFormatted !== '--' ? first.winningTimeFormatted : (first?.timeSpentFormatted ?? p.timeSpentFormatted)}
+                                    </span>
+                                    <span className="p-metric-tag" title="First attempt tries">
+                                      🎯 {first?.attempts ?? p.attempts} att
+                                    </span>
+                                  </>
+                                )}
                               </div>
                               <div className="p-col-reaudit">
                                 {re && re.hasReAudited ? (
@@ -1841,7 +1867,7 @@ export default function TeacherDashboard({
                                     <span className="p-metric-tag reaudit" title="Re-audit practice tries">
                                       ↻ {re.attempts} att
                                     </span>
-                                    <span className="p-metric-tag reaudit" title="Re-audit duration">
+                                    <span className="p-metric-tag reaudit" title="Fastest re-audit duration">
                                       ⏱️ {re.timeSpentFormatted}
                                     </span>
                                   </>
@@ -1978,7 +2004,13 @@ export default function TeacherDashboard({
                               <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', fontSize: '0.72rem' }}>
                                 <div style={{ color: '#38bdf8', display: 'flex', justifyContent: 'space-between', gap: '4px' }}>
                                   <span style={{ fontWeight: 'bold' }}>1st:</span>
-                                  <span>{first?.timeSpentFormatted || p.timeSpentFormatted || '--'}</span>
+                                  {first && first.attempts > 1 && first.winningTimeFormatted && first.winningTimeFormatted !== '--' ? (
+                                    <span title={`Winning: ${first.winningTimeFormatted} • Total effort: ${first.totalEffortFormatted || first.timeSpentFormatted}`}>
+                                      {first.winningTimeFormatted} <span style={{ color: '#94a3b8', fontSize: '0.68rem' }}>(tot: {first.totalEffortFormatted || first.timeSpentFormatted})</span>
+                                    </span>
+                                  ) : (
+                                    <span>{first?.timeSpentFormatted || p.timeSpentFormatted || '--'}</span>
+                                  )}
                                   <span style={{ color: '#64748b' }}>({first?.attempts ?? p.attempts}a)</span>
                                 </div>
                                 <div style={{ color: '#fb923c', display: 'flex', justifyContent: 'space-between', gap: '4px' }}>
@@ -2003,10 +2035,16 @@ export default function TeacherDashboard({
                               <div>
                                 <div style={{ fontWeight: 'bold', color: auditAttemptMode === 'RE_AUDIT' ? '#fb923c' : undefined }}>
                                   {p.status === 'COMPLETED' ? '✓ ' : '⚡ '}
-                                  {p.timeSpentFormatted !== '--' ? p.timeSpentFormatted : '0s'}
+                                  {p.winningTimeFormatted && p.attempts > 1 && p.winningTimeFormatted !== '--' ? (
+                                    <span title={`Winning run: ${p.winningTimeFormatted} • Total effort: ${p.totalEffortFormatted || p.timeSpentFormatted}`}>
+                                      {p.winningTimeFormatted}
+                                    </span>
+                                  ) : (
+                                    p.timeSpentFormatted !== '--' ? p.timeSpentFormatted : '0s'
+                                  )}
                                 </div>
                                 <span style={{ fontSize: '0.7rem', color: '#94a3b8' }}>
-                                  {p.attempts} att
+                                  {p.attempts} att {p.attempts > 1 && p.totalEffortFormatted ? `(${p.totalEffortFormatted})` : ''}
                                 </span>
                               </div>
                             ) : (
