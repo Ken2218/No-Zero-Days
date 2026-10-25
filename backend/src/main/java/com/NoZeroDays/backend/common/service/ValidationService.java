@@ -126,8 +126,6 @@ public class ValidationService {
                 && fieldMatches(snap.getSpouseLoan(), request.getSpouseLoan())
                 && fieldMatches(snap.getRiceSubsidy(), request.getRiceSubsidy())
                 && fieldMatches(snap.getUniformAllowance(), request.getUniformAllowance())
-                && fieldMatches(snap.getGrossPay(), request.getGrossPay())
-                && fieldMatches(snap.getTardinessDeduction(), request.getTardinessDeduction())
                 && stringFieldMatches(snap.getEmployeeName(), request.getEmployeeName())
                 && stringFieldMatches(snap.getCompanyName(), request.getCompanyName());
 
@@ -181,8 +179,6 @@ public class ValidationService {
         snap.setSpouseLoan(request.getSpouseLoan());
         snap.setRiceSubsidy(request.getRiceSubsidy());
         snap.setUniformAllowance(request.getUniformAllowance());
-        snap.setGrossPay(request.getGrossPay());
-        snap.setTardinessDeduction(request.getTardinessDeduction());
         snap.setEmployeeName(request.getEmployeeName());
         snap.setCompanyName(request.getCompanyName());
         snap.setUpdatedAt(LocalDateTime.now());

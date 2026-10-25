@@ -43,6 +43,21 @@ function minutesToTimeString(totalMinutes: number): string {
 }
 
 /**
+ * Builds a June 2026 attendance calendar grid where total present days (P / P★)
+ * equals `daysPresent`, including June 12 (Independence Day, P★).
+ */
+export function buildAttendanceCalendarGrid(daysPresent: number): Record<number, 'P' | 'A'> {
+  const weekdaysList = [8, 9, 10, 11, 12, 15, 16, 17, 18, 19, 22, 23, 24, 25, 26];
+  const otherDays = weekdaysList.filter(d => d !== 12).sort(() => Math.random() - 0.5);
+  const presentDays = new Set([12, ...otherDays.slice(0, Math.max(0, daysPresent - 1))]);
+  const calendarGrid: Record<number, 'P' | 'A'> = {};
+  weekdaysList.forEach(day => {
+    calendarGrid[day] = presentDays.has(day) ? 'P' : 'A';
+  });
+  return calendarGrid;
+}
+
+/**
  * Distributes `totalLateMinutes` randomly across 2–4 of the available non-holiday weekdays.
  * Returns an array of minute values (one per day, same length as `dayCount`).
  * Days designated as holidays receive 0 late minutes.
@@ -154,12 +169,7 @@ export function generatePhase2Scenario(): ScenarioData {
     };
   });
 
-  // Dummy calendar grid for Lobby compatibility
-  const calendarGrid: Record<number, 'P' | 'A'> = {};
-  const weekdaysList = [8, 9, 10, 11, 12, 15, 16, 17, 18, 19, 22, 23, 24, 25, 26];
-  weekdaysList.forEach((day, index) => {
-    calendarGrid[day] = index < daysPresent ? 'P' : 'A';
-  });
+  const calendarGrid = buildAttendanceCalendarGrid(daysPresent);
 
   return {
     employeeName,
@@ -196,12 +206,7 @@ export function generatePhase3Scenario(): ScenarioData {
   const otHours = otHoursList[Math.floor(Math.random() * otHoursList.length)];
   const unpaidLunchHours = 1.0; // 1 hour unpaid break
 
-  // Dummy calendar grid for Lobby compatibility
-  const calendarGrid: Record<number, 'P' | 'A'> = {};
-  const weekdaysList = [8, 9, 10, 11, 12, 15, 16, 17, 18, 19, 22, 23, 24, 25, 26];
-  weekdaysList.forEach((day, index) => {
-    calendarGrid[day] = index < daysPresent ? 'P' : 'A';
-  });
+  const calendarGrid = buildAttendanceCalendarGrid(daysPresent);
 
   return {
     employeeName,
@@ -279,12 +284,7 @@ export function generatePhase4Scenario(): ScenarioData {
     }
   ];
 
-  // Dummy calendar grid for Lobby compatibility
-  const calendarGrid: Record<number, 'P' | 'A'> = {};
-  const weekdaysList = [8, 9, 10, 11, 12, 15, 16, 17, 18, 19, 22, 23, 24, 25, 26];
-  weekdaysList.forEach((day, index) => {
-    calendarGrid[day] = index < daysPresent ? 'P' : 'A';
-  });
+  const calendarGrid = buildAttendanceCalendarGrid(daysPresent);
 
   return {
     employeeName,

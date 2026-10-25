@@ -1299,7 +1299,7 @@ export default function MissionLog({
                   <span className="input-info-icon">ⓘ
                     <div className="input-tooltip">
                       {activePhaseIndex === 2
-                        ? 'Check the HR Filing Cabinet for the employee\'s contract file to find the Hourly Rate and multiply by the standard shift hours and days worked.'
+                        ? 'Find the Hourly Rate in the HR Filing Cabinet, standard shift length (8 hrs), and manually count the Present (P / P★) shifts on the June Attendance Calendar under Biometric Swipe Logs.'
                         : activePhaseIndex === 3
                           ? 'Review the employee contract file to find the Hourly Rate, then multiply by standard shift length (8 hours) and days present.'
                           : 'Check the HR Filing Cabinet for the employee\'s contract file. Find the Daily Rate and multiply by the total days present on the calendar.'

@@ -1088,8 +1088,8 @@ function App() {
 
   const generateCalendarDays = (totalDays) => {
     const weekdaysList = [8, 9, 10, 11, 12, 15, 16, 17, 18, 19, 22, 23, 24, 25, 26];
-    const shuffledDays = [...weekdaysList].sort(() => Math.random() - 0.5);
-    const presentDays = new Set(shuffledDays.slice(0, totalDays));
+    const otherDays = weekdaysList.filter(d => d !== 12).sort(() => Math.random() - 0.5);
+    const presentDays = new Set([12, ...otherDays.slice(0, Math.max(0, totalDays - 1))]);
     
     const newGrid = {};
     weekdaysList.forEach(day => {
@@ -2532,6 +2532,7 @@ function App() {
               {activePhaseIndex === 2 && (
                 <>
                   <button type="button" className="quick-chip" onClick={() => setActivePopup('BIOMETRICS')}>⏱️ Biometrics Terminal</button>
+                  <button type="button" className="quick-chip" onClick={() => setActivePopup('WALL_CALENDAR')}>📅 Attendance Calendar</button>
                   <button type="button" className="quick-chip" onClick={() => setActivePopup('DOLE_POSTER')}>📌 DOLE Poster</button>
                   <button type="button" className="quick-chip" onClick={() => setActivePopup('P2_CONTRACT')}>📁 HR Cabinet</button>
                   <button type="button" className="quick-chip" onClick={() => setActivePopup('HANDBOOK')}>📘 Handbook</button>

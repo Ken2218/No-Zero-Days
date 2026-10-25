@@ -30,6 +30,67 @@ export default function Popups({
 
   if (!activeHotspot || !scenario) return null;
 
+  const renderCalendarGrid = () => {
+    const cells = [];
+    // Week 1 (June 1 to 7)
+    for (let d = 1; d <= 7; d++) {
+      cells.push(<div key={`d-${d}`} className="cal-cell empty" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '35px', border: '1px solid #1e293b', color: '#475569' }}>{d}</div>);
+    }
+    // Weeks 2 to 5 (June 8 to 30)
+    const weekdaysList = [8, 9, 10, 11, 12, 15, 16, 17, 18, 19, 22, 23, 24, 25, 26];
+    const daysSet = new Set(weekdaysList);
+    for (let d = 8; d <= 30; d++) {
+      const isWeekend = (d % 7 === 6 || d % 7 === 0);
+      if (daysSet.has(d)) {
+        const status = scenario.calendarGrid && scenario.calendarGrid[d] ? scenario.calendarGrid[d] : 'A';
+        const isPresent = status === 'P';
+        const isHoliday = d === 12;
+        cells.push(
+          <div
+            key={`d-${d}`}
+            className={`cal-cell ${isPresent ? 'present' : 'absent'} ${isHoliday ? 'holiday' : ''}`}
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              minHeight: '35px',
+              border: '1px solid #1e293b',
+              background: isHoliday ? '#451a03' : (isPresent ? '#064e3b' : '#7f1d1d'),
+              color: isHoliday ? '#fbbf24' : (isPresent ? '#34d399' : '#f87171'),
+              fontWeight: 'bold',
+              position: 'relative'
+            }}
+          >
+            {d}
+            <span className={isPresent ? 'p-mark' : 'a-mark'} style={{ fontSize: '0.65rem', display: 'block', marginTop: '2px' }}>
+              {isPresent ? (isHoliday ? 'P★' : 'P') : 'A'}
+            </span>
+          </div>
+        );
+      } else {
+        cells.push(
+          <div
+            key={`d-${d}`}
+            className="cal-cell empty"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              minHeight: '35px',
+              border: '1px solid #1e293b',
+              color: isWeekend ? '#ef4444' : '#475569',
+              background: isWeekend ? 'rgba(239, 68, 68, 0.05)' : 'transparent'
+            }}
+          >
+            {d}
+          </div>
+        );
+      }
+    }
+    return cells;
+  };
+
   const renderContent = () => {
     switch (activeHotspot) {
       case 'INTRO':
@@ -197,67 +258,6 @@ export default function Popups({
         );
 
       case 'WALL_CALENDAR':
-        const renderCalendarGrid = () => {
-          const cells = [];
-          // Week 1 (June 1 to 7)
-          for (let d = 1; d <= 7; d++) {
-            cells.push(<div key={`d-${d}`} className="cal-cell empty" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '35px', border: '1px solid #1e293b', color: '#475569' }}>{d}</div>);
-          }
-          // Weeks 2 to 5 (June 8 to 30)
-          const weekdaysList = [8, 9, 10, 11, 12, 15, 16, 17, 18, 19, 22, 23, 24, 25, 26];
-          const daysSet = new Set(weekdaysList);
-          for (let d = 8; d <= 30; d++) {
-            const isWeekend = (d % 7 === 6 || d % 7 === 0);
-            if (daysSet.has(d)) {
-              const status = scenario.calendarGrid && scenario.calendarGrid[d] ? scenario.calendarGrid[d] : 'A';
-              const isPresent = status === 'P';
-              const isHoliday = d === 12;
-              cells.push(
-                <div
-                  key={`d-${d}`}
-                  className={`cal-cell ${isPresent ? 'present' : 'absent'} ${isHoliday ? 'holiday' : ''}`}
-                  style={{
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    minHeight: '35px',
-                    border: '1px solid #1e293b',
-                    background: isHoliday ? '#451a03' : (isPresent ? '#064e3b' : '#7f1d1d'),
-                    color: isHoliday ? '#fbbf24' : (isPresent ? '#34d399' : '#f87171'),
-                    fontWeight: 'bold',
-                    position: 'relative'
-                  }}
-                >
-                  {d}
-                  <span className={isPresent ? 'p-mark' : 'a-mark'} style={{ fontSize: '0.65rem', display: 'block', marginTop: '2px' }}>
-                    {isPresent ? (isHoliday ? 'P★' : 'P') : 'A'}
-                  </span>
-                </div>
-              );
-            } else {
-              cells.push(
-                <div
-                  key={`d-${d}`}
-                  className="cal-cell empty"
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    minHeight: '35px',
-                    border: '1px solid #1e293b',
-                    color: isWeekend ? '#ef4444' : '#475569',
-                    background: isWeekend ? 'rgba(239, 68, 68, 0.05)' : 'transparent'
-                  }}
-                >
-                  {d}
-                </div>
-              );
-            }
-          }
-          return cells;
-        };
-
         return (
           <div className="popup-content">
             <div className="popup-header">
@@ -316,9 +316,6 @@ export default function Popups({
                 <span>Contracted Hourly Rate:</span> <strong className="highlight-green">₱{scenario.hourlyRate.toFixed(2)} / Hour</strong>
               </div>
               <div className="data-row" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
-                <span>Days Worked (Present):</span> <strong>{scenario.daysPresent} Days</strong>
-              </div>
-              <div className="data-row" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
                 <span>Monthly Rice Allowance:</span> <strong>₱1,500.00</strong>
               </div>
               <div className="data-row" style={{ display: 'flex', justifyContent: 'space-between' }}>
@@ -364,6 +361,35 @@ export default function Popups({
               <p style={{ fontSize: '0.8rem', color: '#94a3b8', marginTop: '10px', fontStyle: 'italic' }}>
                 * Standard working hours: 08:00 AM to 05:00 PM. Grace period is 0 mins. June 12 is Independence Day (No Shift).
               </p>
+            </div>
+
+            {/* Attendance Calendar under biometric swipe logs for manually counting Days Worked */}
+            <div style={{ marginTop: '16px', borderTop: '1px dashed #334155', paddingTop: '12px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                <h5 style={{ margin: 0, color: '#facc15', fontSize: '0.95rem', letterSpacing: '0.5px' }}>
+                  📅 Official Wall Calendar - June 2026
+                </h5>
+                <span style={{ fontSize: '0.75rem', color: '#38bdf8', fontWeight: 'bold' }}>Count Present (P) Shifts</span>
+              </div>
+              <p style={{ color: '#94a3b8', fontSize: '0.8rem', margin: '0 0 10px 0' }}>
+                Official Attendance Log — Count Present (P / P★) Weekday Shifts for Days Worked
+              </p>
+              <div className="calendar-ui-box" style={{ padding: '12px', background: '#0b1120', border: '1px solid #1e293b', borderRadius: '8px' }}>
+                <div className="cal-header-row" style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '4px', textAlign: 'center', fontWeight: 'bold', color: '#60a5fa', marginBottom: '8px', fontSize: '0.85rem' }}>
+                  <span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span style={{ color: '#ef4444' }}>S</span><span style={{ color: '#ef4444' }}>S</span>
+                </div>
+                <div className="cal-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '4px', textAlign: 'center', fontSize: '0.85rem' }}>
+                  {renderCalendarGrid()}
+                </div>
+                <div style={{ marginTop: '12px', textAlign: 'center', borderTop: '1px dashed #1e293b', paddingTop: '8px' }}>
+                  <p style={{ fontSize: '0.75rem', color: '#94a3b8', margin: '0 0 4px 0' }}>
+                    <strong>Legend:</strong> <span style={{ color: '#34d399', fontWeight: 'bold' }}>P = Present</span> | <span style={{ color: '#f87171', fontWeight: 'bold' }}>A = Absent</span> | <span style={{ color: '#fbbf24', fontWeight: 'bold' }}>P★ = Regular Holiday (Worked)</span>
+                  </p>
+                  <p style={{ fontSize: '0.7rem', color: '#64748b', margin: 0, fontStyle: 'italic' }}>
+                    ★ June 12 is Independence Day (Regular Holiday) - Present shift recorded.
+                  </p>
+                </div>
+              </div>
             </div>
           </div>
         );
