@@ -191,6 +191,56 @@ export default function MissionLog({
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
+  // Phases 1-6 standard UI
+  // Phase 2, 3, and 4 have special multi-step scaffolding flows.
+  const isSynthesisSupported = (activePhaseIndex >= 2 && activePhaseIndex <= 6);
+
+  // Self-healing step status flags: ensure downstream steps unlock if upstream completed
+  const effectiveGrossStatus = grossPayStatus !== 'LOCKED'
+    ? grossPayStatus
+    : (step3Status === 'SUCCESS' && (activePhaseIndex === 2 || activePhaseIndex === 3 || activePhaseIndex === 4))
+      ? 'ACTIVE'
+      : 'LOCKED';
+
+  const effectiveNetFormulaStatus = netFormulaStatus !== 'LOCKED'
+    ? netFormulaStatus
+    : (effectiveGrossStatus === 'SUCCESS' && (activePhaseIndex === 2 || activePhaseIndex === 3 || activePhaseIndex === 4))
+      ? 'ACTIVE'
+      : 'LOCKED';
+
+  const effectiveStep4Status = step4Status !== 'LOCKED'
+    ? step4Status
+    : ((activePhaseIndex === 2 || activePhaseIndex === 3 || activePhaseIndex === 4) && effectiveNetFormulaStatus === 'SUCCESS')
+      ? 'ACTIVE'
+      : ((activePhaseIndex === 5 || activePhaseIndex === 6) && step3Status === 'SUCCESS')
+        ? 'ACTIVE'
+        : 'LOCKED';
+
+  // Smoothly scroll into the active step so students never miss unlocked input cards
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      const activeEl = document.querySelector('.tracker-steps .active-step');
+      if (activeEl) {
+        activeEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }
+    }, 120);
+    return () => clearTimeout(timer);
+  }, [
+    activePhaseIndex,
+    step1Status,
+    step2Status,
+    step3Status,
+    effectiveGrossStatus,
+    effectiveNetFormulaStatus,
+    effectiveStep4Status,
+    trueOtHoursStatus,
+    otMultiplierStatus,
+    otFormulaStatus,
+    holidayFormulaStatus,
+    pagIbigDeductionStatus,
+    philhealthErStatus
+  ]);
+
   if (activePhaseIndex === 7) {
     // Tribunal Boardroom UI
     return (
@@ -434,56 +484,6 @@ export default function MissionLog({
       </div>
     );
   }
-
-  // Phases 1-6 standard UI
-  // Phase 2, 3, and 4 have special multi-step scaffolding flows.
-  const isSynthesisSupported = (activePhaseIndex >= 2 && activePhaseIndex <= 6);
-
-  // Self-healing step status flags: ensure downstream steps unlock if upstream completed
-  const effectiveGrossStatus = grossPayStatus !== 'LOCKED'
-    ? grossPayStatus
-    : (step3Status === 'SUCCESS' && (activePhaseIndex === 2 || activePhaseIndex === 3 || activePhaseIndex === 4))
-      ? 'ACTIVE'
-      : 'LOCKED';
-
-  const effectiveNetFormulaStatus = netFormulaStatus !== 'LOCKED'
-    ? netFormulaStatus
-    : (effectiveGrossStatus === 'SUCCESS' && (activePhaseIndex === 2 || activePhaseIndex === 3 || activePhaseIndex === 4))
-      ? 'ACTIVE'
-      : 'LOCKED';
-
-  const effectiveStep4Status = step4Status !== 'LOCKED'
-    ? step4Status
-    : ((activePhaseIndex === 2 || activePhaseIndex === 3 || activePhaseIndex === 4) && effectiveNetFormulaStatus === 'SUCCESS')
-      ? 'ACTIVE'
-      : ((activePhaseIndex === 5 || activePhaseIndex === 6) && step3Status === 'SUCCESS')
-        ? 'ACTIVE'
-        : 'LOCKED';
-
-  // Smoothly scroll into the active step so students never miss unlocked input cards
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      const activeEl = document.querySelector('.tracker-steps .active-step');
-      if (activeEl) {
-        activeEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-      }
-    }, 120);
-    return () => clearTimeout(timer);
-  }, [
-    activePhaseIndex,
-    step1Status,
-    step2Status,
-    step3Status,
-    effectiveGrossStatus,
-    effectiveNetFormulaStatus,
-    effectiveStep4Status,
-    trueOtHoursStatus,
-    otMultiplierStatus,
-    otFormulaStatus,
-    holidayFormulaStatus,
-    pagIbigDeductionStatus,
-    philhealthErStatus
-  ]);
 
   return (
     <div className="right-panel">
