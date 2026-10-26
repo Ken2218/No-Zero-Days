@@ -500,6 +500,9 @@ export default function TeacherDashboard({
   // Transformed students list reflecting the selected audit stream
   const displayedStudents = useMemo(() => {
     return students.map(s => {
+      const isReAuditMastered = s.reAudit && s.reAudit.completedPhases >= 7;
+      const isAnyMastered = s.completedPhases >= 7 || Boolean(isReAuditMastered) || s.status === 'COMPLETED';
+
       if (auditAttemptMode === 'FIRST_ATTEMPT' && s.firstAttempt) {
         return {
           ...s,
@@ -547,7 +550,11 @@ export default function TeacherDashboard({
           })
         };
       }
-      return s;
+      return {
+        ...s,
+        status: isAnyMastered ? 'COMPLETED' : s.status,
+        completedPhases: Math.max(s.completedPhases || 0, s.reAudit?.completedPhases || 0)
+      };
     });
   }, [students, auditAttemptMode]);
 
@@ -1712,7 +1719,7 @@ export default function TeacherDashboard({
           <div className="student-cards-grid">
             {filteredStudents.map((stu) => {
               const percent = Math.round((stu.completedPhases / 7) * 100);
-              const isCompleted = stu.status === 'COMPLETED' || stu.completedPhases >= 7;
+              const isCompleted = stu.status === 'COMPLETED' || stu.completedPhases >= 7 || Boolean(stu.reAudit && stu.reAudit.completedPhases >= 7);
               const isExpanded = expandedStudent === stu.studentNumber;
 
               return (

@@ -1479,8 +1479,10 @@ public class RoomController {
                 int totalAttemptsForPhase = firstAttemptsCount + reAuditAttemptsCount;
                 int totalFailedForPhase = firstFailedCount + reAuditFailedCount;
                 long totalSecondsForPhase = firstTotalEffortSeconds + reAuditPhaseSeconds;
-                boolean isCombinedCompleted = isFirstCompleted;
-                String combinedStatus = firstStatus;
+                boolean isCombinedCompleted = isFirstCompleted || isReAuditCompleted;
+                String combinedStatus = (isFirstCompleted || isReAuditCompleted)
+                        ? "COMPLETED"
+                        : ("ACTIVE".equals(firstStatus) || "ACTIVE".equals(reAuditStatus) ? "ACTIVE" : "NOT_ATTEMPTED");
                 int combinedBestScore = Math.max(firstScore, reAuditScore);
 
                 studentTotalAttempts += totalAttemptsForPhase;
@@ -1548,7 +1550,8 @@ public class RoomController {
                 studentPhases.add(phaseObj);
             }
 
-            if (studentCompletedPhases >= 7) {
+            boolean hasMasteredAll = studentCompletedPhases >= 7 || studentReAuditCompletedPhases >= 7 || isSessionCompleted;
+            if (hasMasteredAll) {
                 completedStudentsCount++;
             }
             if (studentFirstCompletedPhases >= 7) {
@@ -1564,13 +1567,13 @@ public class RoomController {
                 displayPhaseIndex = activePhase;
             } else if (currentPhaseIndex >= 1 && currentPhaseIndex <= 7) {
                 displayPhaseIndex = currentPhaseIndex;
-            } else if (currentPhaseIndex > 7 || studentCompletedPhases >= 7 || isSessionCompleted) {
+            } else if (currentPhaseIndex > 7 || hasMasteredAll) {
                 displayPhaseIndex = 7;
             } else {
                 displayPhaseIndex = 1;
             }
 
-            String currentPhaseTitle = (studentCompletedPhases >= 7 || isSessionCompleted || currentPhaseIndex > 7)
+            String currentPhaseTitle = (hasMasteredAll || currentPhaseIndex > 7)
                     ? "Final Audit Complete"
                     : PHASE_TITLES[Math.max(0, Math.min(6, displayPhaseIndex - 1))];
 
@@ -1578,13 +1581,13 @@ public class RoomController {
             stuMap.put("studentNumber", student.getStudentNumber());
             stuMap.put("fullName", student.getFullName());
             stuMap.put("section", student.getSection() != null ? student.getSection() : room.getSection());
-            stuMap.put("completedPhases", studentCompletedPhases);
+            stuMap.put("completedPhases", Math.max(studentCompletedPhases, studentReAuditCompletedPhases));
             stuMap.put("currentPhase", displayPhaseIndex);
             stuMap.put("currentPhaseTitle", currentPhaseTitle);
             stuMap.put("attempts", studentTotalAttempts);
-            stuMap.put("status", (studentCompletedPhases >= 7 || isSessionCompleted) ? "COMPLETED" : "ACTIVE");
+            stuMap.put("status", hasMasteredAll ? "COMPLETED" : "ACTIVE");
             stuMap.put("totalTimeSpentSeconds", studentTotalSeconds);
-            stuMap.put("totalTimeFormatted", formatDuration(studentTotalSeconds, "ACTIVE"));
+            stuMap.put("totalTimeFormatted", formatDuration(studentTotalSeconds, hasMasteredAll ? "COMPLETED" : "ACTIVE"));
             stuMap.put("phases", studentPhases);
 
             // Student First Attempt Rollup
