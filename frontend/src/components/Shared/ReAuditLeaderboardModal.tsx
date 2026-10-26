@@ -31,6 +31,7 @@ export interface LeaderboardResponse {
   section: string;
   teacherName: string;
   totalParticipants: number;
+  totalCompleted7Count?: number;
   rankings: StudentRankingItem[];
 }
 
@@ -54,7 +55,6 @@ export default function ReAuditLeaderboardModal({
   const [data, setData] = useState<LeaderboardResponse | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
-  const [filterTab, setFilterTab] = useState<'ALL' | 'TOP10' | 'MASTERED'>('ALL');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [expandedStudent, setExpandedStudent] = useState<string | null>(null);
   const [showCodeInput, setShowCodeInput] = useState<boolean>(!initialRoomCode);
@@ -116,14 +116,14 @@ export default function ReAuditLeaderboardModal({
     return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
   };
 
+  // Only participants who completed all 7 phases are shown on the list
   const filteredRankings = useMemo(() => {
     if (!data?.rankings) return [];
     return data.rankings.filter((item) => {
-      // Tab filter
-      if (filterTab === 'TOP10' && !item.isTop10) return false;
-      if (filterTab === 'MASTERED' && !item.isMasteredAll) return false;
+      // Must have completed all 7 phases
+      if (item.completedPhasesCount < 7) return false;
 
-      // Search query
+      // Optional search query
       if (searchQuery.trim()) {
         const query = searchQuery.toLowerCase();
         const matchesName = item.fullName.toLowerCase().includes(query);
@@ -132,18 +132,7 @@ export default function ReAuditLeaderboardModal({
       }
       return true;
     });
-  }, [data, filterTab, searchQuery]);
-
-  const stats = useMemo(() => {
-    if (!data?.rankings) {
-      return { totalEnrolled: 0, reAuditors: 0, masteredAll: 0, leader: null as StudentRankingItem | null };
-    }
-    const totalEnrolled = data.totalParticipants || data.rankings.length;
-    const reAuditors = data.rankings.filter(r => r.hasReAudited).length;
-    const masteredAll = data.rankings.filter(r => r.isMasteredAll).length;
-    const leader = data.rankings.find(r => r.completedPhasesCount > 0) || null;
-    return { totalEnrolled, reAuditors, masteredAll, leader };
-  }, [data]);
+  }, [data, searchQuery]);
 
   if (!isOpen) return null;
 
@@ -170,7 +159,7 @@ export default function ReAuditLeaderboardModal({
           <div className="banner-icon">⭐</div>
           <div className="banner-content">
             <div className="banner-main-text">
-              <strong>EXTRA POINTS CONTEST:</strong> Top 10 fastest students will be awarded extra points! Total speed is the sum of your fastest completed runs across <strong>Phase 1 to Phase 7</strong>.
+              <strong>EXTRA POINTS CONTEST:</strong> Top 10 fastest students will be awarded extra points! Total speed is the sum of your fastest completed runs across <strong>Phase 1 to Phase 7</strong>. Only participants who completed all 7 re-audit phases are ranked.
             </div>
             <div className="banner-tip-box">
               <span className="tip-badge">💡 PRO-TIP</span>
@@ -238,57 +227,13 @@ export default function ReAuditLeaderboardModal({
           </div>
         )}
 
-        {/* Stats Row */}
+        {/* Single Tab Header Bar & Search Filter */}
         {data && (
-          <div className="leaderboard-stats-grid">
-            <div className="stat-card">
-              <span className="stat-label">ENROLLED</span>
-              <strong className="stat-number">{stats.totalEnrolled}</strong>
-            </div>
-            <div className="stat-card">
-              <span className="stat-label">RE-AUDITORS</span>
-              <strong className="stat-number color-cyan">{stats.reAuditors}</strong>
-            </div>
-            <div className="stat-card">
-              <span className="stat-label">7/7 MASTERED</span>
-              <strong className="stat-number color-green">{stats.masteredAll}</strong>
-            </div>
-            <div className="stat-card highlight-card">
-              <span className="stat-label">⚡ #1 SPEED RECORD</span>
-              {stats.leader ? (
-                <div className="leader-info">
-                  <span className="leader-name" title={stats.leader.fullName}>{stats.leader.fullName}</span>
-                  <strong className="leader-time">{formatTimerDigits(stats.leader.totalFastestSeconds)}</strong>
-                </div>
-              ) : (
-                <span className="no-leader">Awaiting Contenders</span>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* Controls: Tabs & Search */}
-        {data && (
-          <div className="leaderboard-controls">
-            <div className="filter-tabs">
-              <button
-                className={`tab-btn ${filterTab === 'ALL' ? 'active' : ''}`}
-                onClick={() => setFilterTab('ALL')}
-              >
-                ALL PARTICIPANTS ({data.rankings.length})
-              </button>
-              <button
-                className={`tab-btn ${filterTab === 'TOP10' ? 'active' : ''}`}
-                onClick={() => setFilterTab('TOP10')}
-              >
-                ⭐ TOP 10 AWARD RECIPIENTS ({Math.min(10, data.rankings.filter(r => r.isTop10).length)})
-              </button>
-              <button
-                className={`tab-btn ${filterTab === 'MASTERED' ? 'active' : ''}`}
-                onClick={() => setFilterTab('MASTERED')}
-              >
-                ✔️ 7/7 MASTERED ({stats.masteredAll})
-              </button>
+          <div className="leaderboard-single-tab-bar">
+            <div className="single-tab-pill">
+              <span className="pill-trophy">⚡</span>
+              <span className="pill-text">7-PHASE RE-AUDIT SPEED RANKINGS</span>
+              <span className="pill-badge">{filteredRankings.length} {filteredRankings.length === 1 ? 'CONTENDER' : 'CONTENDERS'}</span>
             </div>
             <div className="search-box">
               <input
@@ -322,9 +267,15 @@ export default function ReAuditLeaderboardModal({
           )}
 
           {data && filteredRankings.length === 0 && (
-            <div className="leaderboard-state-message">
-              <span className="empty-icon">🔍</span>
-              <p>No students match the current filter or search criteria.</p>
+            <div className="leaderboard-state-message leaderboard-empty-contenders">
+              <span className="empty-icon">⏳</span>
+              <h3 className="empty-title">Awaiting 7-Phase Re-Audit Contenders</h3>
+              <p className="empty-desc">
+                Only students who have completed the re-audit of <strong>all 7 phases (Phase 1 to Phase 7)</strong> will appear on this speed leaderboard.
+              </p>
+              <div className="empty-tip-note">
+                💡 Re-audit any phase as many times as you like — your single fastest winning time in each phase will automatically be counted towards your overall time!
+              </div>
             </div>
           )}
 
@@ -333,8 +284,7 @@ export default function ReAuditLeaderboardModal({
               <div className="table-header-row">
                 <span className="col-rank">RANK</span>
                 <span className="col-student">STUDENT PARTICIPANT</span>
-                <span className="col-progress">RE-AUDIT PROGRESS</span>
-                <span className="col-time">FASTEST TOTAL TIME</span>
+                <span className="col-time">TOTAL RE-AUDIT TIME (7 PHASES)</span>
                 <span className="col-actions">BREAKDOWN</span>
               </div>
 
@@ -382,43 +332,16 @@ export default function ReAuditLeaderboardModal({
                         <span className="student-id-sub">ID: {student.studentNumber}</span>
                       </div>
 
-                      {/* Progress / Mastery Col */}
-                      <div className="col-progress">
-                        <div className="progress-badge-wrapper">
-                          {student.isMasteredAll ? (
-                            <span className="mastery-pill full">
-                              ✔️ 7 / 7 MASTERED
-                            </span>
-                          ) : student.completedPhasesCount > 0 ? (
-                            <span className="mastery-pill partial">
-                              {student.completedPhasesCount} / 7 PHASES
-                            </span>
-                          ) : student.hasReAudited ? (
-                            <span className="mastery-pill in-progress">
-                              IN PROGRESS (0/7)
-                            </span>
-                          ) : (
-                            <span className="mastery-pill none">
-                              NO RE-AUDITS
-                            </span>
-                          )}
-                        </div>
-                      </div>
-
                       {/* Cumulative Fastest Time Col */}
                       <div className="col-time">
-                        {student.completedPhasesCount > 0 ? (
-                          <div className="time-display-group">
-                            <span className="time-timer-val">
-                              ⏱️ {formatTimerDigits(student.totalFastestSeconds)}
-                            </span>
-                            <span className="time-words-val">
-                              {student.totalFastestFormatted}
-                            </span>
-                          </div>
-                        ) : (
-                          <span className="time-empty">--:--</span>
-                        )}
+                        <div className="time-display-group">
+                          <span className="time-timer-val">
+                            ⏱️ {formatTimerDigits(student.totalFastestSeconds)}
+                          </span>
+                          <span className="time-words-val">
+                            {student.totalFastestFormatted}
+                          </span>
+                        </div>
                       </div>
 
                       {/* Actions / Breakdown Toggle Col */}
@@ -440,7 +363,7 @@ export default function ReAuditLeaderboardModal({
                         <div className="breakdown-header">
                           <span>FASTEST RE-AUDIT RUN PER PHASE (P1 - P7):</span>
                           <span className="breakdown-sum-note">
-                            Total Speed = Sum of completed phase winning times
+                            Total Speed = Sum of your fastest winning times across all 7 phases
                           </span>
                         </div>
                         <div className="phase-chips-grid">

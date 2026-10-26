@@ -284,80 +284,8 @@
   gap: 8px;
 }
 
-/* --- Stats Grid --- */
-.leaderboard-stats-grid {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 10px;
-  padding: 12px 18px;
-  background: #0b0f19;
-  border-bottom: 1px solid #1e293b;
-}
-
-.stat-card {
-  background: #131d31;
-  border: 1px solid #1e293b;
-  border-radius: 6px;
-  padding: 10px 12px;
-  display: flex;
-  flex-direction: column;
-}
-
-.stat-label {
-  font-size: 0.68rem;
-  color: #94a3b8;
-  letter-spacing: 1px;
-  font-weight: bold;
-  margin-bottom: 4px;
-}
-
-.stat-number {
-  font-size: 1.25rem;
-  font-weight: 800;
-  color: #f8fafc;
-}
-
-.color-cyan {
-  color: #38bdf8;
-}
-
-.color-green {
-  color: #10b981;
-}
-
-.highlight-card {
-  background: linear-gradient(135deg, rgba(245, 158, 11, 0.1), rgba(15, 23, 42, 0.9));
-  border: 1px solid rgba(245, 158, 11, 0.4);
-}
-
-.leader-info {
-  display: flex;
-  flex-direction: column;
-}
-
-.leader-name {
-  font-size: 0.8rem;
-  font-weight: bold;
-  color: #fbbf24;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.leader-time {
-  font-size: 1.15rem;
-  font-weight: 800;
-  color: #f59e0b;
-}
-
-.no-leader {
-  font-size: 0.78rem;
-  color: #64748b;
-  font-style: italic;
-}
-
-/* --- Controls / Tabs --- */
-.leaderboard-controls {
+/* --- Single Tab Header Bar --- */
+.leaderboard-single-tab-bar {
   padding: 10px 18px;
   background: #0f172a;
   border-bottom: 1px solid #1e293b;
@@ -368,39 +296,37 @@
   flex-wrap: wrap;
 }
 
-.filter-tabs {
-  display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
+.single-tab-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(56, 189, 248, 0.1);
+  border: 1px solid #0284c7;
+  padding: 6px 14px;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  font-weight: 800;
+  color: #38bdf8;
+  letter-spacing: 0.5px;
 }
 
-.tab-btn {
-  background: #1e293b;
-  border: 1px solid #334155;
-  color: #94a3b8;
-  font-size: 0.75rem;
-  font-weight: bold;
-  padding: 6px 12px;
-  border-radius: 4px;
-  cursor: pointer;
-  transition: all 0.15s ease;
+.pill-trophy {
+  font-size: 1rem;
 }
 
-.tab-btn:hover {
-  background: #334155;
-  color: #f8fafc;
-}
-
-.tab-btn.active {
-  background: #0284c7;
-  border-color: #38bdf8;
-  color: #fff;
-  box-shadow: 0 0 10px rgba(56, 189, 248, 0.3);
+.pill-badge {
+  background: #0369a1;
+  color: #f0f9ff;
+  font-size: 0.7rem;
+  font-weight: 800;
+  padding: 2px 8px;
+  border-radius: 10px;
+  letter-spacing: 0.5px;
 }
 
 .search-box {
   position: relative;
-  min-width: 200px;
+  min-width: 220px;
 }
 
 .search-input {
@@ -467,6 +393,42 @@
   font-size: 2.2rem;
 }
 
+.leaderboard-empty-contenders {
+  padding: 30px 20px;
+  text-align: center;
+}
+
+.empty-title {
+  color: #f1f5f9;
+  font-size: 1.05rem;
+  font-weight: 700;
+  margin: 10px 0 6px 0;
+}
+
+.empty-desc {
+  color: #94a3b8;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  max-width: 500px;
+  margin: 0 auto 14px auto;
+}
+
+.empty-desc strong {
+  color: #38bdf8;
+}
+
+.empty-tip-note {
+  display: inline-block;
+  background: rgba(245, 158, 11, 0.1);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  color: #fde68a;
+  font-size: 0.78rem;
+  padding: 8px 14px;
+  border-radius: 6px;
+  max-width: 520px;
+  line-height: 1.4;
+}
+
 /* --- Rankings Table --- */
 .rankings-table {
   display: flex;
@@ -486,11 +448,10 @@
   border-bottom: 1px solid #1e293b;
 }
 
-.col-rank { width: 55px; text-align: center; flex-shrink: 0; }
-.col-student { flex: 2; min-width: 160px; padding: 0 10px; }
-.col-progress { flex: 1.2; min-width: 130px; text-align: center; }
-.col-time { flex: 1.5; min-width: 140px; text-align: right; padding-right: 15px; }
-.col-actions { width: 85px; text-align: center; flex-shrink: 0; }
+.col-rank { width: 60px; text-align: center; flex-shrink: 0; }
+.col-student { flex: 2.2; min-width: 180px; padding: 0 12px; }
+.col-time { flex: 1.5; min-width: 160px; text-align: right; padding-right: 18px; }
+.col-actions { width: 95px; text-align: center; flex-shrink: 0; }
 
 .ranking-row-container {
   background: #111c33;
@@ -814,19 +775,17 @@
 
 /* --- Mobile Responsiveness --- */
 @media (max-width: 768px) {
-  .leaderboard-stats-grid {
-    grid-template-columns: repeat(2, 1fr);
+  .leaderboard-single-tab-bar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .search-box {
+    width: 100%;
   }
   .phase-chips-grid {
     grid-template-columns: repeat(4, 1fr);
   }
-  .col-progress {
-    display: none;
-  }
   .col-student {
-    min-width: 120px;
-  }
-  .table-header-row .col-progress {
-    display: none;
+    min-width: 130px;
   }
 }

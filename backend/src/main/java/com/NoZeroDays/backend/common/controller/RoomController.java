@@ -2056,38 +2056,27 @@ public class RoomController {
                 studentRankings.add(stuMap);
             }
 
-            // Sort:
-            // 1. More completed re-audit phases first (e.g. 7/7, then 6/7...)
-            // 2. For equal completed phases, lower totalFastestSeconds first (fastest time wins)
-            // 3. Fallback: students with hasReAudited=true first, then alphabetical by name
-            studentRankings.sort((a, b) -> {
-                int compA = (int) a.get("completedPhasesCount");
-                int compB = (int) b.get("completedPhasesCount");
-                if (compA != compB) {
-                    return Integer.compare(compB, compA);
+            // Only participants who completed the re-audit of all 7 phases are on the leaderboard
+            List<Map<String, Object>> completed7Rankings = new ArrayList<>();
+            for (Map<String, Object> item : studentRankings) {
+                int comp = (int) item.get("completedPhasesCount");
+                if (comp >= 7) {
+                    completed7Rankings.add(item);
                 }
-                if (compA > 0) {
-                    long secA = (long) a.get("totalFastestSeconds");
-                    long secB = (long) b.get("totalFastestSeconds");
-                    return Long.compare(secA, secB);
-                }
-                boolean hasA = (boolean) a.get("hasReAudited");
-                boolean hasB = (boolean) b.get("hasReAudited");
-                if (hasA != hasB) {
-                    return hasB ? 1 : -1;
-                }
-                String nameA = (String) a.get("fullName");
-                String nameB = (String) b.get("fullName");
-                return nameA.compareToIgnoreCase(nameB);
+            }
+
+            // Sort completed students strictly by totalFastestSeconds ascending (lowest total time = fastest = Rank 1)
+            completed7Rankings.sort((a, b) -> {
+                long secA = (long) a.get("totalFastestSeconds");
+                long secB = (long) b.get("totalFastestSeconds");
+                return Long.compare(secA, secB);
             });
 
             // Assign rank numbers and top10 flag
             int currentRank = 1;
-            for (int r = 0; r < studentRankings.size(); r++) {
-                Map<String, Object> item = studentRankings.get(r);
-                int comp = (int) item.get("completedPhasesCount");
+            for (Map<String, Object> item : completed7Rankings) {
                 item.put("rank", currentRank);
-                item.put("isTop10", currentRank <= 10 && comp > 0);
+                item.put("isTop10", currentRank <= 10);
                 currentRank++;
             }
 
@@ -2096,7 +2085,8 @@ public class RoomController {
             resp.put("section", room.getSection());
             resp.put("teacherName", room.getTeacherName());
             resp.put("totalParticipants", participants.size());
-            resp.put("rankings", studentRankings);
+            resp.put("totalCompleted7Count", completed7Rankings.size());
+            resp.put("rankings", completed7Rankings);
 
             return ResponseEntity.ok(resp);
         } catch (Exception ex) {
