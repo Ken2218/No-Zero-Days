@@ -135,16 +135,28 @@ public class ValidationService {
         return null;
     }
 
+    public Optional<ScenarioSnapshot> getScenarioSnapshot(StudentProfile student, String module, int phase) {
+        if (student == null) return Optional.empty();
+        return scenarioSnapshotRepository.findByStudentProfileAndModuleAndPhase(
+                student, module != null ? module.toUpperCase() : "M1_MATH", phase);
+    }
+
     private boolean fieldMatches(Object snapValue, Object requestValue) {
-        // A missing request field is skipped (some steps legitimately omit fields);
-        // a present field must equal the registered value.
-        if (requestValue == null) return true;
+        // A missing request field or missing snapshot field is skipped;
+        // present fields must equal the registered value.
+        if (requestValue == null || snapValue == null) return true;
+        if (snapValue instanceof Number && requestValue instanceof Number) {
+            double v1 = ((Number) snapValue).doubleValue();
+            double v2 = ((Number) requestValue).doubleValue();
+            return Math.abs(v1 - v2) < 0.01;
+        }
         return Objects.equals(snapValue, requestValue);
     }
 
     private boolean stringFieldMatches(String snapValue, String requestValue) {
         if (requestValue == null || requestValue.isBlank()) return true;
-        return Objects.equals(snapValue, requestValue);
+        if (snapValue == null || snapValue.isBlank()) return true;
+        return snapValue.trim().equalsIgnoreCase(requestValue.trim());
     }
 
     /**

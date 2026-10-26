@@ -197,29 +197,62 @@ function App() {
       setScenario(restoredScenario);
       setExtractedA(parsed.extractedA || '');
       setExtractedB(parsed.extractedB || '');
-      setStep1Status(parsed.step1Status || 'ACTIVE');
+      const s1 = parsed.step1Status || 'ACTIVE';
+      setStep1Status(s1);
       setExtractionAttempts(parsed.extractionAttempts || 0);
       setSelectedRule(parsed.selectedRule || '');
       setStep2Status(parsed.step2Status || 'LOCKED');
       setCalculatedValue(parsed.calculatedValue || '');
-      setStep3Status(parsed.step3Status || 'LOCKED');
-      setNetPayValue(parsed.netPayValue || '');
-      setStep4Status(parsed.step4Status || 'LOCKED');
+
+      let s3 = parsed.step3Status || 'LOCKED';
+      let grossStatus = parsed.grossPayStatus || 'LOCKED';
+      let netFormStatus = parsed.netFormulaStatus || 'LOCKED';
+      let s4 = parsed.step4Status || 'LOCKED';
+
+      // Self-heal Phase 3 scaffolding steps if prior step succeeded
+      let trueOt = parsed.trueOtHoursStatus || 'LOCKED';
+      if (phase === 3 && s1 === 'SUCCESS' && trueOt === 'LOCKED') trueOt = 'ACTIVE';
+      setTrueOtHoursValue(parsed.trueOtHoursValue || '');
+      setTrueOtHoursStatus(trueOt);
+
+      let otMult = parsed.otMultiplierStatus || 'LOCKED';
+      if (phase === 3 && trueOt === 'SUCCESS' && otMult === 'LOCKED') otMult = 'ACTIVE';
+      setOtMultiplierValue(parsed.otMultiplierValue || '');
+      setOtMultiplierStatus(otMult);
+
+      let otForm = parsed.otFormulaStatus || 'LOCKED';
+      if (phase === 3 && otMult === 'SUCCESS' && otForm === 'LOCKED') otForm = 'ACTIVE';
+      setOtFormulaValue(parsed.otFormulaValue || '');
+      setOtFormulaStatus(otForm);
+
+      if (phase === 3 && otForm === 'SUCCESS' && s3 === 'LOCKED') s3 = 'ACTIVE';
+      setStep3Status(s3);
+
+      // Self-heal grossPayStatus, netFormulaStatus, step4Status
+      if ((phase === 2 || phase === 3 || phase === 4) && s3 === 'SUCCESS' && grossStatus === 'LOCKED') {
+        grossStatus = 'ACTIVE';
+      }
       setGrossPayValue(parsed.grossPayValue || '');
-      setGrossPayStatus(parsed.grossPayStatus || 'LOCKED');
+      setGrossPayStatus(grossStatus);
+
+      if ((phase === 2 || phase === 3 || phase === 4) && grossStatus === 'SUCCESS' && netFormStatus === 'LOCKED') {
+        netFormStatus = 'ACTIVE';
+      }
       setNetPayFormula(parsed.netPayFormula || '');
-      setNetFormulaStatus(parsed.netFormulaStatus || 'LOCKED');
+      setNetFormulaStatus(netFormStatus);
+
+      if (((phase === 2 || phase === 3 || phase === 4) && netFormStatus === 'SUCCESS' && s4 === 'LOCKED') ||
+          ((phase === 5 || phase === 6) && s3 === 'SUCCESS' && s4 === 'LOCKED')) {
+        s4 = 'ACTIVE';
+      }
+      setNetPayValue(parsed.netPayValue || '');
+      setStep4Status(s4);
+
       setPagIbigDeductionValue(parsed.pagIbigDeductionValue || '');
       setPagIbigDeductionStatus(parsed.pagIbigDeductionStatus || 'LOCKED');
       setPhilhealthErValue(parsed.philhealthErValue || '');
       setPhilhealthSssEeValue(parsed.philhealthSssEeValue || '');
       setPhilhealthErStatus(parsed.philhealthErStatus || 'LOCKED');
-      setTrueOtHoursValue(parsed.trueOtHoursValue || '');
-      setTrueOtHoursStatus(parsed.trueOtHoursStatus || 'LOCKED');
-      setOtMultiplierValue(parsed.otMultiplierValue || '');
-      setOtMultiplierStatus(parsed.otMultiplierStatus || 'LOCKED');
-      setOtFormulaValue(parsed.otFormulaValue || '');
-      setOtFormulaStatus(parsed.otFormulaStatus || 'LOCKED');
       setHolidayTypeValue(parsed.holidayTypeValue || '');
       setHolidayMultiplierValue(parsed.holidayMultiplierValue || '');
       setHolidayFormulaValue(parsed.holidayFormulaValue || '');
@@ -2005,7 +2038,7 @@ function App() {
     }
   };
 
-  // Submit Phase 2 Step 4: Verify Gross Basic Pay
+  // Submit Phase 2 Step 4 / Phase 3 Step 6 / Phase 4 Step 5: Verify Gross Basic Pay
   const handleValidateGrossPay = async () => {
     if (!grossPayValue) {
       setFeedback('Please enter the computed Gross Basic Pay.');
@@ -2015,6 +2048,11 @@ function App() {
     setFeedback('Verifying Gross Basic Pay computation...');
     try {
       const { module: mod, phase: ph } = getModuleAndPhase();
+      const derivedDailyRate = scenario.dailyRate || (scenario.hourlyRate ? scenario.hourlyRate * 8.0 : 0.0);
+      const derivedHourlyRate = scenario.hourlyRate || (scenario.dailyRate ? scenario.dailyRate / 8.0 : 0.0);
+      const derivedDaysPresent = scenario.daysPresent || 0;
+      const numGross = parseFloat(grossPayValue) || 0.0;
+
       const response = await authFetch('/api/validation/submit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -2027,21 +2065,21 @@ function App() {
           timerSeconds: phaseTimers[activePhaseIndex] || 0,
           employeeName: scenario.employeeName,
           companyName: scenario.companyName,
-          dailyRate: scenario.dailyRate,
-          hourlyRate: scenario.hourlyRate,
-          daysPresent: scenario.daysPresent,
-          lateMinutes: scenario.lateMinutes,
-          earlyClockInMinutes: scenario.earlyClockInMinutes,
-          otHours: scenario.otHours,
-          unpaidLunchHours: scenario.unpaidLunchHours,
+          dailyRate: derivedDailyRate,
+          hourlyRate: derivedHourlyRate,
+          daysPresent: derivedDaysPresent,
+          lateMinutes: scenario.lateMinutes ?? 0,
+          earlyClockInMinutes: scenario.earlyClockInMinutes ?? 0,
+          otHours: scenario.otHours ?? 0,
+          unpaidLunchHours: scenario.unpaidLunchHours ?? 0,
           basicSalary: scenario.basicSalary,
           sssEeShare: scenario.sssEeShare,
           sssErShare: scenario.sssErShare,
           personalSalaryLoan: scenario.personalSalaryLoan,
           spouseLoan: scenario.spouseLoan,
           workedOnHoliday: scenario.workedOnHoliday,
-          grossPay: Number(grossPayValue) || 0.0,
-          submittedResult: Number(grossPayValue) || 0.0
+          grossPay: numGross,
+          submittedResult: numGross
         })
       });
       const data = await response.json();

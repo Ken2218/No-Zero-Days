@@ -2,6 +2,7 @@ package com.NoZeroDays.backend.phase3.service;
 
 import com.NoZeroDays.backend.common.dto.ValidationRequest;
 import com.NoZeroDays.backend.common.dto.ValidationResponse;
+import com.NoZeroDays.backend.common.model.ScenarioSnapshot;
 import com.NoZeroDays.backend.common.model.StudentProfile;
 import com.NoZeroDays.backend.common.service.ValidationService;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -9,6 +10,7 @@ import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.util.Optional;
 
 /**
  * Phase 3 Validation Service — Module: M2_MULTIPLIERS, phase == 1
@@ -37,6 +39,29 @@ public class Phase3ValidationService {
         double actualOt          = otHours - unpaidLunch;
         int    targetDaysPresent = request.getDaysPresent()       != null ? request.getDaysPresent()       : 0;
 
+        // Failsafe hydration: recover missing parameters from registered ScenarioSnapshot
+        if (hourlyRate <= 0.0 || targetDaysPresent <= 0 || otHours <= 0.0) {
+            Optional<ScenarioSnapshot> snapOpt = validationService.getScenarioSnapshot(student, "M2_MULTIPLIERS", 1);
+            if (snapOpt.isPresent()) {
+                ScenarioSnapshot snap = snapOpt.get();
+                if (hourlyRate <= 0.0 && snap.getHourlyRate() != null && snap.getHourlyRate() > 0.0) {
+                    hourlyRate = snap.getHourlyRate();
+                } else if (hourlyRate <= 0.0 && snap.getDailyRate() != null && snap.getDailyRate() > 0.0) {
+                    hourlyRate = snap.getDailyRate() / 8.0;
+                }
+                if (targetDaysPresent <= 0 && snap.getDaysPresent() != null && snap.getDaysPresent() > 0) {
+                    targetDaysPresent = snap.getDaysPresent();
+                }
+                if (otHours <= 0.0 && snap.getOtHours() != null && snap.getOtHours() > 0.0) {
+                    otHours = snap.getOtHours();
+                }
+                if (unpaidLunch <= 0.0 && snap.getUnpaidLunchHours() != null) {
+                    unpaidLunch = snap.getUnpaidLunchHours();
+                }
+                actualOt = otHours - unpaidLunch;
+            }
+        }
+
         String step = request.getStep() != null ? request.getStep() : "EXTRACT";
 
         boolean isFormulaOrGrossStep = "NET_PAY_FORMULA".equalsIgnoreCase(step)
@@ -44,10 +69,10 @@ public class Phase3ValidationService {
                 || "ESTABLISH_PREMIUM".equalsIgnoreCase(step)
                 || "COMPUTE_GROSS".equalsIgnoreCase(step);
 
-        if (!isFormulaOrGrossStep && (hourlyRate <= 0.0 || request.getOtHours() == null || otHours <= 0.0 || request.getDaysPresent() == null || targetDaysPresent <= 0)) {
+        if (!isFormulaOrGrossStep && (hourlyRate <= 0.0 || otHours <= 0.0 || targetDaysPresent <= 0)) {
             return validationService.runDrillEngineAndLog(student, request, false, false,
                     "Validation Error: Scenario parameters were not received by the server. Please reload the phase.", null, null, false);
-        } else if (isFormulaOrGrossStep && (hourlyRate <= 0.0 || request.getDaysPresent() == null || targetDaysPresent <= 0)) {
+        } else if (isFormulaOrGrossStep && (hourlyRate <= 0.0 || targetDaysPresent <= 0)) {
             return validationService.runDrillEngineAndLog(student, request, false, false,
                     "Validation Error: Scenario parameters were not received by the server. Please reload the phase.", null, null, false);
         }
@@ -139,20 +164,33 @@ public class Phase3ValidationService {
             }
 
         } else if ("COMPUTE_GROSS".equalsIgnoreCase(step)) {
-            double userGross      = request.getSubmittedResult() != null ? request.getSubmittedResult() : 0.0;
-            double expectedGross  = hourlyRate * 8.0 * targetDaysPresent;
+            Double fromGrossPay = request.getGrossPay();
+            Double fromSubmittedResult = request.getSubmittedResult();
+            double userGross = fromGrossPay != null ? fromGrossPay : (fromSubmittedResult != null ? fromSubmittedResult : 0.0);
+
+            double expectedGrossByHourly = hourlyRate * 8.0 * targetDaysPresent;
             BigDecimal expectedGrossBD = BigDecimal.valueOf(hourlyRate)
                     .multiply(BigDecimal.valueOf(8.0))
                     .multiply(BigDecimal.valueOf(targetDaysPresent))
                     .setScale(2, RoundingMode.HALF_UP);
             double expectedRounded = expectedGrossBD.doubleValue();
 
-            if (Math.abs(userGross - expectedGross) <= 0.02 || Math.abs(userGross - expectedRounded) <= 0.02) {
+            Double dailyRate = request.getDailyRate();
+            if (dailyRate == null && hourlyRate > 0.0) {
+                dailyRate = hourlyRate * 8.0;
+            }
+            double expectedGrossByDaily = dailyRate != null ? dailyRate * targetDaysPresent : expectedGrossByHourly;
+
+            if (Math.abs(userGross - expectedGrossByHourly) <= 0.02
+                    || Math.abs(userGross - expectedRounded) <= 0.02
+                    || Math.abs(userGross - expectedGrossByDaily) <= 0.02) {
                 success = true;
                 message = "Gross Basic Pay verified at ₱" + String.format("%.2f", expectedRounded)
                         + ". Proceed to Step 7 — Establish Synthesis Formula.";
             } else {
-                message = "Gross Pay is incorrect. Review the employee contract file for the correct hourly rate and multiply by 8 hours and days present.";
+                message = "Gross Pay is incorrect. Review the employee contract file for the correct hourly rate (₱"
+                        + String.format("%.2f", hourlyRate) + ") and multiply by 8 hours and days present ("
+                        + targetDaysPresent + ").";
                 auditExpected = expectedRounded;
                 auditReceived = userGross;
             }

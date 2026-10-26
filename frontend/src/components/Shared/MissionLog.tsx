@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import './Room.css';
 
 interface MissionLogProps {
@@ -439,6 +439,52 @@ export default function MissionLog({
   // Phase 2, 3, and 4 have special multi-step scaffolding flows.
   const isSynthesisSupported = (activePhaseIndex >= 2 && activePhaseIndex <= 6);
 
+  // Self-healing step status flags: ensure downstream steps unlock if upstream completed
+  const effectiveGrossStatus = grossPayStatus !== 'LOCKED'
+    ? grossPayStatus
+    : (step3Status === 'SUCCESS' && (activePhaseIndex === 2 || activePhaseIndex === 3 || activePhaseIndex === 4))
+      ? 'ACTIVE'
+      : 'LOCKED';
+
+  const effectiveNetFormulaStatus = netFormulaStatus !== 'LOCKED'
+    ? netFormulaStatus
+    : (effectiveGrossStatus === 'SUCCESS' && (activePhaseIndex === 2 || activePhaseIndex === 3 || activePhaseIndex === 4))
+      ? 'ACTIVE'
+      : 'LOCKED';
+
+  const effectiveStep4Status = step4Status !== 'LOCKED'
+    ? step4Status
+    : ((activePhaseIndex === 2 || activePhaseIndex === 3 || activePhaseIndex === 4) && effectiveNetFormulaStatus === 'SUCCESS')
+      ? 'ACTIVE'
+      : ((activePhaseIndex === 5 || activePhaseIndex === 6) && step3Status === 'SUCCESS')
+        ? 'ACTIVE'
+        : 'LOCKED';
+
+  // Smoothly scroll into the active step so students never miss unlocked input cards
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      const activeEl = document.querySelector('.tracker-steps .active-step');
+      if (activeEl) {
+        activeEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }
+    }, 120);
+    return () => clearTimeout(timer);
+  }, [
+    activePhaseIndex,
+    step1Status,
+    step2Status,
+    step3Status,
+    effectiveGrossStatus,
+    effectiveNetFormulaStatus,
+    effectiveStep4Status,
+    trueOtHoursStatus,
+    otMultiplierStatus,
+    otFormulaStatus,
+    holidayFormulaStatus,
+    pagIbigDeductionStatus,
+    philhealthErStatus
+  ]);
+
   return (
     <div className="right-panel">
       <div className="mission-header">
@@ -538,6 +584,11 @@ export default function MissionLog({
                   className="tech-input"
                   value={extractedA}
                   onChange={(e) => setExtractedA(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && step1Status !== 'SUCCESS' && !loading) {
+                      handleValidateExtraction();
+                    }
+                  }}
                   disabled={step1Status === 'SUCCESS' || loading}
                 />
                 <span className="input-info-icon">ⓘ
@@ -583,6 +634,11 @@ export default function MissionLog({
                   className="tech-input"
                   value={extractedB}
                   onChange={(e) => setExtractedB(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && step1Status !== 'SUCCESS' && !loading) {
+                      handleValidateExtraction();
+                    }
+                  }}
                   disabled={step1Status === 'SUCCESS' || loading}
                 />
                 <span className="input-info-icon">ⓘ
@@ -695,6 +751,11 @@ export default function MissionLog({
                     className="tech-input"
                     value={calculatedValue}
                     onChange={(e) => setCalculatedValue(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && step3Status !== 'SUCCESS' && !loading) {
+                        handleValidateExecution();
+                      }
+                    }}
                     disabled={step3Status === 'SUCCESS' || loading}
                   />
                   <span className="input-info-icon">ⓘ
@@ -867,6 +928,11 @@ export default function MissionLog({
                     className="tech-input"
                     value={calculatedValue}
                     onChange={(e) => setCalculatedValue(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && step3Status !== 'SUCCESS' && !loading) {
+                        handleValidateExecution();
+                      }
+                    }}
                     disabled={step3Status === 'SUCCESS' || loading}
                   />
                   <span className="input-info-icon">ⓘ
@@ -987,6 +1053,11 @@ export default function MissionLog({
                       className="tech-input"
                       value={trueOtHoursValue}
                       onChange={(e) => setTrueOtHoursValue && setTrueOtHoursValue(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && trueOtHoursStatus !== 'SUCCESS' && !loading && handleValidateTrueOtHours) {
+                          handleValidateTrueOtHours();
+                        }
+                      }}
                       disabled={trueOtHoursStatus === 'SUCCESS' || loading}
                       style={{ border: '1px solid #a855f7', color: '#fff' }}
                     />
@@ -1227,6 +1298,11 @@ export default function MissionLog({
                     className="tech-input"
                     value={calculatedValue}
                     onChange={(e) => setCalculatedValue(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && step3Status !== 'SUCCESS' && !loading) {
+                        handleValidateExecution();
+                      }
+                    }}
                     disabled={step3Status === 'SUCCESS' || loading}
                   />
                   <span className="input-info-icon">ⓘ
@@ -1263,27 +1339,27 @@ export default function MissionLog({
 
         {/* COMPUTE GROSS BASIC PAY (Step 4 for Phase 2, Step 6 for Phase 3, Step 5 for Phase 4) */}
         {(activePhaseIndex === 2 || activePhaseIndex === 3 || activePhaseIndex === 4) && (
-          <div className={`step-card ${grossPayStatus === 'ACTIVE' ? 'active-step' : ''} ${grossPayStatus === 'SUCCESS' ? 'success-step' : ''} ${grossPayStatus === 'ERROR' ? 'error-step' : ''} ${grossPayStatus === 'LOCKED' ? 'locked-step' : ''}`}
-            style={{ border: grossPayStatus !== 'LOCKED' ? '2px solid #8b5cf6' : undefined, boxShadow: grossPayStatus !== 'LOCKED' ? '0 0 10px rgba(139, 92, 246, 0.2)' : undefined }}>
+          <div className={`step-card ${effectiveGrossStatus === 'ACTIVE' ? 'active-step' : ''} ${effectiveGrossStatus === 'SUCCESS' ? 'success-step' : ''} ${effectiveGrossStatus === 'ERROR' ? 'error-step' : ''} ${effectiveGrossStatus === 'LOCKED' ? 'locked-step' : ''}`}
+            style={{ border: effectiveGrossStatus !== 'LOCKED' ? '2px solid #8b5cf6' : undefined, boxShadow: effectiveGrossStatus !== 'LOCKED' ? '0 0 10px rgba(139, 92, 246, 0.2)' : undefined }}>
             <div className="step-title">
               <h4 style={{ color: '#a78bfa' }}>
                 {activePhaseIndex === 2 && '④ STEP 4: COMPUTE GROSS BASIC PAY'}
                 {activePhaseIndex === 3 && '⑥ STEP 6: COMPUTE GROSS BASIC PAY'}
                 {activePhaseIndex === 4 && '⑤ STEP 5: COMPUTE GROSS BASIC PAY'}
               </h4>
-              <span className="badge" style={{ backgroundColor: grossPayStatus === 'SUCCESS' ? '#10b981' : '#475569', color: '#fff' }}>
-                {grossPayStatus}
+              <span className="badge" style={{ backgroundColor: effectiveGrossStatus === 'SUCCESS' ? '#10b981' : effectiveGrossStatus === 'ERROR' ? '#ef4444' : effectiveGrossStatus === 'ACTIVE' ? '#3b82f6' : '#475569', color: '#fff' }}>
+                {effectiveGrossStatus}
               </span>
             </div>
 
-            {grossPayStatus !== 'LOCKED' && (
+            {effectiveGrossStatus !== 'LOCKED' && (
               <div className="inputs-container">
                 <label style={{ color: '#e2e8f0', fontSize: '0.85rem' }}>
                   VERIFIED GROSS BASIC PAY (₱)
                 </label>
-                {activePhaseIndex === 2 && (
-                  <p style={{ fontSize: '0.78rem', color: '#94a3b8', margin: '2px 0 6px 0', fontStyle: 'italic' }}>
-                    Formula: Hourly Rate × 8 hrs/day × Days Present
+                {(activePhaseIndex === 2 || activePhaseIndex === 3 || activePhaseIndex === 4) && (
+                  <p style={{ fontSize: '0.78rem', color: '#a78bfa', margin: '2px 0 6px 0', fontStyle: 'italic' }}>
+                    Formula: {activePhaseIndex === 4 ? 'Daily Rate × Days Present' : 'Hourly Rate × 8 hrs/day × Days Present (or Daily Rate × Days Present)'}
                   </p>
                 )}
                 <div className="input-hint-wrapper">
@@ -1293,7 +1369,12 @@ export default function MissionLog({
                     className="tech-input"
                     value={grossPayValue}
                     onChange={(e) => setGrossPayValue(e.target.value)}
-                    disabled={grossPayStatus === 'SUCCESS' || loading}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && effectiveGrossStatus !== 'SUCCESS' && !loading) {
+                        handleValidateGrossPay();
+                      }
+                    }}
+                    disabled={effectiveGrossStatus === 'SUCCESS' || loading}
                     style={{ border: '1px solid #8b5cf6', color: '#fff' }}
                   />
                   <span className="input-info-icon">ⓘ
@@ -1308,7 +1389,7 @@ export default function MissionLog({
                   </span>
                 </div>
 
-                {grossPayStatus !== 'SUCCESS' && (
+                {effectiveGrossStatus !== 'SUCCESS' && (
                   <button
                     className="run-btn"
                     onClick={handleValidateGrossPay}
@@ -1325,20 +1406,20 @@ export default function MissionLog({
 
         {/* ESTABLISH SYNTHESIS FORMULA (Step 5 for Phase 2, Step 7 for Phase 3, Step 6 for Phase 4) */}
         {(activePhaseIndex === 2 || activePhaseIndex === 3 || activePhaseIndex === 4) && (
-          <div className={`step-card ${netFormulaStatus === 'ACTIVE' ? 'active-step' : ''} ${netFormulaStatus === 'SUCCESS' ? 'success-step' : ''} ${netFormulaStatus === 'ERROR' ? 'error-step' : ''} ${netFormulaStatus === 'LOCKED' ? 'locked-step' : ''}`}
-            style={{ border: netFormulaStatus !== 'LOCKED' ? '2px solid #f59e0b' : undefined, boxShadow: netFormulaStatus !== 'LOCKED' ? '0 0 10px rgba(245, 158, 11, 0.2)' : undefined }}>
+          <div className={`step-card ${effectiveNetFormulaStatus === 'ACTIVE' ? 'active-step' : ''} ${effectiveNetFormulaStatus === 'SUCCESS' ? 'success-step' : ''} ${effectiveNetFormulaStatus === 'ERROR' ? 'error-step' : ''} ${effectiveNetFormulaStatus === 'LOCKED' ? 'locked-step' : ''}`}
+            style={{ border: effectiveNetFormulaStatus !== 'LOCKED' ? '2px solid #f59e0b' : undefined, boxShadow: effectiveNetFormulaStatus !== 'LOCKED' ? '0 0 10px rgba(245, 158, 11, 0.2)' : undefined }}>
             <div className="step-title">
               <h4 style={{ color: '#fbbf24' }}>
                 {activePhaseIndex === 2 && '⑤ STEP 5: ESTABLISH NET PAY FORMULA'}
                 {activePhaseIndex === 3 && '⑦ STEP 7: ESTABLISH SYNTHESIS FORMULA'}
                 {activePhaseIndex === 4 && '⑥ STEP 6: ESTABLISH SYNTHESIS FORMULA'}
               </h4>
-              <span className="badge" style={{ backgroundColor: netFormulaStatus === 'SUCCESS' ? '#10b981' : '#475569', color: '#fff' }}>
-                {netFormulaStatus}
+              <span className="badge" style={{ backgroundColor: effectiveNetFormulaStatus === 'SUCCESS' ? '#10b981' : effectiveNetFormulaStatus === 'ERROR' ? '#ef4444' : effectiveNetFormulaStatus === 'ACTIVE' ? '#3b82f6' : '#475569', color: '#fff' }}>
+                {effectiveNetFormulaStatus}
               </span>
             </div>
 
-            {netFormulaStatus !== 'LOCKED' && (
+            {effectiveNetFormulaStatus !== 'LOCKED' && (
               <div className="inputs-container">
                 <label style={{ color: '#e2e8f0', fontSize: '0.85rem' }}>
                   {activePhaseIndex === 2 ? 'Select the correct Net Pay equation:' : 'Select the correct Total Earnings equation:'}
@@ -1347,7 +1428,7 @@ export default function MissionLog({
                   <select
                     value={netPayFormula}
                     onChange={(e) => setNetPayFormula(e.target.value)}
-                    disabled={netFormulaStatus === 'SUCCESS' || loading}
+                    disabled={effectiveNetFormulaStatus === 'SUCCESS' || loading}
                     className="tech-input"
                     style={{ backgroundColor: '#0b1120', color: '#fff' }}
                   >
@@ -1388,11 +1469,11 @@ export default function MissionLog({
                   </span>
                 </div>
 
-                {netFormulaStatus !== 'SUCCESS' && (
+                {effectiveNetFormulaStatus !== 'SUCCESS' && (
                   <button
                     className="run-btn"
                     onClick={handleValidateNetPayFormula}
-                    disabled={loading}
+                    disabled={loading || !netPayFormula}
                     style={{ backgroundColor: '#92400e', borderColor: '#f59e0b' }}
                   >
                     {loading ? 'VERIFYING FORMULA...' : 'VERIFY FORMULA >'}
@@ -1407,7 +1488,7 @@ export default function MissionLog({
         {/* STEP 4 (phases 3-6) / STEP 6 (phase 2): SYNTHESIS / FINAL NET PAY */}
         {/* ============================================================ */}
         {isSynthesisSupported && (
-          <div className={`step-card ${step4Status === 'ACTIVE' ? 'active-step' : ''} ${step4Status === 'SUCCESS' ? 'success-step' : ''} ${step4Status === 'ERROR' ? 'error-step' : ''} ${step4Status === 'LOCKED' ? 'locked-step' : ''}`}
+          <div className={`step-card ${effectiveStep4Status === 'ACTIVE' ? 'active-step' : ''} ${effectiveStep4Status === 'SUCCESS' ? 'success-step' : ''} ${effectiveStep4Status === 'ERROR' ? 'error-step' : ''} ${effectiveStep4Status === 'LOCKED' ? 'locked-step' : ''}`}
             style={{ border: '2px solid #3b82f6', boxShadow: '0 0 10px rgba(59, 130, 246, 0.2)' }}>
             <div className="step-title">
               <h4 style={{ color: '#60a5fa' }}>
@@ -1417,12 +1498,12 @@ export default function MissionLog({
                 {activePhaseIndex === 5 && '⑤ STEP 5: COMPUTE FINAL NET PAY'}
                 {activePhaseIndex === 6 && '⑤ STEP 5: COMPUTE FINAL NET PAY'}
               </h4>
-              <span className="badge" style={{ backgroundColor: step4Status === 'SUCCESS' ? '#10b981' : '#475569', color: '#fff' }}>
-                {step4Status}
+              <span className="badge" style={{ backgroundColor: effectiveStep4Status === 'SUCCESS' ? '#10b981' : effectiveStep4Status === 'ERROR' ? '#ef4444' : effectiveStep4Status === 'ACTIVE' ? '#3b82f6' : '#475569', color: '#fff' }}>
+                {effectiveStep4Status}
               </span>
             </div>
             
-            {step4Status !== 'LOCKED' && (
+            {effectiveStep4Status !== 'LOCKED' && (
               <div className="inputs-container">
                 <label style={{ color: '#e2e8f0', fontSize: '0.85rem' }}>
                   {activePhaseIndex === 2 && 'FINAL TOTAL TAKE-HOME NET PAY (₱)'}
@@ -1434,6 +1515,16 @@ export default function MissionLog({
                 {activePhaseIndex === 2 && (
                   <p style={{ fontSize: '0.78rem', color: '#94a3b8', margin: '2px 0 6px 0', fontStyle: 'italic' }}>
                     Formula: Verified Gross Basic Pay − Verified Tardiness Deduction
+                  </p>
+                )}
+                {activePhaseIndex === 3 && (
+                  <p style={{ fontSize: '0.78rem', color: '#34d399', margin: '2px 0 6px 0', fontStyle: 'italic' }}>
+                    Formula: Verified Gross Basic Pay + Verified Overtime Pay
+                  </p>
+                )}
+                {activePhaseIndex === 4 && (
+                  <p style={{ fontSize: '0.78rem', color: '#34d399', margin: '2px 0 6px 0', fontStyle: 'italic' }}>
+                    Formula: Verified Gross Basic Pay + Verified Holiday Pay
                   </p>
                 )}
                 {activePhaseIndex === 5 && (
@@ -1461,7 +1552,12 @@ export default function MissionLog({
                     className="tech-input"
                     value={netPayValue}
                     onChange={(e) => setNetPayValue(e.target.value)}
-                    disabled={step4Status === 'SUCCESS' || loading}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && effectiveStep4Status !== 'SUCCESS' && !loading) {
+                        handleValidateSynthesis();
+                      }
+                    }}
+                    disabled={effectiveStep4Status === 'SUCCESS' || loading}
                     style={{ border: '1px solid #3b82f6', color: '#fff' }}
                   />
                   <span className="input-info-icon">ⓘ
