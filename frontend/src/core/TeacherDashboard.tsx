@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { authFetch } from '../utils/api';
+import ReAuditLeaderboardModal from '../components/Shared/ReAuditLeaderboardModal';
 import './TeacherLobby.css';
 import './TeacherDashboard.css';
 
@@ -156,6 +157,7 @@ export default function TeacherDashboard({
   const [studentToDelete, setStudentToDelete] = useState<{ number: string; name: string } | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [startingRoom, setStartingRoom] = useState(false);
+  const [showRankingsModal, setShowRankingsModal] = useState(false);
 
   // Sync if prop roomCode changes
   useEffect(() => {
@@ -1445,6 +1447,20 @@ export default function TeacherDashboard({
                     >
                       <span>📊</span> {downloadingExcel ? 'DOWNLOADING...' : 'DOWNLOAD EXCEL'}
                     </button>
+                    <button
+                      type="button"
+                      className="section-action-btn rankings"
+                      onClick={() => setShowRankingsModal(true)}
+                      disabled={!activeRoomCode}
+                      style={{
+                        borderColor: '#f59e0b',
+                        color: '#fbbf24',
+                        background: 'rgba(245, 158, 11, 0.12)'
+                      }}
+                      title="View Classroom Re-Audit Speed Rankings (Top 10 Extra Points)"
+                    >
+                      <span>🏆</span> RE-AUDIT RANKINGS
+                    </button>
                   </div>
                 </div>
               )}
@@ -2278,6 +2294,13 @@ export default function TeacherDashboard({
           </div>
         </div>
       )}
+      {/* RE-AUDIT SPEED LEADERBOARD MODAL */}
+      <ReAuditLeaderboardModal
+        isOpen={showRankingsModal}
+        onClose={() => setShowRankingsModal(false)}
+        initialRoomCode={activeRoomCode}
+        isTeacher={true}
+      />
     </div>
   );
 }

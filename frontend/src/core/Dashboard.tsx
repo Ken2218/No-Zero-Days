@@ -3,6 +3,7 @@ import { authFetch, logout } from '../utils/api';
 import { PHASE_GUIDES } from '../utils/phaseGuides';
 import { clearAllPhaseStorage } from '../utils/storage';
 import OnboardingGuide from '../components/Shared/OnboardingGuide';
+import ReAuditLeaderboardModal from '../components/Shared/ReAuditLeaderboardModal';
 import './Auth.css';
 
 interface DashboardProps {
@@ -34,6 +35,7 @@ export default function Dashboard({ student: propStudent, onSelectPhase, onStude
   const [joinLoading, setJoinLoading] = useState(false);
   const [joinError, setJoinError] = useState('');
   const [joinConfirming, setJoinConfirming] = useState(false);
+  const [showLeaderboard, setShowLeaderboard] = useState(false);
 
   // ── Onboarding guide: strictly auto-opens ONCE per user lifetime ──
   const [isGuideOpen, setIsGuideOpen] = useState(false);
@@ -288,6 +290,27 @@ export default function Dashboard({ student: propStudent, onSelectPhase, onStude
                 <button className="join-room-btn" onClick={() => { setJoinConfirming(false); setJoinError(''); setShowJoinModal(true); }} style={{ fontSize: '0.8rem', padding: '5px 15px', backgroundColor: '#10b981', color: '#000', fontWeight: 'bold', border: 'none', cursor: 'pointer' }}>[ JOIN ROOM ]</button>
               )}
               <button
+                type="button"
+                className="leaderboard-trigger-btn"
+                onClick={() => setShowLeaderboard(true)}
+                title="View Re-Audit Speed Rankings (Top 10 Extra Points)"
+                style={{
+                  fontSize: '0.8rem',
+                  padding: '5px 15px',
+                  backgroundColor: '#f59e0b',
+                  color: '#000',
+                  fontWeight: 'bold',
+                  border: 'none',
+                  cursor: 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  boxShadow: '0 0 10px rgba(245, 158, 11, 0.35)'
+                }}
+              >
+                <span>🏆</span> [ RANKINGS ]
+              </button>
+              <button
                 className="logout-btn"
                 onClick={() => setIsGuideOpen(true)}
                 style={{
@@ -316,11 +339,33 @@ export default function Dashboard({ student: propStudent, onSelectPhase, onStude
             </div>
 
             {/* Secondary: Re-Audit Practice & Mastery Progress */}
-            <div className="dashboard-progress-stats reaudit-progress-stats" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', fontSize: 'clamp(0.75rem, 1vw, 0.85rem)', letterSpacing: '1px' }}>
+            <div className="dashboard-progress-stats reaudit-progress-stats" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', fontSize: 'clamp(0.75rem, 1vw, 0.85rem)', letterSpacing: '1px' }}>
               <span style={{ color: '#34d399', display: 'flex', alignItems: 'center', gap: '6px' }}>
                 <span style={{ fontSize: '0.95rem' }}>↻</span> RE-AUDIT PRACTICE &amp; MASTERY PROGRESS:
               </span>
-              <strong style={{ color: '#10b981' }}>{reAuditPercent}% MASTERED ({reAuditCount} / 7 PHASES)</strong>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <strong style={{ color: '#10b981' }}>{reAuditPercent}% MASTERED ({reAuditCount} / 7 PHASES)</strong>
+                <button
+                  type="button"
+                  onClick={() => setShowLeaderboard(true)}
+                  style={{
+                    background: 'rgba(245, 158, 11, 0.15)',
+                    border: '1px solid #f59e0b',
+                    color: '#fbbf24',
+                    fontSize: '0.72rem',
+                    padding: '2px 8px',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    fontWeight: 'bold',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '4px'
+                  }}
+                  title="View Re-Audit Speed Rankings"
+                >
+                  <span>🏆</span> RANKINGS
+                </button>
+              </div>
             </div>
             <div className="progress-bar-track" style={{ width: '100%', height: '12px', background: '#0b1120', borderRadius: '6px', overflow: 'hidden', border: '1px solid #334155' }}>
               <div style={{ width: `${reAuditPercent}%`, height: '100%', background: 'linear-gradient(90deg, #059669, #10b981, #34d399)', transition: 'width 0.5s ease-in-out' }}></div>
@@ -792,6 +837,14 @@ export default function Dashboard({ student: propStudent, onSelectPhase, onStude
           </div>
         </div>
       )}
+
+      {/* RE-AUDIT SPEED LEADERBOARD MODAL */}
+      <ReAuditLeaderboardModal
+        isOpen={showLeaderboard}
+        onClose={() => setShowLeaderboard(false)}
+        initialRoomCode={roomCode || (student as any)?.roomCode || localStorage.getItem('studentRoomCode') || ''}
+        currentStudentNumber={(student as any)?.studentNumber || ''}
+      />
 
       {/* ONBOARDING GUIDE MODAL */}
       <OnboardingGuide

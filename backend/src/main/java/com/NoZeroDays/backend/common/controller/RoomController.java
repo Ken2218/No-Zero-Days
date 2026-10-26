@@ -1919,4 +1919,190 @@ public class RoomController {
                     .body(Map.of("error", "Failed to generate Excel report: " + ex.getMessage()));
         }
     }
+
+    // -------------------------------------------------------------------------
+    // 13. RE-AUDIT ROOM LEADERBOARD / SPEED RANKINGS
+    // -------------------------------------------------------------------------
+    @GetMapping("/rooms/{roomCode}/reaudit-rankings")
+    public ResponseEntity<?> getRoomReAuditRankings(@PathVariable String roomCode) {
+        Optional<Room> roomOpt = roomRepository.findByRoomCodeIgnoreCase(roomCode);
+        if (roomOpt.isEmpty()) {
+            return ResponseEntity.status(404).body(Map.of("error", "Room not found: " + roomCode));
+        }
+        Room room = roomOpt.get();
+
+        try {
+            List<RoomParticipant> participants = roomParticipantRepository.findByRoomOrderByJoinedAtAsc(room);
+            List<Map<String, Object>> studentRankings = new ArrayList<>();
+
+            for (RoomParticipant p : participants) {
+                if (p == null || p.getStudentProfile() == null) continue;
+                StudentProfile student = p.getStudentProfile();
+
+                List<AttemptLog> allAttempts = attemptLogRepository
+                        .findByStudentProfileAndRoomCodeScopeOrderByAttemptTimeAsc(student, room.getRoomCode());
+
+                Map<String, List<AttemptLog>> phaseAttemptsMap = new HashMap<>();
+                for (AttemptLog log : allAttempts) {
+                    String key = (log.getModule() != null ? log.getModule().toUpperCase() : "") + "_" + log.getPhase();
+                    phaseAttemptsMap.computeIfAbsent(key, k -> new ArrayList<>()).add(log);
+                }
+
+                int completedReAuditPhasesCount = 0;
+                long totalFastestReAuditSeconds = 0;
+                boolean hasReAuditedAny = false;
+                List<Map<String, Object>> phaseBreakdown = new ArrayList<>();
+
+                for (int i = 0; i < 7; i++) {
+                    int phaseId = i + 1;
+                    String module = MODULES[i];
+                    int phaseIndex = PHASES[i];
+                    String phaseKey = module.toUpperCase() + "_" + phaseIndex;
+                    List<AttemptLog> attempts = phaseAttemptsMap.getOrDefault(phaseKey, Collections.emptyList());
+                    List<String> requiredSteps = getRequiredStepsForPhase(module, phaseIndex);
+
+                    List<AttemptLog> reAuditAttempts = new ArrayList<>();
+                    Set<String> stepsCompletedSoFar = new HashSet<>();
+                    boolean firstCompletedFound = false;
+
+                    for (AttemptLog log : attempts) {
+                        if ("RE_AUDIT".equalsIgnoreCase(log.getAttemptType())) {
+                            reAuditAttempts.add(log);
+                        } else if (log.getAttemptType() != null && !log.getAttemptType().isBlank()) {
+                            // First attempt log
+                        } else {
+                            if (firstCompletedFound) {
+                                reAuditAttempts.add(log);
+                            } else {
+                                if (log.isSuccessful() && !log.isDrillReset() && log.getStep() != null) {
+                                    stepsCompletedSoFar.add(log.getStep().toUpperCase());
+                                    if (!requiredSteps.isEmpty() && requiredSteps.stream().allMatch(stepsCompletedSoFar::contains)) {
+                                        firstCompletedFound = true;
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    boolean hasReAudited = !reAuditAttempts.isEmpty();
+                    if (hasReAudited) hasReAuditedAny = true;
+
+                    boolean isReAuditCompleted = hasReAudited && isPhaseCompleteBySteps(reAuditAttempts, module, phaseIndex);
+                    long fastestSeconds = 0;
+
+                    if (hasReAudited) {
+                        Long bestReAuditSeconds = null;
+                        Long latestRecordedSeconds = null;
+                        String finalStepName = !requiredSteps.isEmpty() ? requiredSteps.get(requiredSteps.size() - 1) : null;
+
+                        LocalDateTime reAuditStart = reAuditAttempts.get(0).getAttemptTime();
+                        LocalDateTime reAuditLastSuccess = null;
+                        LocalDateTime reAuditEnd = reAuditAttempts.get(reAuditAttempts.size() - 1).getAttemptTime();
+
+                        for (AttemptLog log : reAuditAttempts) {
+                            if (log.isSuccessful()) {
+                                reAuditLastSuccess = log.getAttemptTime();
+                            }
+                            if (log.isSuccessful() && !log.isDrillReset()) {
+                                Long s = extractRecordedSeconds(log);
+                                if (s != null && s > 0) {
+                                    latestRecordedSeconds = s;
+                                    boolean isCompletionStep = (finalStepName != null && finalStepName.equalsIgnoreCase(log.getStep()));
+                                    if (isCompletionStep) {
+                                        if (bestReAuditSeconds == null || s < bestReAuditSeconds) {
+                                            bestReAuditSeconds = s;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        Long chosenSeconds = (bestReAuditSeconds != null) ? bestReAuditSeconds : latestRecordedSeconds;
+                        if (chosenSeconds != null && chosenSeconds > 0) {
+                            fastestSeconds = chosenSeconds;
+                        } else if (reAuditStart != null) {
+                            LocalDateTime endRef = reAuditLastSuccess != null ? reAuditLastSuccess : (reAuditEnd != null ? reAuditEnd : reAuditStart);
+                            fastestSeconds = Math.max(ChronoUnit.SECONDS.between(reAuditStart, endRef), 0L);
+                        }
+                    }
+
+                    if (isReAuditCompleted && fastestSeconds > 0) {
+                        completedReAuditPhasesCount++;
+                        totalFastestReAuditSeconds += fastestSeconds;
+                    }
+
+                    Map<String, Object> pMap = new HashMap<>();
+                    pMap.put("phaseId", phaseId);
+                    pMap.put("title", PHASE_TITLES[i]);
+                    pMap.put("hasReAudited", hasReAudited);
+                    pMap.put("isCompleted", isReAuditCompleted);
+                    pMap.put("fastestSeconds", fastestSeconds);
+                    pMap.put("fastestFormatted", (isReAuditCompleted && fastestSeconds > 0) ? formatDuration(fastestSeconds, "COMPLETED") : "--");
+                    phaseBreakdown.add(pMap);
+                }
+
+                Map<String, Object> stuMap = new HashMap<>();
+                stuMap.put("studentNumber", student.getStudentNumber());
+                stuMap.put("fullName", student.getFullName() != null ? student.getFullName() : "Unknown");
+                stuMap.put("section", student.getSection() != null ? student.getSection() : room.getSection());
+                stuMap.put("completedPhasesCount", completedReAuditPhasesCount);
+                stuMap.put("totalPhases", 7);
+                stuMap.put("isMasteredAll", completedReAuditPhasesCount >= 7);
+                stuMap.put("hasReAudited", hasReAuditedAny);
+                stuMap.put("totalFastestSeconds", totalFastestReAuditSeconds);
+                stuMap.put("totalFastestFormatted", formatDuration(totalFastestReAuditSeconds, completedReAuditPhasesCount > 0 ? "COMPLETED" : "NOT_ATTEMPTED"));
+                stuMap.put("phaseBreakdown", phaseBreakdown);
+
+                studentRankings.add(stuMap);
+            }
+
+            // Sort:
+            // 1. More completed re-audit phases first (e.g. 7/7, then 6/7...)
+            // 2. For equal completed phases, lower totalFastestSeconds first (fastest time wins)
+            // 3. Fallback: students with hasReAudited=true first, then alphabetical by name
+            studentRankings.sort((a, b) -> {
+                int compA = (int) a.get("completedPhasesCount");
+                int compB = (int) b.get("completedPhasesCount");
+                if (compA != compB) {
+                    return Integer.compare(compB, compA);
+                }
+                if (compA > 0) {
+                    long secA = (long) a.get("totalFastestSeconds");
+                    long secB = (long) b.get("totalFastestSeconds");
+                    return Long.compare(secA, secB);
+                }
+                boolean hasA = (boolean) a.get("hasReAudited");
+                boolean hasB = (boolean) b.get("hasReAudited");
+                if (hasA != hasB) {
+                    return hasB ? 1 : -1;
+                }
+                String nameA = (String) a.get("fullName");
+                String nameB = (String) b.get("fullName");
+                return nameA.compareToIgnoreCase(nameB);
+            });
+
+            // Assign rank numbers and top10 flag
+            int currentRank = 1;
+            for (int r = 0; r < studentRankings.size(); r++) {
+                Map<String, Object> item = studentRankings.get(r);
+                int comp = (int) item.get("completedPhasesCount");
+                item.put("rank", currentRank);
+                item.put("isTop10", currentRank <= 10 && comp > 0);
+                currentRank++;
+            }
+
+            Map<String, Object> resp = new HashMap<>();
+            resp.put("roomCode", room.getRoomCode());
+            resp.put("section", room.getSection());
+            resp.put("teacherName", room.getTeacherName());
+            resp.put("totalParticipants", participants.size());
+            resp.put("rankings", studentRankings);
+
+            return ResponseEntity.ok(resp);
+        } catch (Exception ex) {
+            System.err.println("[RoomController] Error fetching reaudit rankings for room " + roomCode + ": " + ex.getMessage());
+            ex.printStackTrace();
+            return ResponseEntity.status(500).body(Map.of("error", "Failed to calculate rankings: " + ex.getMessage()));
+        }
+    }
 }
