@@ -104,6 +104,7 @@ public class AuthInterceptor implements HandlerInterceptor {
         if (path.equals("/students/register") || path.equals("/students/register/")) return true;
         if (path.equals("/teachers/login") || path.equals("/teachers/login/")) return true;
         if (path.equals("/teachers/register") || path.equals("/teachers/register/")) return true;
+        if (path.matches("/rooms/[^/]+/reaudit-rankings")) return true;
         return false;
     }
 

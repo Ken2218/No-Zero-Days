@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import API_BASE_URL from '../../config';
+import { authFetch } from '../../utils/api';
 import './ReAuditLeaderboardModal.css';
 
 export interface PhaseBreakdownItem {
@@ -81,7 +81,7 @@ export default function ReAuditLeaderboardModal({
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`${API_BASE_URL}/api/rooms/${trimmed}/reaudit-rankings`);
+      const res = await authFetch(`/api/rooms/${trimmed}/reaudit-rankings`);
       if (!res.ok) {
         const errJson = await res.json().catch(() => ({}));
         throw new Error(errJson.error || `Room '${trimmed}' not found.`);
