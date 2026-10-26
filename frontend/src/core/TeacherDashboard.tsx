@@ -553,7 +553,8 @@ export default function TeacherDashboard({
       return {
         ...s,
         status: isAnyMastered ? 'COMPLETED' : s.status,
-        completedPhases: Math.max(s.completedPhases || 0, s.reAudit?.completedPhases || 0)
+        completedPhases: Math.max(s.completedPhases || 0, s.reAudit?.completedPhases || 0),
+        hasReAudited: s.hasReAudited || Boolean(s.reAudit?.hasReAudited)
       };
     });
   }, [students, auditAttemptMode]);

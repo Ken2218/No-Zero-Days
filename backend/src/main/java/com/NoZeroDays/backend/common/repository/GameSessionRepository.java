@@ -20,11 +20,20 @@ public interface GameSessionRepository extends JpaRepository<GameSession, Long> 
 
     // Room-scoped latest session: prefers a session tagged with the room code,
     // falls back to legacy untagged sessions so pre-scoping data stays visible.
+    // Returns a List to avoid NonUniqueResultException when multiple sessions match.
     @Query("SELECT s FROM GameSession s WHERE s.studentProfile = :student AND (s.roomCode IS NULL OR s.roomCode = :roomCode) ORDER BY s.id DESC")
-    Optional<GameSession> findFirstByStudentProfileAndRoomCodeOrderByIdDesc(
+    List<GameSession> findAllByStudentProfileAndRoomCodeOrderByIdDesc(
         @Param("student") StudentProfile studentProfile,
         @Param("roomCode") String roomCode
     );
+
+    default Optional<GameSession> findFirstByStudentProfileAndRoomCodeOrderByIdDesc(
+        StudentProfile studentProfile,
+        String roomCode
+    ) {
+        List<GameSession> list = findAllByStudentProfileAndRoomCodeOrderByIdDesc(studentProfile, roomCode);
+        return (list == null || list.isEmpty()) ? Optional.empty() : Optional.of(list.get(0));
+    }
 
     @Modifying
     @Transactional

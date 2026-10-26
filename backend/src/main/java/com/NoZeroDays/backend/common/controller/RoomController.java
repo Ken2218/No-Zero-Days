@@ -1252,7 +1252,7 @@ public class RoomController {
                                 ? session.getStartTime()
                                 : firstStart;
                         LocalDateTime endRef = firstLastSuccess != null ? firstLastSuccess : (firstEnd != null ? firstEnd : firstStart);
-                        long diff = ChronoUnit.SECONDS.between(startRef, endRef);
+                        long diff = (startRef != null && endRef != null) ? ChronoUnit.SECONDS.between(startRef, endRef) : 0L;
                         long paused = (session != null && isCurrentActivePhase) ? session.getAccumulatedPauseSeconds() : 0L;
                         firstPhaseSeconds = Math.max(diff - paused, 0L);
                     } else {
@@ -1279,10 +1279,10 @@ public class RoomController {
                             long heartbeatAge = ChronoUnit.SECONDS.between(session.getLastHeartbeatAt(), now);
                             activeEnd = (heartbeatAge > 30) ? session.getLastHeartbeatAt() : now;
                         } else {
-                            long ageSinceEnter = ChronoUnit.SECONDS.between(activeStart, now);
-                            activeEnd = (ageSinceEnter > 45) ? activeStart.plusSeconds(30) : now;
+                            long ageSinceEnter = (activeStart != null) ? ChronoUnit.SECONDS.between(activeStart, now) : 0L;
+                            activeEnd = (ageSinceEnter > 45 && activeStart != null) ? activeStart.plusSeconds(30) : now;
                         }
-                        long wallDiff = ChronoUnit.SECONDS.between(activeStart, activeEnd);
+                        long wallDiff = (activeStart != null && activeEnd != null) ? ChronoUnit.SECONDS.between(activeStart, activeEnd) : 0L;
                         long paused = session.getAccumulatedPauseSeconds();
                         // Hard cap runaway timer if student abandoned without logging out (max 2 hours)
                         diff = Math.min(Math.max(wallDiff - paused, 0L), 7200L);
@@ -1298,7 +1298,7 @@ public class RoomController {
                     } else {
                         LocalDateTime activeStart = session.getPhaseEnteredAt();
                         LocalDateTime activeEnd = session.getPhaseExitedAt();
-                        long wallDiff = ChronoUnit.SECONDS.between(activeStart, activeEnd);
+                        long wallDiff = (activeStart != null && activeEnd != null) ? ChronoUnit.SECONDS.between(activeStart, activeEnd) : 0L;
                         long paused = session.getAccumulatedPauseSeconds();
                         diff = Math.min(Math.max(wallDiff - paused, 0L), 7200L);
                     }
@@ -1426,19 +1426,7 @@ public class RoomController {
 
                     for (AttemptLog log : reAuditAttempts) {
                         if (log.isSuccessful() && !log.isDrillReset()) {
-                            Long s = null;
-                            if (log.getElapsedSeconds() != null && log.getElapsedSeconds() > 0) {
-                                s = log.getElapsedSeconds();
-                            } else if (log.getUserInputData() != null && log.getUserInputData().contains("timerSeconds=")) {
-                                try {
-                                    java.util.regex.Matcher m = java.util.regex.Pattern.compile("timerSeconds=(\\d+)").matcher(log.getUserInputData());
-                                    if (m.find()) {
-                                        long val = Long.parseLong(m.group(1));
-                                        if (val > 0) s = val;
-                                    }
-                                } catch (Exception ignored) {}
-                            }
-
+                            Long s = extractRecordedSeconds(log);
                             if (s != null && s > 0) {
                                 latestRecordedSeconds = s;
                                 boolean isCompletionStep = (finalStepName != null && finalStepName.equalsIgnoreCase(log.getStep()));
@@ -1457,7 +1445,7 @@ public class RoomController {
                         reAuditPhaseSeconds = chosenSeconds;
                     } else if (reAuditStart != null) {
                         LocalDateTime endRef = reAuditLastSuccess != null ? reAuditLastSuccess : (reAuditEnd != null ? reAuditEnd : reAuditStart);
-                        long diff = ChronoUnit.SECONDS.between(reAuditStart, endRef);
+                        long diff = (endRef != null) ? ChronoUnit.SECONDS.between(reAuditStart, endRef) : 0L;
                         reAuditPhaseSeconds = Math.max(diff, 0L);
                     }
                     studentReAuditTotalSeconds += reAuditPhaseSeconds;
@@ -1589,6 +1577,7 @@ public class RoomController {
             stuMap.put("totalTimeSpentSeconds", studentTotalSeconds);
             stuMap.put("totalTimeFormatted", formatDuration(studentTotalSeconds, hasMasteredAll ? "COMPLETED" : "ACTIVE"));
             stuMap.put("phases", studentPhases);
+            stuMap.put("hasReAudited", studentHasReAuditedAny);
 
             // Student First Attempt Rollup
             Map<String, Object> stuFirst = new HashMap<>();
@@ -1613,6 +1602,37 @@ public class RoomController {
             } catch (Exception ex) {
                 System.err.println("[RoomController] Error processing participant in room " + roomCode + ": " + ex.getMessage());
                 ex.printStackTrace();
+                try {
+                    StudentProfile student = p.getStudentProfile();
+                    if (student != null) {
+                        boolean alreadyAdded = studentResults.stream()
+                                .anyMatch(m -> student.getStudentNumber().equals(m.get("studentNumber")));
+                        if (!alreadyAdded) {
+                            Map<String, Object> fallbackMap = new HashMap<>();
+                            fallbackMap.put("studentNumber", student.getStudentNumber());
+                            fallbackMap.put("fullName", student.getFullName() != null ? student.getFullName() : "Unknown");
+                            fallbackMap.put("section", student.getSection() != null ? student.getSection() : room.getSection());
+                            fallbackMap.put("completedPhases", 0);
+                            fallbackMap.put("currentPhase", 1);
+                            fallbackMap.put("currentPhaseTitle", PHASE_TITLES[0]);
+                            fallbackMap.put("attempts", 0);
+                            fallbackMap.put("status", "ACTIVE");
+                            fallbackMap.put("totalTimeSpentSeconds", 0L);
+                            fallbackMap.put("totalTimeFormatted", "--");
+                            fallbackMap.put("phases", Collections.emptyList());
+                            fallbackMap.put("hasReAudited", false);
+                            Map<String, Object> fallbackSub = new HashMap<>();
+                            fallbackSub.put("completedPhases", 0);
+                            fallbackSub.put("attempts", 0);
+                            fallbackSub.put("totalTimeSpentSeconds", 0L);
+                            fallbackSub.put("totalTimeFormatted", "--");
+                            fallbackSub.put("status", "ACTIVE");
+                            fallbackMap.put("firstAttempt", fallbackSub);
+                            fallbackMap.put("reAudit", fallbackSub);
+                            studentResults.add(fallbackMap);
+                        }
+                    }
+                } catch (Exception ignored) {}
             }
         }
 
