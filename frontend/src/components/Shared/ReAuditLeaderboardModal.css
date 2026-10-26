@@ -105,7 +105,7 @@
   border-bottom: 1px solid rgba(245, 158, 11, 0.35);
   padding: 10px 18px;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 12px;
   font-size: 0.82rem;
   line-height: 1.4;
@@ -114,6 +114,7 @@
 
 .banner-icon {
   font-size: 1.4rem;
+  margin-top: 2px;
   animation: pulse 2s infinite ease-in-out;
 }
 
@@ -122,8 +123,40 @@
   50% { transform: scale(1.15); }
 }
 
+.banner-content {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+}
+
 .banner-content strong {
   color: #fbbf24;
+}
+
+.banner-tip-box {
+  background: rgba(15, 23, 42, 0.7);
+  border: 1px solid rgba(245, 158, 11, 0.4);
+  border-radius: 4px;
+  padding: 6px 10px;
+  font-size: 0.78rem;
+  color: #fde68a;
+  line-height: 1.4;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.tip-badge {
+  background: #f59e0b;
+  color: #000;
+  font-weight: 800;
+  font-size: 0.65rem;
+  padding: 1px 6px;
+  border-radius: 3px;
+  letter-spacing: 0.5px;
+  flex-shrink: 0;
 }
 
 /* --- Room Switcher Bar --- */

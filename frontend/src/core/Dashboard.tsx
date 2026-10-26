@@ -370,6 +370,29 @@ export default function Dashboard({ student: propStudent, onSelectPhase, onStude
             <div className="progress-bar-track" style={{ width: '100%', height: '12px', background: '#0b1120', borderRadius: '6px', overflow: 'hidden', border: '1px solid #334155' }}>
               <div style={{ width: `${reAuditPercent}%`, height: '100%', background: 'linear-gradient(90deg, #059669, #10b981, #34d399)', transition: 'width 0.5s ease-in-out' }}></div>
             </div>
+
+            {/* Re-Audit Strategy Hint / Extra Points Tip */}
+            <div style={{ marginTop: '10px', fontSize: '0.78rem', color: '#94a3b8', background: 'rgba(15, 23, 42, 0.65)', padding: '6px 12px', borderRadius: '4px', borderLeft: '3px solid #f59e0b', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
+              <span>
+                💡 <strong>Speed Tip:</strong> If you spent a lot of time in a single phase, you can <strong>re-audit it as much as you want</strong>! The system keeps and adds only your <strong>fastest winning time in each phase</strong> toward your overall ranking!
+              </span>
+              <button
+                type="button"
+                onClick={() => setShowLeaderboard(true)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: '#fbbf24',
+                  fontWeight: 'bold',
+                  cursor: 'pointer',
+                  textDecoration: 'underline',
+                  fontSize: '0.75rem',
+                  padding: 0
+                }}
+              >
+                View Rankings &gt;
+              </button>
+            </div>
           </div>
 
           {loadingProgress ? (

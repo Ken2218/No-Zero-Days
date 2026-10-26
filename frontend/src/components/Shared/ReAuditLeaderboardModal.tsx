@@ -165,11 +165,17 @@ export default function ReAuditLeaderboardModal({
           <button className="leaderboard-close-btn" onClick={onClose} title="Close">✕</button>
         </div>
 
-        {/* Contest Callout Banner */}
+        {/* Contest Callout Banner & Strategy Tip */}
         <div className="leaderboard-banner">
           <div className="banner-icon">⭐</div>
           <div className="banner-content">
-            <strong>EXTRA POINTS CONTEST:</strong> Top 10 fastest students will be awarded extra points! Total speed is the sum of your fastest completed runs across <strong>Phase 1 to Phase 7</strong>. Re-audit anytime to beat your record!
+            <div className="banner-main-text">
+              <strong>EXTRA POINTS CONTEST:</strong> Top 10 fastest students will be awarded extra points! Total speed is the sum of your fastest completed runs across <strong>Phase 1 to Phase 7</strong>.
+            </div>
+            <div className="banner-tip-box">
+              <span className="tip-badge">💡 PRO-TIP</span>
+              <span>If you feel like you spent a lot of time in a single phase, you can <strong>re-audit as much as you want</strong>! Only your <strong>single fastest / best winning time in each phase</strong> will be recorded and added to your overall time in the rankings.</span>
+            </div>
           </div>
         </div>
 
